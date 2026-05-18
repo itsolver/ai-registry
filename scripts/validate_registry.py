@@ -99,7 +99,7 @@ def validate_registry(path: Path) -> None:
 
 
 def main() -> None:
-    registry_path = Path(sys.argv[1] if len(sys.argv) > 1 else "model-registry.json")
+    registry_path = Path(sys.argv[1] if len(sys.argv) > 1 else "public/model-registry.json")
     validate_registry(registry_path)
     print(f"validated {registry_path}")
 

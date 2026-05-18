@@ -1,0 +1,6 @@
+name = "ai-registry"
+compatibility_date = "2026-05-18"
+
+[assets]
+directory = "./public"
+not_found_handling = "404-page"

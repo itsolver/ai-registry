@@ -27,7 +27,10 @@ jobs:
           python-version: "3.12"
 
       - name: Validate registry
-        run: python scripts/validate_registry.py public/model-registry.json
+        run: |
+          python scripts/validate_registry.py public/models.json
+          python scripts/validate_registry.py public/model-registry.json
+          cmp public/models.json public/model-registry.json
 
   deploy:
     if: github.event_name != 'pull_request'

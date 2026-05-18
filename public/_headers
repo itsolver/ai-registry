@@ -1,6 +1,0 @@
-/model-registry.json
-  Content-Type: application/json; charset=utf-8
-  Cache-Control: public, max-age=300, must-revalidate
-
-/schema/*
-  Cache-Control: public, max-age=3600, must-revalidate

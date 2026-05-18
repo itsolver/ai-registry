@@ -18,16 +18,29 @@ Explicit model environment variables in consuming apps still take precedence. Fo
 
 ## Files
 
-- `model-registry.json`: production registry document.
-- `schema/model-registry.schema.json`: JSON Schema reference for tooling.
+- `public/model-registry.json`: production registry document served at `/model-registry.json`.
+- `public/schema/model-registry.schema.json`: JSON Schema reference for tooling.
 - `scripts/validate_registry.py`: dependency-free validator used by CI.
+- `wrangler.toml`: Cloudflare Workers static-assets config for projects that run `npx wrangler deploy`.
 
 ## Validate Locally
 
 ```bash
-python3 scripts/validate_registry.py model-registry.json
+python3 scripts/validate_registry.py public/model-registry.json
 ```
 
 ## Deployment
 
-Serve the repo root as a static site and map `ai.itsolver.au` to it. Cloudflare Pages is the preferred v1 host because it provides static hosting, custom domain support, deploy previews, and rollback without running an app server.
+Serve `public/` as the static site root and map `ai.itsolver.au` to it.
+
+Cloudflare Pages settings:
+
+```text
+Framework preset: None
+Build command: leave blank
+Build output directory: public
+Root directory: /
+Production branch: main
+```
+
+If the Cloudflare project is configured to run `npx wrangler deploy`, `wrangler.toml` deploys the same `public/` directory as static Worker assets.

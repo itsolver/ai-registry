@@ -19,4 +19,4 @@ jobs:
           python-version: "3.12"
 
       - name: Validate registry
-        run: python scripts/validate_registry.py model-registry.json
+        run: python scripts/validate_registry.py public/model-registry.json

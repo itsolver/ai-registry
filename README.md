@@ -21,7 +21,8 @@ Explicit model environment variables in consuming apps still take precedence. Fo
 - `public/model-registry.json`: production registry document served at `/model-registry.json`.
 - `public/schema/model-registry.schema.json`: JSON Schema reference for tooling.
 - `scripts/validate_registry.py`: dependency-free validator used by CI.
-- `wrangler.toml`: Cloudflare Workers static-assets config for projects that run `npx wrangler deploy`.
+- `public/CNAME`: GitHub Pages custom domain declaration for `ai.itsolver.au`.
+- `.github/workflows/validate.yml`: validates pull requests and deploys `public/` to GitHub Pages on `main`.
 
 ## Validate Locally
 
@@ -31,16 +32,23 @@ python3 scripts/validate_registry.py public/model-registry.json
 
 ## Deployment
 
-Serve `public/` as the static site root and map `ai.itsolver.au` to it.
+The repository deploys `public/` to GitHub Pages on every push to `main`. No Cloudflare API token or deployment secret is required.
 
-Cloudflare Pages settings:
+GitHub Pages settings:
 
 ```text
-Framework preset: None
-Build command: leave blank
-Build output directory: public
-Root directory: /
-Production branch: main
+Source: GitHub Actions
+Custom domain: ai.itsolver.au
+Enforce HTTPS: enabled
 ```
 
-If the Cloudflare project is configured to run `npx wrangler deploy`, `wrangler.toml` deploys the same `public/` directory as static Worker assets.
+DNS should point the `ai` subdomain at GitHub Pages:
+
+```text
+Type: CNAME
+Name: ai
+Target: itsolver.github.io
+Proxy status: DNS only
+```
+
+Keep Cloudflare proxying disabled for this hostname so non-browser clients can fetch the registry without bot/WAF interference.

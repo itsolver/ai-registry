@@ -5,3 +5,4 @@
 - Created initial static AI model registry.
 - Added schema and dependency-free validation workflow.
 - Moved deployable assets into `public/` and added Wrangler static-assets config for Cloudflare deploys.
+- Switched deployment to GitHub Pages and added the `ai.itsolver.au` custom domain file.

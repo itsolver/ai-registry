@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 
-PROVIDERS = {"GEMINI", "OPENAI", "XAI"}
-PROVIDER_KEYS = {"gemini", "openai", "xai"}
+PROVIDERS = {"ANTHROPIC", "GEMINI", "OPENAI", "XAI"}
+PROVIDER_KEYS = {"anthropic", "gemini", "openai", "xai"}
 
 
 def fail(message: str) -> None:

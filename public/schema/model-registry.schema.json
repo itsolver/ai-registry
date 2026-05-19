@@ -69,7 +69,7 @@
       "additionalProperties": false,
       "properties": {
         "provider": {
-          "enum": ["GEMINI", "OPENAI", "XAI"]
+          "enum": ["ANTHROPIC", "GEMINI", "OPENAI", "XAI"]
         },
         "model": {
           "type": "string",

@@ -32,6 +32,20 @@
         "model": "grok-4-1-fast-reasoning"
       }
     },
+    "anthropic": {
+      "standard": {
+        "model": "claude-haiku-4-5"
+      },
+      "smart": {
+        "model": "claude-sonnet-4-5"
+      },
+      "haiku_3_5": {
+        "model": "claude-haiku-3-5"
+      },
+      "haiku_3": {
+        "model": "claude-haiku-3"
+      }
+    },
     "support.standard": {
       "fallbacks": [
         {
@@ -71,6 +85,18 @@
     "coding.smart": {
       "provider": "OPENAI",
       "model": "gpt-5-mini"
+    },
+    "seasonality.standard": {
+      "provider": "ANTHROPIC",
+      "model": "claude-haiku-4-5"
+    },
+    "seasonality.smart": {
+      "provider": "ANTHROPIC",
+      "model": "claude-sonnet-4-5"
+    },
+    "billing.categorize": {
+      "provider": "ANTHROPIC",
+      "model": "claude-sonnet-4-5"
     }
   }
 }

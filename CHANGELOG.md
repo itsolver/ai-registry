@@ -8,3 +8,4 @@
 - Switched deployment to GitHub Pages and added the `ai.itsolver.au` custom domain file.
 - Updated the GitHub Pages workflow actions to Node 24-compatible majors.
 - Added `/models.json` as the canonical registry URL and made the bare site redirect there.
+- Added Anthropic model entries and logical keys for seasonality extraction and billing categorization.

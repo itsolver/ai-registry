@@ -97,6 +97,26 @@
     "billing.categorize": {
       "provider": "ANTHROPIC",
       "model": "claude-sonnet-4-5"
+    },
+    "reconcile.standard": {
+      "fallbacks": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash-lite"
+        },
+        {
+          "provider": "XAI",
+          "model": "grok-4-fast-non-reasoning"
+        },
+        {
+          "provider": "OPENAI",
+          "model": "gpt-5-nano"
+        }
+      ]
+    },
+    "browser.recovery": {
+      "provider": "OPENAI",
+      "model": "gpt-5.4"
     }
   }
 }

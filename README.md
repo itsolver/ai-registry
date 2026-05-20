@@ -1,57 +1,108 @@
 # AI Registry
 
-Static model registry for IT Solver AI integrations.
+Private Cloudflare Workers API for IT Solver model recommendations.
 
-Intended production URL:
-
-```text
-https://ai.itsolver.au/models.json
-```
-
-Consumers should set:
+Production URL:
 
 ```text
-AI_MODEL_REGISTRY_URL=https://ai.itsolver.au/models.json
+https://ai.itsolver.au
 ```
 
-Explicit model environment variables in consuming apps still take precedence. For example, unset `GEMINI_MODEL`, `OPENAI_STANDARD_MODEL`, and similar variables when the app should use this registry.
+The Worker imports `https://models.dev/api.json`, keeps only `openai`, `google`, `xai`, and `anthropic`, then exposes a small `/v1/...` API with cost-derived recommendation tiers.
 
-Provider keys currently include `anthropic`, `gemini`, `openai`, and `xai`. Logical entries such as `support.standard`, `reconcile.standard`, `seasonality.standard`, and `billing.categorize` let consumers resolve a use-case-specific model without hardcoding provider tier names.
+Recommendations are tuned for IT Solver support and coding work. The raw `/v1/models` catalog can include broader provider models, but `/v1/models/recommend` only considers work-appropriate OpenAI, Google Gemini, xAI Grok, and Anthropic Claude models with real input/output pricing. It excludes open-weight, image, audio, live, embedding, moderation, and transcription-style models.
 
-## Files
+Model pricing from models.dev is converted to AUD using the daily USD to AUD rate from Frankfurter. The API only returns AUD pricing.
 
-- `public/models.json`: production registry document served at `/models.json`.
-- `public/model-registry.json`: compatibility copy served at `/model-registry.json`.
-- `public/schema/model-registry.schema.json`: JSON Schema reference for tooling.
-- `scripts/validate_registry.py`: dependency-free validator used by CI.
-- `public/CNAME`: GitHub Pages custom domain declaration for `ai.itsolver.au`.
-- `.github/workflows/validate.yml`: validates pull requests and deploys `public/` to GitHub Pages on `main`.
+## Endpoints
 
-## Validate Locally
+All API endpoints require a bearer token unless the request comes from the allowlisted WAN IP.
+
+```text
+GET /v1/health
+GET /v1/models
+GET /v1/models/recommend
+GET /v1/models/providers
+GET /v1/models/:provider/latest
+```
+
+Unprefixed `/models`, `/models/recommend`, `/models/providers`, and `/models/:provider/latest` mirror v1. The old `/models.json` and `/model-registry.json` registry documents are intentionally gone.
+
+Example:
 
 ```bash
-python3 scripts/validate_registry.py public/models.json
+curl -H "Authorization: Bearer $MODEL_REGISTRY_API_KEY" \
+  "https://ai.itsolver.au/v1/models/recommend?tier=fast"
 ```
 
-## Deployment
-
-The repository deploys `public/` to GitHub Pages on every push to `main`. No Cloudflare API token or deployment secret is required.
-
-GitHub Pages settings:
+Supported filters:
 
 ```text
-Source: GitHub Actions
-Custom domain: ai.itsolver.au
-Enforce HTTPS: enabled
+provider=openai|google|xai|anthropic
+tier=fast|balanced|best
+capability=vision|pdf|reasoning|toolCalling|structuredOutput
+maxCostPerMTok=2                    # AUD per million input tokens
+minContextWindow=200000
+useCase=support|coding|billing|billing-routine|billing-risky|billing-incident|voice
+careLevel=triage|standard|essential|premium|complex
+includeDeprecated=true
 ```
 
-DNS should point the `ai` subdomain at GitHub Pages:
+## Local Development
+
+```bash
+npm install
+npm test
+npm run build
+npm run dev
+```
+
+For local authenticated requests, create `.dev.vars`:
 
 ```text
-Type: CNAME
-Name: ai
-Target: itsolver.github.io
-Proxy status: DNS only
+MODEL_REGISTRY_API_KEY=local-secret
 ```
 
-Keep Cloudflare proxying disabled for this hostname so non-browser clients can fetch the registry without bot/WAF interference.
+Then call the local Worker with `Authorization: Bearer local-secret`.
+
+## Cloudflare Setup
+
+Create the KV namespace used for the normalized catalog cache and replace the placeholder IDs in `wrangler.toml`:
+
+```bash
+wrangler kv namespace create MODEL_CACHE
+wrangler kv namespace create MODEL_CACHE --preview
+```
+
+Set the API key secret:
+
+```bash
+wrangler secret put MODEL_REGISTRY_API_KEY
+```
+
+The default allowlisted IP is configured in `wrangler.toml`:
+
+```text
+ALLOWED_IPS=203.12.1.95
+```
+
+Deploy:
+
+```bash
+npm run deploy
+```
+
+GitHub Actions deploys the Worker on pushes to `main`. Configure repository secrets:
+
+```text
+CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID
+CLOUDFLARE_KV_NAMESPACE_ID
+CLOUDFLARE_KV_PREVIEW_NAMESPACE_ID
+```
+
+Optional benchmark-aware recommendations use Artificial Analysis. Configure:
+
+```bash
+wrangler secret put ARTIFICIAL_ANALYSIS_API_KEY
+```

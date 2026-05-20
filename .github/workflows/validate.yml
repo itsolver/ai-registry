@@ -1,4 +1,4 @@
-name: Validate and Deploy Registry
+name: Test and Deploy Worker
 
 on:
   pull_request:
@@ -11,50 +11,61 @@ permissions:
   contents: read
 
 concurrency:
-  group: github-pages
+  group: cloudflare-worker
   cancel-in-progress: false
 
 jobs:
-  validate:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up Node
+        uses: actions/setup-node@v6
         with:
-          python-version: "3.12"
+          node-version: "24"
+          cache: npm
 
-      - name: Validate registry
-        run: |
-          python scripts/validate_registry.py public/models.json
-          python scripts/validate_registry.py public/model-registry.json
-          cmp public/models.json public/model-registry.json
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run build
 
   deploy:
     if: github.event_name != 'pull_request'
-    needs: validate
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v6
-
-      - name: Upload static site
-        uses: actions/upload-pages-artifact@v5
+      - name: Set up Node
+        uses: actions/setup-node@v6
         with:
-          path: public
+          node-version: "24"
+          cache: npm
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure KV namespace IDs
+        run: |
+          test -n "$CLOUDFLARE_KV_NAMESPACE_ID"
+          test -n "$CLOUDFLARE_KV_PREVIEW_NAMESPACE_ID"
+          perl -0pi -e 's/replace-with-production-kv-namespace-id/$ENV{CLOUDFLARE_KV_NAMESPACE_ID}/g; s/replace-with-preview-kv-namespace-id/$ENV{CLOUDFLARE_KV_PREVIEW_NAMESPACE_ID}/g' wrangler.toml
+        env:
+          CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
+          CLOUDFLARE_KV_PREVIEW_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_PREVIEW_NAMESPACE_ID }}
+
+      - name: Deploy Worker
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

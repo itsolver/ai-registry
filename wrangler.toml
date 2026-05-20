@@ -1,0 +1,25 @@
+name = "ai-registry"
+main = "src/worker.ts"
+compatibility_date = "2026-05-19"
+workers_dev = false
+
+routes = [
+  { pattern = "ai.itsolver.au/*", zone_name = "itsolver.au" }
+]
+
+[triggers]
+crons = ["0 6 * * *"]
+
+[vars]
+ALLOWED_IPS = "203.12.1.95"
+MODELS_DEV_URL = "https://models.dev/api.json"
+FX_RATE_URL = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD"
+
+# Create this namespace with:
+#   wrangler kv namespace create MODEL_CACHE
+#   wrangler kv namespace create MODEL_CACHE --preview
+# Then replace both IDs below.
+[[kv_namespaces]]
+binding = "MODEL_CACHE"
+id = "f752d47f659f47439b254ce46ea7f698"
+preview_id = "ea6461f0c0f5440a8e5d75f957b97e87"

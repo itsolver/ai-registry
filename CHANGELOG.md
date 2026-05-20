@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-19
+
+- Replaced the static GitHub Pages registry with a private Cloudflare Workers API.
+- Added models.dev import, normalization, provider filtering, private auth, and recommendation endpoints.
+- Added a protected documentation homepage at `ai.itsolver.au`.
+- Removed the legacy `/models.json` and `/model-registry.json` registry contract.
+
 ## 2026-05-18
 
 - Created initial static AI model registry.

@@ -15,9 +15,8 @@ export const CAPABILITIES = [
 
 export const TIERS = ["fast", "balanced", "best"] as const;
 export const USE_CASES = [
-  "support",
+  "customer-support",
   "coding",
-  "billing",
   "billing-routine",
   "billing-risky",
   "billing-incident",
@@ -116,7 +115,8 @@ export interface ModelFilters {
   useCase?: UseCase;
   careLevel?: CareLevel;
   capability?: Capability;
-  maxCostPerMTok?: number;
+  maxInputCostPerMTok?: number;
+  maxOutputCostPerMTok?: number;
   minContextWindow?: number;
   includeDeprecated?: boolean;
 }
@@ -189,7 +189,10 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
   const useCase = asUseCase(params.get("useCase"));
   const careLevel = asCareLevel(params.get("careLevel"));
   const capability = asCapability(params.get("capability"));
-  const maxCostPerMTok = asFiniteNumber(params.get("maxCostPerMTok"));
+  const maxInputCostPerMTok =
+    asFiniteNumber(params.get("maxInputCostPerMTok")) ??
+    asFiniteNumber(params.get("maxCostPerMTok"));
+  const maxOutputCostPerMTok = asFiniteNumber(params.get("maxOutputCostPerMTok"));
   const minContextWindow = asFiniteNumber(params.get("minContextWindow"));
 
   return {
@@ -199,7 +202,8 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(useCase ? { useCase } : {}),
     ...(careLevel ? { careLevel } : {}),
     ...(capability ? { capability } : {}),
-    ...(maxCostPerMTok !== undefined ? { maxCostPerMTok } : {}),
+    ...(maxInputCostPerMTok !== undefined ? { maxInputCostPerMTok } : {}),
+    ...(maxOutputCostPerMTok !== undefined ? { maxOutputCostPerMTok } : {}),
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     includeDeprecated: params.get("includeDeprecated") === "true",
   };
@@ -255,8 +259,14 @@ export function filterModels(
       return false;
     }
     if (
-      filters.maxCostPerMTok !== undefined &&
-      model.pricing.inputPerMTok > filters.maxCostPerMTok
+      filters.maxInputCostPerMTok !== undefined &&
+      model.pricing.inputPerMTok > filters.maxInputCostPerMTok
+    ) {
+      return false;
+    }
+    if (
+      filters.maxOutputCostPerMTok !== undefined &&
+      model.pricing.outputPerMTok > filters.maxOutputCostPerMTok
     ) {
       return false;
     }
@@ -327,6 +337,7 @@ function asTier(value: string | null): Tier | undefined {
 }
 
 function asUseCase(value: string | null): UseCase | undefined {
+  if (value === "support") return "customer-support";
   return USE_CASES.find((useCase) => useCase === value);
 }
 
@@ -584,7 +595,7 @@ function compareRecommendations(
   filters: ModelFilters,
   catalog: Catalog,
 ): number {
-  if (!filters.useCase && !filters.careLevel) {
+  if (!filters.useCase) {
     return compareForTier(left, right, tier);
   }
 
@@ -600,14 +611,16 @@ function scoreRecommendation(
   filters: ModelFilters,
   catalog: Catalog,
 ): number {
-  const useCase = normalizeUseCase(filters.useCase);
+  const useCase = filters.useCase;
+  if (!useCase) return 0;
+
   const careLevel = filters.careLevel ?? defaultCareLevel(useCase);
   const signals = catalog.benchmarkSignals?.[modelKey(model)];
   const quality = qualityScore(model, signals, useCase);
   const latency = latencyScore(signals);
   const speed = speedScore(signals);
   const context = contextScore(model);
-  const cost = costScore(model);
+  const cost = costScore(model, useCase);
   const weights = scoringWeights(useCase, careLevel);
 
   return (
@@ -619,19 +632,15 @@ function scoreRecommendation(
   );
 }
 
-function normalizeUseCase(useCase: UseCase | undefined): Exclude<UseCase, "billing"> {
-  return useCase === "billing" || !useCase ? "billing-risky" : useCase;
-}
-
-function defaultCareLevel(useCase: Exclude<UseCase, "billing">): CareLevel {
-  if (useCase === "support" || useCase === "voice") return "standard";
+function defaultCareLevel(useCase: UseCase): CareLevel {
+  if (useCase === "customer-support" || useCase === "voice") return "standard";
   if (useCase === "billing-routine") return "standard";
   if (useCase === "billing-incident") return "complex";
   return "premium";
 }
 
 function scoringWeights(
-  useCase: Exclude<UseCase, "billing">,
+  useCase: UseCase,
   careLevel: CareLevel,
 ): { quality: number; latency: number; speed: number; context: number; cost: number } {
   if (useCase === "voice") {
@@ -668,7 +677,7 @@ function scoringWeights(
 function qualityScore(
   model: RegistryModel,
   signals: BenchmarkSignals | undefined,
-  useCase: Exclude<UseCase, "billing">,
+  useCase: UseCase,
 ): number {
   const fallback = familyQualityFallback(model);
   if (!signals) return fallback;
@@ -685,7 +694,7 @@ function qualityScore(
     );
   }
 
-  if (useCase === "support" || useCase === "voice") {
+  if (useCase === "customer-support" || useCase === "voice") {
     return weightedAverage(
       [
         [signals.tauTelecom, useCase === "voice" ? 0.35 : 0.25],
@@ -734,8 +743,13 @@ function contextScore(model: RegistryModel): number {
   return Math.min(model.contextWindow / 1_000_000, 1) * 100;
 }
 
-function costScore(model: RegistryModel): number {
-  const blended = model.pricing.inputPerMTok * 0.75 + model.pricing.outputPerMTok * 0.25;
+function costScore(model: RegistryModel, useCase?: UseCase): number {
+  const outputWeight =
+    useCase === "customer-support" || useCase === "voice" ? 0.6 : 0.25;
+  const inputWeight = 1 - outputWeight;
+  const blended =
+    model.pricing.inputPerMTok * inputWeight +
+    model.pricing.outputPerMTok * outputWeight;
   return 100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100;
 }
 

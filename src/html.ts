@@ -388,9 +388,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           <label for="b-usecase">Use case</label>
           <select id="b-usecase">
             <option value="">general</option>
-            <option value="support">support</option>
+            <option value="customer-support">customer support</option>
             <option value="coding">coding</option>
-            <option value="billing">billing</option>
             <option value="billing-routine">billing routine</option>
             <option value="billing-risky">billing risky</option>
             <option value="billing-incident">billing incident</option>
@@ -409,8 +408,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           </select>
         </div>
         <div class="b-field">
-          <label for="b-maxcost">Max AUD/MTok</label>
+          <label for="b-maxcost">Max input AUD/MTok</label>
           <input type="number" id="b-maxcost" min="0" step="0.1" placeholder="no limit">
+        </div>
+        <div class="b-field">
+          <label for="b-maxoutputcost">Max output AUD/MTok</label>
+          <input type="number" id="b-maxoutputcost" min="0" step="0.1" placeholder="no limit">
         </div>
         <div class="b-field">
           <label for="b-minctx">Min context (k)</label>
@@ -517,6 +520,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       usecase: document.getElementById('b-usecase'),
       carelevel: document.getElementById('b-carelevel'),
       maxcost: document.getElementById('b-maxcost'),
+      maxoutputcost: document.getElementById('b-maxoutputcost'),
       minctx: document.getElementById('b-minctx'),
       url: document.getElementById('b-url'),
       open: document.getElementById('b-open'),
@@ -599,7 +603,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (fields.capability.value) params.set('capability', fields.capability.value);
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
       if (fields.carelevel.value) params.set('careLevel', fields.carelevel.value);
-      if (fields.maxcost.value) params.set('maxCostPerMTok', fields.maxcost.value);
+      if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+      if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
       if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
       var qs = params.toString();
       return endpoint + (qs ? '?' + qs : '');

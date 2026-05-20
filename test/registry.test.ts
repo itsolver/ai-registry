@@ -80,11 +80,44 @@ describe("filtering and recommendations", () => {
     const models = filterModels(catalog.models, {
       provider: "openai",
       capability: "reasoning",
-      maxCostPerMTok: 3,
+      maxInputCostPerMTok: 3,
       minContextWindow: 300000,
     });
 
     expect(models.map((model) => model.id)).toEqual(["gpt-middle"]);
+  });
+
+  it("filters by output token cost separately from input token cost", () => {
+    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+    const models = filterModels(catalog.models, {
+      provider: "openai",
+      capability: "reasoning",
+      maxInputCostPerMTok: 20,
+      maxOutputCostPerMTok: 10,
+      includeDeprecated: true,
+    });
+
+    expect(models.map((model) => model.id)).toEqual(["gpt-middle"]);
+  });
+
+  it("parses customer support use case and keeps legacy input cost alias", () => {
+    const filters = parseFilters(
+      new URLSearchParams(
+        "useCase=customer-support&maxCostPerMTok=2&maxOutputCostPerMTok=8",
+      ),
+    );
+
+    expect(filters).toMatchObject({
+      useCase: "customer-support",
+      maxInputCostPerMTok: 2,
+      maxOutputCostPerMTok: 8,
+    });
+    expect(parseFilters(new URLSearchParams("useCase=support")).useCase).toBe(
+      "customer-support",
+    );
+    expect(parseFilters(new URLSearchParams("useCase=billing")).useCase).toBe(
+      undefined,
+    );
   });
 
   it("does not treat unsupported providers as any provider", () => {

@@ -43,7 +43,6 @@ tier=fast|balanced|best
 capability=vision|pdf|reasoning|toolCalling|structuredOutput
 maxInputCostPerMTok=2               # max input AUD per million tokens
 maxOutputCostPerMTok=10             # max output AUD per million tokens
-maxAudioCostPerHour=5               # max AUD per hour for voice models
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
 useCase=customer-support|coding|billing-routine|billing-risky|billing-incident|voice

@@ -175,6 +175,19 @@ describe("filtering and recommendations", () => {
       terminalBench: 86,
       instructionFollowing: 96,
     });
+    expect(catalog.models.find((model) => model.id === "gpt-cheap")?.benchmarks?.llm)
+      .toMatchObject({
+        tauTelecom: 40,
+        professional: 50,
+      });
+    expect(
+      catalog.models.find((model) => model.id === "gpt-cheap")?.benchmarks?.llm
+        ?.speed,
+    ).toBeUndefined();
+    expect(
+      catalog.models.find((model) => model.id === "gpt-cheap")?.benchmarks?.llm
+        ?.latency,
+    ).toBeUndefined();
   });
 
   it("uses Artificial Analysis speech-to-speech data for voice recommendations", () => {

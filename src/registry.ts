@@ -705,6 +705,7 @@ function benchmarkSignalsFromArtificialAnalysis(
       "tauTelecom",
       firstScore(evaluations, [
         "tau2_bench_telecom",
+        "tau2",
         "tau2_telecom",
         "tau2_bench",
         "tau_bench_telecom",
@@ -712,14 +713,27 @@ function benchmarkSignalsFromArtificialAnalysis(
     ),
     ...optionalSignal(
       "professional",
-      firstScore(evaluations, ["gdpval", "gdpval_index", "professional_index"]),
+      firstScore(evaluations, [
+        "gdpval",
+        "gdpval_aa",
+        "gdpval_normalized",
+        "gdpval_index",
+        "professional_index",
+      ]),
     ),
-    ...optionalSignal("speed", numberOrUndefined(model.median_output_tokens_per_second)),
+    ...optionalSignal(
+      "speed",
+      positiveNumberOrUndefined(
+        numberOrUndefined(model.median_output_tokens_per_second),
+      ),
+    ),
     ...optionalSignal(
       "latency",
-      numberOrUndefined(
-        model.median_time_to_first_token_seconds ??
-          model.median_time_to_first_answer_token,
+      positiveNumberOrUndefined(
+        numberOrUndefined(
+          model.median_time_to_first_token_seconds ??
+            model.median_time_to_first_answer_token,
+        ),
       ),
     ),
   };

@@ -165,9 +165,11 @@ export const artificialAnalysisFixture = {
         artificial_analysis_intelligence_index: 45,
         artificial_analysis_coding_index: 35,
         ifbench: 0.62,
+        tau2: 0.4,
+        gdpval_normalized: 0.5,
       },
-      median_output_tokens_per_second: 180,
-      median_time_to_first_token_seconds: 0.8,
+      median_output_tokens_per_second: 0,
+      median_time_to_first_token_seconds: 0,
     },
     {
       id: "aa-gpt-middle",

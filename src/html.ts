@@ -330,6 +330,12 @@ export const HOME_HTML = String.raw`<!doctype html>
       font-size: 0.78rem;
       margin-top: -0.7rem;
     }
+    .benchmark-panels {
+      margin-bottom: 2.2rem;
+    }
+    .benchmark-panel[hidden] {
+      display: none;
+    }
     .faq {
       margin: 1.2rem 0 2.2rem;
     }
@@ -528,37 +534,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     </div>
   </div>
 
-  <h2>Voice Benchmarks</h2>
-  <p>Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
-  <div class="voice-bench">
-    <div class="voice-head">
-      <strong>Current voice candidates</strong>
-      <span id="voiceSource">loading...</span>
-    </div>
-    <div class="voice-table-wrap">
-      <table class="voice-table">
-        <thead>
-          <tr>
-            <th data-table="voiceRows" data-sort="model">Model</th>
-            <th data-table="voiceRows" data-sort="agentic">τ-Voice</th>
-            <th data-table="voiceRows" data-sort="speech">Speech</th>
-            <th data-table="voiceRows" data-sort="telecom">Telecom</th>
-            <th data-table="voiceRows" data-sort="ttfa">TTFA</th>
-            <th data-table="voiceRows" data-sort="inputCost">Input AUD/hr</th>
-            <th data-table="voiceRows" data-sort="outputCost">Output AUD/hr</th>
-          </tr>
-        </thead>
-        <tbody id="voiceRows">
-          <tr><td class="empty" colspan="7">loading...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <h2>Use Case Benchmarks</h2>
-  <p class="bench-note">Text models are ranked from the cached Artificial Analysis LLM extract and shown with AUD output cost because generated responses are where support costs bite.</p>
-  <div class="bench-grid">
-    <div class="voice-bench">
+  <h2>Relevant Benchmark</h2>
+  <p class="bench-note" id="benchmarkHint">Select a use case in Build Your Query to bring the matching benchmark table into focus.</p>
+  <div class="benchmark-panels">
+    <div class="benchmark-panel" data-benchmark-panel="customer-support" hidden>
+      <p class="bench-note">Customer support models are ranked from the cached Artificial Analysis LLM extract, with AUD output cost weighted because generated replies are where support costs bite.</p>
+      <div class="voice-bench">
       <div class="voice-head">
         <strong>Customer support</strong>
         <span id="supportSource">loading...</span>
@@ -581,7 +562,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         </table>
       </div>
     </div>
-    <div class="voice-bench">
+    </div>
+    <div class="benchmark-panel" data-benchmark-panel="coding" hidden>
+      <p class="bench-note">Coding models are ranked with TerminalBench, coding score, IFBench, intelligence, speed, context, and AUD output cost in mind.</p>
+      <div class="voice-bench">
       <div class="voice-head">
         <strong>Coding</strong>
         <span id="codingSource">loading...</span>
@@ -604,7 +588,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         </table>
       </div>
     </div>
-    <div class="voice-bench">
+    </div>
+    <div class="benchmark-panel" data-benchmark-panel="billing" hidden>
+      <p class="bench-note">Billing / Xero models are ranked for instruction following, professional-task ability, intelligence, coding judgment, and output cost.</p>
+      <div class="voice-bench">
       <div class="voice-head">
         <strong>Billing / Xero</strong>
         <span id="billingSource">loading...</span>
@@ -625,6 +612,34 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             <tr><td class="empty" colspan="6">loading...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+    </div>
+    <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
+      <p class="bench-note">Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
+      <div class="voice-bench">
+        <div class="voice-head">
+          <strong>Current voice candidates</strong>
+          <span id="voiceSource">loading...</span>
+        </div>
+        <div class="voice-table-wrap">
+          <table class="voice-table">
+            <thead>
+              <tr>
+                <th data-table="voiceRows" data-sort="model">Model</th>
+                <th data-table="voiceRows" data-sort="agentic">τ-Voice</th>
+                <th data-table="voiceRows" data-sort="speech">Speech</th>
+                <th data-table="voiceRows" data-sort="telecom">Telecom</th>
+                <th data-table="voiceRows" data-sort="ttfa">TTFA</th>
+                <th data-table="voiceRows" data-sort="inputCost">Input AUD/hr</th>
+                <th data-table="voiceRows" data-sort="outputCost">Output AUD/hr</th>
+              </tr>
+            </thead>
+            <tbody id="voiceRows">
+              <tr><td class="empty" colspan="7">loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -848,6 +863,26 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (useCase === 'customer-support') return 'supportRows';
       if (useCase && useCase.indexOf('billing-') === 0) return 'billingRows';
       return '';
+    }
+
+    function benchmarkPanelForUseCase(useCase) {
+      if (useCase === 'voice') return 'voice';
+      if (useCase === 'coding') return 'coding';
+      if (useCase === 'customer-support') return 'customer-support';
+      if (useCase && useCase.indexOf('billing-') === 0) return 'billing';
+      return '';
+    }
+
+    function updateBenchmarkPanel(useCase) {
+      var active = benchmarkPanelForUseCase(useCase);
+      document.querySelectorAll('[data-benchmark-panel]').forEach(function (panel) {
+        panel.hidden = panel.getAttribute('data-benchmark-panel') !== active;
+      });
+      var hint = document.getElementById('benchmarkHint');
+      if (!hint) return;
+      hint.textContent = active
+        ? 'Showing the benchmark table for the selected use case.'
+        : 'Select a use case in Build Your Query to bring the matching benchmark table into focus.';
     }
 
     function selectedRowForTable(tableId, modelId, useCase) {
@@ -1267,6 +1302,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     function refreshBuilder() {
       var path = buildPath();
       var full = origin + path;
+      updateBenchmarkPanel(fields.usecase.value);
       fields.url.textContent = full;
       fields.url.href = path;
       fields.open.href = path;

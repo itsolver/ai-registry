@@ -312,10 +312,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       letter-spacing: 0.06em;
       text-transform: uppercase;
     }
-    .voice-table .best { background: #e3f6de; }
     .voice-table .selected td {
-      background: #ffe2b8;
-      box-shadow: inset 0 1px 0 rgba(212,82,74,0.18), inset 0 -1px 0 rgba(212,82,74,0.18);
+      background: #dff4d8;
+      box-shadow: inset 0 1px 0 rgba(63,140,60,0.2), inset 0 -1px 0 rgba(63,140,60,0.2);
     }
     .voice-table .empty {
       color: var(--muted);
@@ -330,6 +329,17 @@ export const HOME_HTML = String.raw`<!doctype html>
       color: var(--muted);
       font-size: 0.78rem;
       margin-top: -0.7rem;
+    }
+    .faq {
+      margin: 1.2rem 0 2.2rem;
+    }
+    .faq h3 {
+      margin-top: 1.1rem;
+      margin-bottom: 0.2rem;
+    }
+    .faq p {
+      margin-top: 0;
+      color: var(--muted);
     }
     .pulse {
       width: 7px;
@@ -619,6 +629,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     </div>
   </div>
 
+  <h2>Frequently Asked Questions</h2>
+  <div class="faq" id="faqRows">
+    <p>loading...</p>
+  </div>
+
   <h2>Endpoints</h2>
   <p>All endpoints are available at <code>/v1/...</code>. Unprefixed endpoints mirror v1 for convenience.</p>
 
@@ -758,7 +773,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     var benchmarkTables = {};
-    var selectedBenchmark = { tableId: '', modelId: '' };
+    var selectedBenchmark = { tableId: '', modelId: '', useCase: '' };
+    var allModels = [];
 
     function sortValue(value) {
       return value === undefined || value === null || Number.isNaN(value) ? -Infinity : value;
@@ -778,7 +794,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         columns: columns,
         sortKey: defaultSortKey,
         direction: defaultDirection || 'desc',
-        selectedId: selectedBenchmark.tableId === tableId ? selectedBenchmark.modelId : ''
+        selectedId: selectedBenchmark.tableId === tableId ? selectedBenchmark.modelId : '',
+        selectedRow: selectedBenchmark.tableId === tableId
+          ? selectedRowForTable(tableId, selectedBenchmark.modelId, selectedBenchmark.useCase)
+          : undefined
       };
       drawSortableTable(tableId);
     }
@@ -803,6 +822,9 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         }
         return (a - b) * direction;
       });
+      if (state.selectedId && !sorted.some(function (row) { return benchmarkRowId(row) === state.selectedId; }) && state.selectedRow) {
+        sorted.push(state.selectedRow);
+      }
       var visible = sorted.slice(0, 8);
       if (state.selectedId && !visible.some(function (row) { return benchmarkRowId(row) === state.selectedId; })) {
         var selectedRow = sorted.find(function (row) { return benchmarkRowId(row) === state.selectedId; });
@@ -811,7 +833,6 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
       tbody.innerHTML = visible.map(function (row, index) {
         var classes = [];
-        if (index === 0) classes.push('best');
         if (benchmarkRowId(row) === state.selectedId) classes.push('selected');
         return '<tr' + (classes.length ? ' class="' + classes.join(' ') + '"' : '') + '>' +
           state.columns.map(function (item) {
@@ -829,14 +850,29 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return '';
     }
 
+    function selectedRowForTable(tableId, modelId, useCase) {
+      var model = allModels.find(function (item) { return item.id === modelId; });
+      if (!model) return undefined;
+      if (tableId === 'voiceRows') return model;
+      if (tableId === 'supportRows') return { model: model, score: textUseCaseScore(model, 'customer-support') };
+      if (tableId === 'codingRows') return { model: model, score: textUseCaseScore(model, 'coding') };
+      if (tableId === 'billingRows') return { model: model, score: textUseCaseScore(model, useCase || 'billing') };
+      return undefined;
+    }
+
     function highlightBenchmark(modelId, useCase) {
       selectedBenchmark = {
         tableId: benchmarkTableForUseCase(useCase),
-        modelId: modelId || ''
+        modelId: modelId || '',
+        useCase: useCase || ''
       };
       Object.keys(benchmarkTables).forEach(function (tableId) {
         benchmarkTables[tableId].selectedId =
           tableId === selectedBenchmark.tableId ? selectedBenchmark.modelId : '';
+        benchmarkTables[tableId].selectedRow =
+          tableId === selectedBenchmark.tableId
+            ? selectedRowForTable(tableId, selectedBenchmark.modelId, selectedBenchmark.useCase)
+            : undefined;
         drawSortableTable(tableId);
       });
     }
@@ -860,6 +896,16 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var cost = voiceCost(model);
       var costScore = Number.isFinite(cost) ? Math.max(0, 1 - Math.log1p(cost) / Math.log1p(20)) : 0;
       return agentic * 0.45 + speech * 0.25 + telecom * 0.1 + ttfa * 0.08 + costScore * 0.12;
+    }
+
+    function voiceBenchmarkModels(models) {
+      return models.filter(function (model) {
+        var pricing = model.pricing || {};
+        return !model.deprecated &&
+          model.benchmarks &&
+          model.benchmarks.voice &&
+          typeof pricing.benchmarkInputAudioPerHour === 'number';
+      });
     }
 
     function renderVoiceBenchmarks(models) {
@@ -1012,6 +1058,102 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       setText('billingSource', billing.length ? 'AA LLM extract' : 'unavailable');
     }
 
+    function topBy(items, valueFn, direction) {
+      return items.slice().sort(function (left, right) {
+        return ((valueFn(right) || 0) - (valueFn(left) || 0)) * (direction === 'asc' ? -1 : 1);
+      });
+    }
+
+    function modelName(model) {
+      return model ? escapeHtml(model.name) : 'Unavailable';
+    }
+
+    function topList(rows, valueFn, formatValue) {
+      return rows.slice(0, 3).map(function (row, index) {
+        return (index + 1) + '. ' + modelName(row.model || row) + ' (' + formatValue(valueFn(row)) + ')';
+      }).join(', ');
+    }
+
+    function renderFaq(models) {
+      var faq = document.getElementById('faqRows');
+      if (!faq) return;
+
+      var support = topBy(textRows(models, 'customer-support'), function (row) { return row.score; });
+      var coding = topBy(textRows(models, 'coding'), function (row) { return row.score; });
+      var billing = topBy(textRows(models, 'billing'), function (row) { return row.score; });
+      var voice = topBy(voiceBenchmarkModels(models), voiceScore);
+      var cheapestVoice = topBy(voiceBenchmarkModels(models), voiceCost, 'asc');
+      var cheapestOutput = topBy(
+        textRows(models, 'customer-support'),
+        function (row) { return outputCost(row); },
+        'asc'
+      );
+      var lowestLatency = topBy(
+        textRows(models, 'customer-support').filter(function (row) { return typeof llmSignals(row).latency === 'number'; }),
+        function (row) { return llmSignals(row).latency; },
+        'asc'
+      );
+
+      var items = [
+        {
+          q: 'Which model should customer support use?',
+          a: support[0]
+            ? modelName(support[0].model) + ' currently ranks highest for customer support in this registry, using IFBench, telecom workflow, intelligence, speed, and AUD output cost.'
+            : 'No customer support benchmark data is currently available.'
+        },
+        {
+          q: 'What are the top customer support models?',
+          a: support.length
+            ? 'The top customer support models are: ' + topList(support, function (row) { return row.score; }, score) + '.'
+            : 'No customer support benchmark data is currently available.'
+        },
+        {
+          q: 'Which model should coding use?',
+          a: coding[0]
+            ? modelName(coding[0].model) + ' currently ranks highest for coding, weighted toward TerminalBench, coding score, IFBench, intelligence, and output cost.'
+            : 'No coding benchmark data is currently available.'
+        },
+        {
+          q: 'Which model should billing / Xero work use?',
+          a: billing[0]
+            ? modelName(billing[0].model) + ' currently ranks highest for billing / Xero-style work, weighted toward instruction following, intelligence, professional-task score, coding, and TerminalBench.'
+            : 'No billing benchmark data is currently available.'
+        },
+        {
+          q: 'Which voice model is strongest overall?',
+          a: voice[0]
+            ? modelName(voice[0]) + ' currently ranks highest for voice in this registry based on τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
+            : 'No voice benchmark data is currently available.'
+        },
+        {
+          q: 'Which voice model is cheapest on benchmark input audio?',
+          a: cheapestVoice[0]
+            ? modelName(cheapestVoice[0]) + ' is the cheapest voice candidate on AA benchmark input-audio cost at ' + money(voiceCost(cheapestVoice[0])) + ' AUD/hr.'
+            : 'No voice benchmark pricing is currently available.'
+        },
+        {
+          q: 'Which text model has the lowest output price?',
+          a: cheapestOutput[0]
+            ? modelName(cheapestOutput[0].model) + ' has the lowest output price among benchmarked text candidates at ' + money(outputCost(cheapestOutput[0])) + ' AUD/MTok.'
+            : 'No text output pricing is currently available.'
+        },
+        {
+          q: 'Which benchmarked text model has the lowest latency?',
+          a: lowestLatency[0]
+            ? modelName(lowestLatency[0].model) + ' has the lowest available time to first token at ' + seconds(llmSignals(lowestLatency[0]).latency) + '.'
+            : 'No latency benchmark data is currently available.'
+        },
+        {
+          q: 'How are recommendations compared here?',
+          a: 'The registry combines models.dev pricing and model metadata with cached Artificial Analysis benchmark signals. Customer support gives extra weight to output cost and instruction following; coding emphasizes TerminalBench and coding; billing emphasizes instruction following and professional-task ability; voice uses AA speech-to-speech benchmark pricing and latency.'
+        }
+      ];
+
+      faq.innerHTML = items.map(function (item) {
+        return '<h3>' + escapeHtml(item.q) + '</h3><p>' + item.a + '</p>';
+      }).join('');
+    }
+
     fetch('/v1/health')
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
       .then(function (data) {
@@ -1038,7 +1180,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     fetch('/v1/models')
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
-      .then(function (data) { renderTextBenchmarks(data.models || []); })
+      .then(function (data) {
+        allModels = data.models || [];
+        renderTextBenchmarks(allModels);
+        renderFaq(allModels);
+      })
       .catch(function () {
         ['supportRows', 'codingRows', 'billingRows'].forEach(function (id) {
           var rows = document.getElementById(id);
@@ -1047,6 +1193,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         setText('supportSource', 'unavailable');
         setText('codingSource', 'unavailable');
         setText('billingSource', 'unavailable');
+        var faq = document.getElementById('faqRows');
+        if (faq) faq.innerHTML = '<p>FAQ data unavailable.</p>';
       });
 
     document.addEventListener('click', function (event) {

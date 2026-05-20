@@ -170,6 +170,12 @@ describe("filtering and recommendations", () => {
     ).toBe("gpt-expensive");
   });
 
+  it("does not fall back to text models for voice recommendations", () => {
+    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+
+    expect(recommendModel(catalog, { provider: "xai", useCase: "voice" })).toBeUndefined();
+  });
+
   it("does not recommend embedding models", () => {
     const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
 

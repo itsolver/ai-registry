@@ -285,8 +285,8 @@ export function recommendModel(
   filters: ModelFilters,
 ): RegistryModel | undefined {
   const tier = filters.tier ?? "fast";
-  const matches = filterModels(catalog.models, filters).filter(
-    isRecommendationCandidate,
+  const matches = filterModels(catalog.models, filters).filter((model) =>
+    isRecommendationCandidate(model, filters.useCase),
   );
 
   return [...matches].sort((left, right) =>
@@ -303,10 +303,27 @@ export function latestForProvider(
     .sort(compareNewest)[0];
 }
 
-export function isRecommendationCandidate(model: RegistryModel): boolean {
+export function isRecommendationCandidate(
+  model: RegistryModel,
+  useCase?: UseCase,
+): boolean {
   const family = model.family.toLowerCase();
   const id = model.id.toLowerCase();
   const searchable = `${model.id} ${model.name} ${model.family}`.toLowerCase();
+
+  if (useCase === "voice") {
+    return (
+      !model.deprecated &&
+      !model.openWeights &&
+      model.modalities.input.includes("audio") &&
+      model.modalities.output.includes("audio") &&
+      model.pricing.inputPerMTok > 0 &&
+      model.pricing.outputPerMTok > 0 &&
+      RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES[model.provider].some((prefix) =>
+        family.startsWith(prefix),
+      )
+    );
+  }
 
   return (
     !model.deprecated &&
@@ -396,7 +413,7 @@ function assignTiers(models: RegistryModel[]): RegistryModel[] {
   for (const provider of SUPPORTED_PROVIDERS) {
     const candidates = models
       .filter((model) => model.provider === provider)
-      .filter(isRecommendationCandidate)
+      .filter((model) => isRecommendationCandidate(model))
       .sort(compareCheapest);
 
     const firstBreak = Math.ceil(candidates.length / 3);

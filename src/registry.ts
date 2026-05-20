@@ -1,3 +1,8 @@
+import {
+  AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+  AA_SPEECH_TO_SPEECH_MODELS,
+} from "./generated/aa-speech-to-speech";
+
 export const SUPPORTED_PROVIDERS = [
   "openai",
   "google",
@@ -57,10 +62,26 @@ export type UseCase = (typeof USE_CASES)[number];
 export type CareLevel = (typeof CARE_LEVELS)[number];
 
 export interface ModelPricing {
-  inputPerMTok: number;
-  outputPerMTok: number;
+  inputPerMTok?: number;
+  outputPerMTok?: number;
   cacheReadPerMTok?: number;
   cacheWritePerMTok?: number;
+  audioInputPerHour?: number;
+  audioOutputPerHour?: number;
+  benchmarkInputAudioPerHour?: number;
+  benchmarkCostPerTask?: number;
+}
+
+export interface VoiceBenchmarks {
+  speechReasoning?: number;
+  agenticPerformance?: number;
+  telecomAgenticPerformance?: number;
+  retailAgenticPerformance?: number;
+  airlineAgenticPerformance?: number;
+  conversationalDynamics?: number;
+  timeToFirstAudioSeconds?: number;
+  source: "artificialanalysis";
+  extractedAt: string;
 }
 
 export interface ExchangeRate {
@@ -90,6 +111,9 @@ export interface RegistryModel {
   tier: Tier;
   deprecated: boolean;
   updatedAt: string;
+  benchmarks?: {
+    voice?: VoiceBenchmarks;
+  };
 }
 
 export interface ProviderSummary {
@@ -117,6 +141,8 @@ export interface ModelFilters {
   capability?: Capability;
   maxInputCostPerMTok?: number;
   maxOutputCostPerMTok?: number;
+  maxAudioInputCostPerHour?: number;
+  maxAudioOutputCostPerHour?: number;
   minContextWindow?: number;
   includeDeprecated?: boolean;
 }
@@ -182,6 +208,27 @@ export interface BenchmarkSignals {
   latency?: number;
 }
 
+interface ArtificialAnalysisSpeechToSpeechModel {
+  id: string;
+  name: string;
+  shortName: string;
+  slug: string;
+  provider: string;
+  providerName: string;
+  modelSlug: string;
+  bbaScore?: number;
+  tauVoiceAggScore?: number;
+  tauVoiceTelecomScore?: number;
+  tauVoiceRetailScore?: number;
+  tauVoiceAirlineScore?: number;
+  fdbScore?: number;
+  timeToFirstAudioSeconds?: number;
+  costPerHourOfInputAudio?: number;
+  pricePerHourInput?: number;
+  pricePerHourOutput?: number;
+  averageCostPerTask?: number;
+}
+
 export function parseFilters(params: URLSearchParams): ModelFilters {
   const providerParam = params.get("provider");
   const provider = asProvider(providerParam);
@@ -193,6 +240,12 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     asFiniteNumber(params.get("maxInputCostPerMTok")) ??
     asFiniteNumber(params.get("maxCostPerMTok"));
   const maxOutputCostPerMTok = asFiniteNumber(params.get("maxOutputCostPerMTok"));
+  const maxAudioInputCostPerHour =
+    asFiniteNumber(params.get("maxAudioInputCostPerHour")) ??
+    asFiniteNumber(params.get("maxAudioCostPerHour"));
+  const maxAudioOutputCostPerHour = asFiniteNumber(
+    params.get("maxAudioOutputCostPerHour"),
+  );
   const minContextWindow = asFiniteNumber(params.get("minContextWindow"));
 
   return {
@@ -204,6 +257,12 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(capability ? { capability } : {}),
     ...(maxInputCostPerMTok !== undefined ? { maxInputCostPerMTok } : {}),
     ...(maxOutputCostPerMTok !== undefined ? { maxOutputCostPerMTok } : {}),
+    ...(maxAudioInputCostPerHour !== undefined
+      ? { maxAudioInputCostPerHour }
+      : {}),
+    ...(maxAudioOutputCostPerHour !== undefined
+      ? { maxAudioOutputCostPerHour }
+      : {}),
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     includeDeprecated: params.get("includeDeprecated") === "true",
   };
@@ -215,7 +274,7 @@ export function normalizeModelsDev(
   exchangeRate?: ExchangeRate,
   artificialAnalysisModels: ArtificialAnalysisModel[] = [],
 ): Catalog {
-  const models: RegistryModel[] = [];
+  const models: RegistryModel[] = normalizeSpeechToSpeechModels(exchangeRate);
 
   for (const provider of SUPPORTED_PROVIDERS) {
     const rawProvider = source[provider];
@@ -251,6 +310,7 @@ export function filterModels(
     if (filters.unsupportedProvider) return false;
     if (!filters.includeDeprecated && model.deprecated) return false;
     if (filters.provider && model.provider !== filters.provider) return false;
+    if (filters.useCase === "voice" && !isVoiceModel(model)) return false;
     if (filters.tier && model.tier !== filters.tier) return false;
     if (
       filters.capability &&
@@ -260,13 +320,29 @@ export function filterModels(
     }
     if (
       filters.maxInputCostPerMTok !== undefined &&
-      model.pricing.inputPerMTok > filters.maxInputCostPerMTok
+      (model.pricing.inputPerMTok === undefined ||
+        model.pricing.inputPerMTok > filters.maxInputCostPerMTok)
     ) {
       return false;
     }
     if (
       filters.maxOutputCostPerMTok !== undefined &&
-      model.pricing.outputPerMTok > filters.maxOutputCostPerMTok
+      (model.pricing.outputPerMTok === undefined ||
+        model.pricing.outputPerMTok > filters.maxOutputCostPerMTok)
+    ) {
+      return false;
+    }
+    if (
+      filters.maxAudioInputCostPerHour !== undefined &&
+      (audioInputCost(model) === undefined ||
+        audioInputCost(model)! > filters.maxAudioInputCostPerHour)
+    ) {
+      return false;
+    }
+    if (
+      filters.maxAudioOutputCostPerHour !== undefined &&
+      (model.pricing.audioOutputPerHour === undefined ||
+        model.pricing.audioOutputPerHour > filters.maxAudioOutputCostPerHour)
     ) {
       return false;
     }
@@ -307,22 +383,11 @@ export function isRecommendationCandidate(
   model: RegistryModel,
   useCase?: UseCase,
 ): boolean {
-  const family = model.family.toLowerCase();
   const id = model.id.toLowerCase();
   const searchable = `${model.id} ${model.name} ${model.family}`.toLowerCase();
 
   if (useCase === "voice") {
-    return (
-      !model.deprecated &&
-      !model.openWeights &&
-      model.modalities.input.includes("audio") &&
-      model.modalities.output.includes("audio") &&
-      model.pricing.inputPerMTok > 0 &&
-      model.pricing.outputPerMTok > 0 &&
-      RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES[model.provider].some((prefix) =>
-        family.startsWith(prefix),
-      )
-    );
+    return isVoiceModel(model);
   }
 
   return (
@@ -330,14 +395,32 @@ export function isRecommendationCandidate(
     !model.openWeights &&
     model.modalities.input.includes("text") &&
     model.modalities.output.includes("text") &&
+    model.pricing.inputPerMTok !== undefined &&
     model.pricing.inputPerMTok > 0 &&
+    model.pricing.outputPerMTok !== undefined &&
     model.pricing.outputPerMTok > 0 &&
-    RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES[model.provider].some((prefix) =>
-      family.startsWith(prefix),
-    ) &&
+    providerFamilyAllowed(model) &&
     !NON_WORK_MODEL_PATTERNS.some((pattern) => searchable.includes(pattern)) &&
     !id.includes("embedding") &&
     model.outputLimit > 0
+  );
+}
+
+function isVoiceModel(model: RegistryModel): boolean {
+  return (
+    !model.deprecated &&
+    !model.openWeights &&
+    model.modalities.input.includes("audio") &&
+    model.modalities.output.includes("audio") &&
+    hasPositiveAudioPrice(model) &&
+    providerFamilyAllowed(model)
+  );
+}
+
+function providerFamilyAllowed(model: RegistryModel): boolean {
+  const family = model.family.toLowerCase();
+  return RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES[model.provider].some((prefix) =>
+    family.startsWith(prefix),
   );
 }
 
@@ -405,6 +488,89 @@ function normalizeModel(
     deprecated: raw.status === "deprecated",
     updatedAt,
   };
+}
+
+function normalizeSpeechToSpeechModels(
+  exchangeRate?: ExchangeRate,
+): RegistryModel[] {
+  return (AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[])
+    .map((model) => normalizeSpeechToSpeechModel(model, exchangeRate))
+    .filter((model): model is RegistryModel => model !== undefined);
+}
+
+function normalizeSpeechToSpeechModel(
+  model: ArtificialAnalysisSpeechToSpeechModel,
+  exchangeRate?: ExchangeRate,
+): RegistryModel | undefined {
+  const provider = asProvider(model.provider);
+  if (!provider) return undefined;
+
+  const pricing: ModelPricing = {
+    ...optionalNumberPrice("audioInputPerHour", model.pricePerHourInput),
+    ...optionalNumberPrice("audioOutputPerHour", model.pricePerHourOutput),
+    ...optionalNumberPrice(
+      "benchmarkInputAudioPerHour",
+      positiveNumberOrUndefined(model.costPerHourOfInputAudio),
+    ),
+    ...optionalNumberPrice("benchmarkCostPerTask", model.averageCostPerTask),
+  };
+
+  return {
+    id: model.slug,
+    provider,
+    name: model.shortName || model.name,
+    family: speechFamily(provider, model.modelSlug),
+    contextWindow: 0,
+    outputLimit: 0,
+    pricing: exchangeRate ? convertPricing(pricing, exchangeRate) : pricing,
+    capabilities: {
+      vision: false,
+      pdf: false,
+      reasoning: model.bbaScore !== undefined,
+      toolCalling: model.tauVoiceAggScore !== undefined,
+      structuredOutput: false,
+    },
+    modalities: {
+      input: ["audio"],
+      output: ["audio"],
+    },
+    openWeights: false,
+    tier: "fast",
+    deprecated: false,
+    updatedAt: AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+    benchmarks: {
+      voice: {
+        ...optionalBenchmark("speechReasoning", model.bbaScore),
+        ...optionalBenchmark("agenticPerformance", model.tauVoiceAggScore),
+        ...optionalBenchmark(
+          "telecomAgenticPerformance",
+          model.tauVoiceTelecomScore,
+        ),
+        ...optionalBenchmark(
+          "retailAgenticPerformance",
+          model.tauVoiceRetailScore,
+        ),
+        ...optionalBenchmark(
+          "airlineAgenticPerformance",
+          model.tauVoiceAirlineScore,
+        ),
+        ...optionalBenchmark("conversationalDynamics", model.fdbScore),
+        ...optionalBenchmark(
+          "timeToFirstAudioSeconds",
+          model.timeToFirstAudioSeconds,
+        ),
+        source: "artificialanalysis",
+        extractedAt: AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+      },
+    },
+  };
+}
+
+function speechFamily(provider: ProviderId, modelSlug: string): string {
+  if (provider === "openai") return "gpt-realtime";
+  if (provider === "google") return "gemini-live";
+  if (provider === "xai") return "grok-voice";
+  return modelSlug;
 }
 
 function assignTiers(models: RegistryModel[]): RegistryModel[] {
@@ -588,7 +754,7 @@ function compareForTier(
     return (
       compareNewest(left, right) ||
       right.contextWindow - left.contextWindow ||
-      right.pricing.inputPerMTok - left.pricing.inputPerMTok ||
+      cheapestPrice(right) - cheapestPrice(left) ||
       left.id.localeCompare(right.id)
     );
   }
@@ -634,7 +800,7 @@ function scoreRecommendation(
   const careLevel = filters.careLevel ?? defaultCareLevel(useCase);
   const signals = catalog.benchmarkSignals?.[modelKey(model)];
   const quality = qualityScore(model, signals, useCase);
-  const latency = latencyScore(signals);
+  const latency = latencyScore(signals, model, useCase);
   const speed = speedScore(signals);
   const context = contextScore(model);
   const cost = costScore(model, useCase);
@@ -661,7 +827,7 @@ function scoringWeights(
   careLevel: CareLevel,
 ): { quality: number; latency: number; speed: number; context: number; cost: number } {
   if (useCase === "voice") {
-    return { quality: 0.28, latency: 0.28, speed: 0.18, context: 0.04, cost: 0.22 };
+    return { quality: 0.45, latency: 0.2, speed: 0, context: 0, cost: 0.35 };
   }
 
   if (useCase === "coding") {
@@ -697,6 +863,17 @@ function qualityScore(
   useCase: UseCase,
 ): number {
   const fallback = familyQualityFallback(model);
+  if (useCase === "voice") {
+    const voice = model.benchmarks?.voice;
+    return (
+      ((voice?.agenticPerformance ?? 0) * 0.45 +
+        (voice?.speechReasoning ?? 0) * 0.35 +
+        (voice?.telecomAgenticPerformance ?? 0) * 0.15 +
+        (voice?.conversationalDynamics ?? 0) * 0.05) *
+      100
+    );
+  }
+
   if (!signals) return fallback;
 
   if (useCase === "coding") {
@@ -711,10 +888,10 @@ function qualityScore(
     );
   }
 
-  if (useCase === "customer-support" || useCase === "voice") {
+  if (useCase === "customer-support") {
     return weightedAverage(
       [
-        [signals.tauTelecom, useCase === "voice" ? 0.35 : 0.25],
+        [signals.tauTelecom, 0.25],
         [signals.instructionFollowing, 0.3],
         [signals.intelligence, 0.25],
         [signals.professional, 0.1],
@@ -746,7 +923,16 @@ function familyQualityFallback(model: RegistryModel): number {
   return 62;
 }
 
-function latencyScore(signals: BenchmarkSignals | undefined): number {
+function latencyScore(
+  signals: BenchmarkSignals | undefined,
+  model?: RegistryModel,
+  useCase?: UseCase,
+): number {
+  if (useCase === "voice") {
+    const ttfa = model?.benchmarks?.voice?.timeToFirstAudioSeconds;
+    if (ttfa !== undefined) return 100 - Math.min(ttfa / 5, 1) * 100;
+  }
+
   if (signals?.latency === undefined) return 50;
   return 100 - Math.min(signals.latency / 20, 1) * 100;
 }
@@ -761,12 +947,19 @@ function contextScore(model: RegistryModel): number {
 }
 
 function costScore(model: RegistryModel, useCase?: UseCase): number {
+  if (useCase === "voice") {
+    const cost = voiceCost(model);
+    return cost === undefined
+      ? 0
+      : 100 - Math.min(Math.log1p(cost) / Math.log1p(20), 1) * 100;
+  }
+
   const outputWeight =
-    useCase === "customer-support" || useCase === "voice" ? 0.6 : 0.25;
+    useCase === "customer-support" ? 0.6 : 0.25;
   const inputWeight = 1 - outputWeight;
   const blended =
-    model.pricing.inputPerMTok * inputWeight +
-    model.pricing.outputPerMTok * outputWeight;
+    (model.pricing.inputPerMTok ?? 100) * inputWeight +
+    (model.pricing.outputPerMTok ?? 100) * outputWeight;
   return 100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100;
 }
 
@@ -788,10 +981,35 @@ function weightedAverage(
 
 function compareCheapest(left: RegistryModel, right: RegistryModel): number {
   return (
-    left.pricing.inputPerMTok - right.pricing.inputPerMTok ||
-    left.pricing.outputPerMTok - right.pricing.outputPerMTok ||
+    cheapestPrice(left) - cheapestPrice(right) ||
     compareNewest(left, right)
   );
+}
+
+function cheapestPrice(model: RegistryModel): number {
+  return (
+    model.pricing.inputPerMTok ??
+    voiceCost(model) ??
+    model.pricing.outputPerMTok ??
+    Number.POSITIVE_INFINITY
+  );
+}
+
+function voiceCost(model: RegistryModel): number | undefined {
+  const input = audioInputCost(model);
+  const output = model.pricing.audioOutputPerHour;
+  if (input !== undefined && output !== undefined) return input * 0.6 + output * 0.4;
+  return input ?? output;
+}
+
+function audioInputCost(model: RegistryModel): number | undefined {
+  return model.pricing.benchmarkInputAudioPerHour ?? model.pricing.audioInputPerHour;
+}
+
+function hasPositiveAudioPrice(model: RegistryModel): boolean {
+  const input = audioInputCost(model);
+  const output = model.pricing.audioOutputPerHour;
+  return (input !== undefined && input > 0) || (output !== undefined && output > 0);
 }
 
 function compareNewest(left: RegistryModel, right: RegistryModel): number {
@@ -802,8 +1020,9 @@ function compareNewest(left: RegistryModel, right: RegistryModel): number {
 }
 
 function fallbackTier(model: RegistryModel): Tier {
-  if (model.pricing.inputPerMTok <= 1) return "fast";
-  if (model.pricing.inputPerMTok <= 5) return "balanced";
+  const price = cheapestPrice(model);
+  if (price <= 1) return "fast";
+  if (price <= 5) return "balanced";
   return "best";
 }
 
@@ -843,13 +1062,35 @@ function optionalPrice(
     : {};
 }
 
+function optionalNumberPrice(
+  key:
+    | "audioInputPerHour"
+    | "audioOutputPerHour"
+    | "benchmarkInputAudioPerHour"
+    | "benchmarkCostPerTask",
+  value: number | undefined,
+): Partial<ModelPricing> {
+  return value === undefined ? {} : { [key]: value };
+}
+
+function optionalBenchmark<K extends keyof Omit<VoiceBenchmarks, "source" | "extractedAt">>(
+  key: K,
+  value: number | undefined,
+): Pick<VoiceBenchmarks, K> | Record<string, never> {
+  return value === undefined ? {} : ({ [key]: value } as Pick<VoiceBenchmarks, K>);
+}
+
+function positiveNumberOrUndefined(value: number | undefined): number | undefined {
+  return value === undefined || value <= 0 ? undefined : value;
+}
+
 function convertPricing(
   pricing: ModelPricing,
   exchangeRate: ExchangeRate,
 ): ModelPricing {
   return {
-    inputPerMTok: audValue(pricing.inputPerMTok, exchangeRate.rate),
-    outputPerMTok: audValue(pricing.outputPerMTok, exchangeRate.rate),
+    ...optionalAudPrice("inputPerMTok", pricing.inputPerMTok, exchangeRate.rate),
+    ...optionalAudPrice("outputPerMTok", pricing.outputPerMTok, exchangeRate.rate),
     ...optionalAudPrice(
       "cacheReadPerMTok",
       pricing.cacheReadPerMTok,
@@ -860,11 +1101,31 @@ function convertPricing(
       pricing.cacheWritePerMTok,
       exchangeRate.rate,
     ),
+    ...optionalAudPrice(
+      "audioInputPerHour",
+      pricing.audioInputPerHour,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "audioOutputPerHour",
+      pricing.audioOutputPerHour,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "benchmarkInputAudioPerHour",
+      pricing.benchmarkInputAudioPerHour,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "benchmarkCostPerTask",
+      pricing.benchmarkCostPerTask,
+      exchangeRate.rate,
+    ),
   };
 }
 
 function optionalAudPrice(
-  key: "cacheReadPerMTok" | "cacheWritePerMTok",
+  key: keyof ModelPricing,
   value: number | undefined,
   rate: number,
 ): Partial<ModelPricing> {

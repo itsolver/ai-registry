@@ -97,9 +97,9 @@ describe("worker routes", () => {
       status: "ok",
       apiVersion: "v1",
       providerCount: 4,
-      modelCount: 9,
-      activeModelCount: 8,
     });
+    expect(body.modelCount).toBeGreaterThanOrEqual(9);
+    expect(body.activeModelCount).toBeGreaterThanOrEqual(8);
   });
 
   it("serves filtered model recommendations", async () => {

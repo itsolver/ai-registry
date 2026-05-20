@@ -170,10 +170,23 @@ describe("filtering and recommendations", () => {
     ).toBe("gpt-expensive");
   });
 
-  it("does not fall back to text models for voice recommendations", () => {
+  it("uses Artificial Analysis speech-to-speech data for voice recommendations", () => {
     const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+    const recommendation = recommendModel(catalog, { provider: "xai", useCase: "voice" });
 
-    expect(recommendModel(catalog, { provider: "xai", useCase: "voice" })).toBeUndefined();
+    expect(recommendation).toMatchObject({
+      provider: "xai",
+      modalities: {
+        input: ["audio"],
+        output: ["audio"],
+      },
+      benchmarks: {
+        voice: {
+          source: "artificialanalysis",
+        },
+      },
+    });
+    expect(recommendation?.pricing.benchmarkInputAudioPerHour).toBeGreaterThan(0);
   });
 
   it("does not recommend embedding models", () => {

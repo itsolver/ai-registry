@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "refresh:aa-voice": "node scripts/extract-aa-speech-to-speech.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck"

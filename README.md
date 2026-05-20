@@ -10,7 +10,7 @@ https://ai.itsolver.au
 
 The Worker imports `https://models.dev/api.json`, keeps only `openai`, `google`, `xai`, and `anthropic`, then exposes a small `/v1/...` API with cost-derived recommendation tiers.
 
-Recommendations are tuned for IT Solver customer support and coding work. The raw `/v1/models` catalog can include broader provider models, but `/v1/models/recommend` only considers work-appropriate OpenAI, Google Gemini, xAI Grok, and Anthropic Claude models with real input/output pricing. It excludes open-weight, image, audio, live, embedding, moderation, and transcription-style models.
+Recommendations are tuned for IT Solver customer support, coding, and voice-agent work. The raw `/v1/models` catalog can include broader provider models, but `/v1/models/recommend` only considers work-appropriate OpenAI, Google Gemini, xAI Grok, and Anthropic Claude models with real pricing. Text recommendations exclude open-weight, image, audio, live, embedding, moderation, and transcription-style models. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract.
 
 Model pricing from models.dev is converted to AUD using the daily USD to AUD rate from Frankfurter. The API only returns AUD pricing.
 
@@ -43,6 +43,8 @@ tier=fast|balanced|best
 capability=vision|pdf|reasoning|toolCalling|structuredOutput
 maxInputCostPerMTok=2               # max input AUD per million tokens
 maxOutputCostPerMTok=10             # max output AUD per million tokens
+maxAudioInputCostPerHour=5          # max voice input/cost-to-run AUD per hour
+maxAudioOutputCostPerHour=5         # max voice output AUD per hour
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
 useCase=customer-support|coding|billing-routine|billing-risky|billing-incident|voice
@@ -57,6 +59,12 @@ npm install
 npm test
 npm run build
 npm run dev
+```
+
+Refresh the cached Artificial Analysis speech-to-speech extract:
+
+```bash
+npm run refresh:aa-voice
 ```
 
 For local authenticated requests, create `.dev.vars`:

@@ -416,6 +416,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           <input type="number" id="b-maxoutputcost" min="0" step="0.1" placeholder="no limit">
         </div>
         <div class="b-field">
+          <label for="b-maxaudioinputcost">Max input audio AUD/hr</label>
+          <input type="number" id="b-maxaudioinputcost" min="0" step="0.1" placeholder="voice only">
+        </div>
+        <div class="b-field">
+          <label for="b-maxaudiooutputcost">Max output audio AUD/hr</label>
+          <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="voice only">
+        </div>
+        <div class="b-field">
           <label for="b-minctx">Min context (k)</label>
           <input type="number" id="b-minctx" min="0" step="32" placeholder="e.g. 128">
         </div>
@@ -497,7 +505,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     <li>This is private infrastructure for IT Solver and personal projects.</li>
     <li>Only OpenAI, Google, xAI, and Anthropic are exposed.</li>
     <li>Each model includes AUD pricing converted from USD with the current cached Frankfurter exchange rate.</li>
-    <li>Recommendations exclude open-weight, zero-priced, image, audio, live, embedding, moderation, and transcription-style models.</li>
+    <li>Text recommendations exclude open-weight, zero-priced, image, audio, live, embedding, moderation, and transcription-style models. Voice recommendations use the cached Artificial Analysis speech-to-speech leaderboard extract.</li>
     <li>Recommendation tiers are cost-derived from the remaining support/coding candidate set.</li>
     <li>Always code a local fallback in client apps.</li>
   </ul>
@@ -521,6 +529,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       carelevel: document.getElementById('b-carelevel'),
       maxcost: document.getElementById('b-maxcost'),
       maxoutputcost: document.getElementById('b-maxoutputcost'),
+      maxaudioinputcost: document.getElementById('b-maxaudioinputcost'),
+      maxaudiooutputcost: document.getElementById('b-maxaudiooutputcost'),
       minctx: document.getElementById('b-minctx'),
       url: document.getElementById('b-url'),
       open: document.getElementById('b-open'),
@@ -605,6 +615,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (fields.carelevel.value) params.set('careLevel', fields.carelevel.value);
       if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
       if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+      if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
+      if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);
       if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
       var qs = params.toString();
       return endpoint + (qs ? '?' + qs : '');

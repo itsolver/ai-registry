@@ -113,6 +113,7 @@ export interface RegistryModel {
   updatedAt: string;
   benchmarks?: {
     voice?: VoiceBenchmarks;
+    llm?: BenchmarkSignals;
   };
 }
 
@@ -288,17 +289,18 @@ export function normalizeModelsDev(
   }
 
   const tiered = assignTiers(models);
-  const providers = buildProviderSummaries(tiered);
   const benchmarkSignals = buildBenchmarkSignals(tiered, artificialAnalysisModels);
+  const benchmarked = attachBenchmarkSignals(tiered, benchmarkSignals);
+  const providers = buildProviderSummaries(benchmarked);
 
   return {
     generatedAt,
     ...(exchangeRate ? { exchangeRate } : {}),
     ...(Object.keys(benchmarkSignals).length ? { benchmarkSignals } : {}),
-    modelCount: tiered.length,
-    activeModelCount: tiered.filter((model) => !model.deprecated).length,
+    modelCount: benchmarked.length,
+    activeModelCount: benchmarked.filter((model) => !model.deprecated).length,
     providers,
-    models: tiered,
+    models: benchmarked,
   };
 }
 
@@ -341,8 +343,8 @@ export function filterModels(
     }
     if (
       filters.maxAudioOutputCostPerHour !== undefined &&
-      (model.pricing.audioOutputPerHour === undefined ||
-        model.pricing.audioOutputPerHour > filters.maxAudioOutputCostPerHour)
+      (audioOutputCost(model) === undefined ||
+        audioOutputCost(model)! > filters.maxAudioOutputCostPerHour)
     ) {
       return false;
     }
@@ -412,6 +414,8 @@ function isVoiceModel(model: RegistryModel): boolean {
     !model.openWeights &&
     model.modalities.input.includes("audio") &&
     model.modalities.output.includes("audio") &&
+    model.pricing.benchmarkInputAudioPerHour !== undefined &&
+    model.pricing.benchmarkInputAudioPerHour > 0 &&
     hasPositiveAudioPrice(model) &&
     providerFamilyAllowed(model)
   );
@@ -506,7 +510,6 @@ function normalizeSpeechToSpeechModel(
   if (!provider) return undefined;
 
   const pricing: ModelPricing = {
-    ...optionalNumberPrice("audioInputPerHour", model.pricePerHourInput),
     ...optionalNumberPrice("audioOutputPerHour", model.pricePerHourOutput),
     ...optionalNumberPrice(
       "benchmarkInputAudioPerHour",
@@ -632,6 +635,24 @@ function buildBenchmarkSignals(
   }
 
   return Object.fromEntries(matches);
+}
+
+function attachBenchmarkSignals(
+  models: RegistryModel[],
+  benchmarkSignals: Record<string, BenchmarkSignals>,
+): RegistryModel[] {
+  return models.map((model) => {
+    const llm = benchmarkSignals[modelKey(model)];
+    if (!llm) return model;
+
+    return {
+      ...model,
+      benchmarks: {
+        ...model.benchmarks,
+        llm,
+      },
+    };
+  });
 }
 
 function providerFromArtificialAnalysis(
@@ -997,18 +1018,22 @@ function cheapestPrice(model: RegistryModel): number {
 
 function voiceCost(model: RegistryModel): number | undefined {
   const input = audioInputCost(model);
-  const output = model.pricing.audioOutputPerHour;
+  const output = audioOutputCost(model);
   if (input !== undefined && output !== undefined) return input * 0.6 + output * 0.4;
   return input ?? output;
 }
 
 function audioInputCost(model: RegistryModel): number | undefined {
-  return model.pricing.benchmarkInputAudioPerHour ?? model.pricing.audioInputPerHour;
+  return model.pricing.benchmarkInputAudioPerHour;
+}
+
+function audioOutputCost(model: RegistryModel): number | undefined {
+  return model.pricing.audioOutputPerHour ?? audioInputCost(model);
 }
 
 function hasPositiveAudioPrice(model: RegistryModel): boolean {
   const input = audioInputCost(model);
-  const output = model.pricing.audioOutputPerHour;
+  const output = audioOutputCost(model);
   return (input !== undefined && input > 0) || (output !== undefined && output > 0);
 }
 

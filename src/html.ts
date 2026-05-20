@@ -299,9 +299,11 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
     .voice-table th {
       color: #9a9286;
+      cursor: pointer;
       font-size: 0.62rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+      user-select: none;
     }
     .voice-table tr:last-child td { border-bottom: 0; }
     .voice-table .provider {
@@ -311,9 +313,23 @@ export const HOME_HTML = String.raw`<!doctype html>
       text-transform: uppercase;
     }
     .voice-table .best { background: #e3f6de; }
+    .voice-table .selected td {
+      background: #ffe2b8;
+      box-shadow: inset 0 1px 0 rgba(212,82,74,0.18), inset 0 -1px 0 rgba(212,82,74,0.18);
+    }
     .voice-table .empty {
       color: var(--muted);
       text-align: left;
+    }
+    .bench-grid {
+      display: grid;
+      gap: 1rem;
+      margin-bottom: 2.2rem;
+    }
+    .bench-note {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-top: -0.7rem;
     }
     .pulse {
       width: 7px;
@@ -513,19 +529,93 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       <table class="voice-table">
         <thead>
           <tr>
-            <th>Model</th>
-            <th>τ-Voice</th>
-            <th>Speech</th>
-            <th>Telecom</th>
-            <th>TTFA</th>
-            <th>Input AUD/hr</th>
-            <th>Output AUD/hr</th>
+            <th data-table="voiceRows" data-sort="model">Model</th>
+            <th data-table="voiceRows" data-sort="agentic">τ-Voice</th>
+            <th data-table="voiceRows" data-sort="speech">Speech</th>
+            <th data-table="voiceRows" data-sort="telecom">Telecom</th>
+            <th data-table="voiceRows" data-sort="ttfa">TTFA</th>
+            <th data-table="voiceRows" data-sort="inputCost">Input AUD/hr</th>
+            <th data-table="voiceRows" data-sort="outputCost">Output AUD/hr</th>
           </tr>
         </thead>
         <tbody id="voiceRows">
           <tr><td class="empty" colspan="7">loading...</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <h2>Use Case Benchmarks</h2>
+  <p class="bench-note">Text models are ranked from the cached Artificial Analysis LLM extract and shown with AUD output cost because generated responses are where support costs bite.</p>
+  <div class="bench-grid">
+    <div class="voice-bench">
+      <div class="voice-head">
+        <strong>Customer support</strong>
+        <span id="supportSource">loading...</span>
+      </div>
+      <div class="voice-table-wrap">
+        <table class="voice-table">
+          <thead>
+            <tr>
+              <th data-table="supportRows" data-sort="model">Model</th>
+              <th data-table="supportRows" data-sort="score">Score</th>
+              <th data-table="supportRows" data-sort="ifbench">IFBench</th>
+              <th data-table="supportRows" data-sort="telecom">Telecom</th>
+              <th data-table="supportRows" data-sort="intelligence">Intel</th>
+              <th data-table="supportRows" data-sort="outputCost">Output AUD/MTok</th>
+            </tr>
+          </thead>
+          <tbody id="supportRows">
+            <tr><td class="empty" colspan="6">loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="voice-bench">
+      <div class="voice-head">
+        <strong>Coding</strong>
+        <span id="codingSource">loading...</span>
+      </div>
+      <div class="voice-table-wrap">
+        <table class="voice-table">
+          <thead>
+            <tr>
+              <th data-table="codingRows" data-sort="model">Model</th>
+              <th data-table="codingRows" data-sort="score">Score</th>
+              <th data-table="codingRows" data-sort="coding">Coding</th>
+              <th data-table="codingRows" data-sort="terminal">Terminal</th>
+              <th data-table="codingRows" data-sort="ifbench">IFBench</th>
+              <th data-table="codingRows" data-sort="outputCost">Output AUD/MTok</th>
+            </tr>
+          </thead>
+          <tbody id="codingRows">
+            <tr><td class="empty" colspan="6">loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="voice-bench">
+      <div class="voice-head">
+        <strong>Billing / Xero</strong>
+        <span id="billingSource">loading...</span>
+      </div>
+      <div class="voice-table-wrap">
+        <table class="voice-table">
+          <thead>
+            <tr>
+              <th data-table="billingRows" data-sort="model">Model</th>
+              <th data-table="billingRows" data-sort="score">Score</th>
+              <th data-table="billingRows" data-sort="ifbench">IFBench</th>
+              <th data-table="billingRows" data-sort="professional">Pro</th>
+              <th data-table="billingRows" data-sort="intelligence">Intel</th>
+              <th data-table="billingRows" data-sort="outputCost">Output AUD/MTok</th>
+            </tr>
+          </thead>
+          <tbody id="billingRows">
+            <tr><td class="empty" colspan="6">loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -644,11 +734,15 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function money(value) {
-      return typeof value === 'number' ? '$' + value.toFixed(2) : '-';
+      return typeof value === 'number' && Number.isFinite(value) ? '$' + value.toFixed(2) : '-';
     }
 
     function seconds(value) {
       return typeof value === 'number' ? value.toFixed(2) + 's' : '-';
+    }
+
+    function score(value) {
+      return typeof value === 'number' ? Math.round(value) : '-';
     }
 
     function escapeHtml(value) {
@@ -663,9 +757,98 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       });
     }
 
+    var benchmarkTables = {};
+    var selectedBenchmark = { tableId: '', modelId: '' };
+
+    function sortValue(value) {
+      return value === undefined || value === null || Number.isNaN(value) ? -Infinity : value;
+    }
+
+    function renderModelCell(model) {
+      return '<strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.provider) + '</div>';
+    }
+
+    function benchmarkRowId(row) {
+      return ((row.model || row) || {}).id || '';
+    }
+
+    function renderSortableTable(tableId, rows, columns, defaultSortKey, defaultDirection) {
+      benchmarkTables[tableId] = {
+        rows: rows,
+        columns: columns,
+        sortKey: defaultSortKey,
+        direction: defaultDirection || 'desc',
+        selectedId: selectedBenchmark.tableId === tableId ? selectedBenchmark.modelId : ''
+      };
+      drawSortableTable(tableId);
+    }
+
+    function drawSortableTable(tableId) {
+      var state = benchmarkTables[tableId];
+      var tbody = document.getElementById(tableId);
+      if (!state || !tbody) return;
+      if (!state.rows.length) {
+        var headerCount = tbody.closest('table').querySelectorAll('thead th').length;
+        tbody.innerHTML = '<tr><td class="empty" colspan="' + (state.columns.length || headerCount || 1) + '">Benchmark data unavailable.</td></tr>';
+        return;
+      }
+
+      var column = state.columns.find(function (item) { return item.key === state.sortKey; }) || state.columns[0];
+      var direction = state.direction === 'asc' ? 1 : -1;
+      var sorted = state.rows.slice().sort(function (left, right) {
+        var a = sortValue(column.value(left));
+        var b = sortValue(column.value(right));
+        if (typeof a === 'string' || typeof b === 'string') {
+          return String(a).localeCompare(String(b)) * direction;
+        }
+        return (a - b) * direction;
+      });
+      var visible = sorted.slice(0, 8);
+      if (state.selectedId && !visible.some(function (row) { return benchmarkRowId(row) === state.selectedId; })) {
+        var selectedRow = sorted.find(function (row) { return benchmarkRowId(row) === state.selectedId; });
+        if (selectedRow) visible = visible.slice(0, 7).concat(selectedRow);
+      }
+
+      tbody.innerHTML = visible.map(function (row, index) {
+        var classes = [];
+        if (index === 0) classes.push('best');
+        if (benchmarkRowId(row) === state.selectedId) classes.push('selected');
+        return '<tr' + (classes.length ? ' class="' + classes.join(' ') + '"' : '') + '>' +
+          state.columns.map(function (item) {
+            return '<td>' + item.render(row) + '</td>';
+          }).join('') +
+        '</tr>';
+      }).join('');
+    }
+
+    function benchmarkTableForUseCase(useCase) {
+      if (useCase === 'voice') return 'voiceRows';
+      if (useCase === 'coding') return 'codingRows';
+      if (useCase === 'customer-support') return 'supportRows';
+      if (useCase && useCase.indexOf('billing-') === 0) return 'billingRows';
+      return '';
+    }
+
+    function highlightBenchmark(modelId, useCase) {
+      selectedBenchmark = {
+        tableId: benchmarkTableForUseCase(useCase),
+        modelId: modelId || ''
+      };
+      Object.keys(benchmarkTables).forEach(function (tableId) {
+        benchmarkTables[tableId].selectedId =
+          tableId === selectedBenchmark.tableId ? selectedBenchmark.modelId : '';
+        drawSortableTable(tableId);
+      });
+    }
+
     function voiceCost(model) {
       var pricing = model.pricing || {};
-      return pricing.benchmarkInputAudioPerHour || pricing.audioInputPerHour || Infinity;
+      return pricing.benchmarkInputAudioPerHour || Infinity;
+    }
+
+    function voiceOutputCost(model) {
+      var pricing = model.pricing || {};
+      return pricing.audioOutputPerHour || voiceCost(model);
     }
 
     function voiceScore(model) {
@@ -680,36 +863,153 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function renderVoiceBenchmarks(models) {
-      var rows = document.getElementById('voiceRows');
-      if (!rows) return;
       if (!models.length) {
-        rows.innerHTML = '<tr><td class="empty" colspan="7">No voice benchmark data available.</td></tr>';
+        renderSortableTable('voiceRows', [], [], 'agentic');
         setText('voiceSource', 'unavailable');
         return;
       }
 
-      var sorted = models.slice().sort(function (a, b) {
-        return voiceScore(b) - voiceScore(a) || voiceCost(a) - voiceCost(b);
-      }).slice(0, 8);
-      var source = sorted[0].benchmarks && sorted[0].benchmarks.voice;
+      var source = models[0].benchmarks && models[0].benchmarks.voice;
       if (source && source.extractedAt) {
         setText('voiceSource', 'AA extract ' + formatAge(source.extractedAt));
       }
 
-      rows.innerHTML = sorted.map(function (model, index) {
-        var voice = (model.benchmarks && model.benchmarks.voice) || {};
-        var pricing = model.pricing || {};
-        var inputCost = pricing.benchmarkInputAudioPerHour || pricing.audioInputPerHour;
-        return '<tr' + (index === 0 ? ' class="best"' : '') + '>' +
-          '<td><strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.provider) + '</div></td>' +
-          '<td>' + pct(voice.agenticPerformance) + '</td>' +
-          '<td>' + pct(voice.speechReasoning) + '</td>' +
-          '<td>' + pct(voice.telecomAgenticPerformance) + '</td>' +
-          '<td>' + seconds(voice.timeToFirstAudioSeconds) + '</td>' +
-          '<td>' + money(inputCost) + '</td>' +
-          '<td>' + money(pricing.audioOutputPerHour) + '</td>' +
-        '</tr>';
-      }).join('');
+      renderSortableTable('voiceRows', models, [
+        { key: 'model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'agentic', value: function (model) { return ((model.benchmarks || {}).voice || {}).agenticPerformance; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).agenticPerformance); } },
+        { key: 'speech', value: function (model) { return ((model.benchmarks || {}).voice || {}).speechReasoning; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).speechReasoning); } },
+        { key: 'telecom', value: function (model) { return ((model.benchmarks || {}).voice || {}).telecomAgenticPerformance; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).telecomAgenticPerformance); } },
+        { key: 'ttfa', value: function (model) { return -(((model.benchmarks || {}).voice || {}).timeToFirstAudioSeconds || Infinity); }, render: function (model) { return seconds(((model.benchmarks || {}).voice || {}).timeToFirstAudioSeconds); } },
+        { key: 'inputCost', value: voiceCost, render: function (model) { return money(voiceCost(model)); } },
+        { key: 'outputCost', value: voiceOutputCost, render: function (model) { return money(voiceOutputCost(model)); } }
+      ], 'agentic', 'desc');
+    }
+
+    function llmSignals(row) {
+      return (((row.model || {}).benchmarks || {}).llm || {});
+    }
+
+    function outputCost(row) {
+      return ((row.model || {}).pricing || {}).outputPerMTok;
+    }
+
+    function textCostScore(model, outputWeight) {
+      var pricing = model.pricing || {};
+      var input = typeof pricing.inputPerMTok === 'number' ? pricing.inputPerMTok : 100;
+      var output = typeof pricing.outputPerMTok === 'number' ? pricing.outputPerMTok : 100;
+      var blended = input * (1 - outputWeight) + output * outputWeight;
+      return Math.max(0, 100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100);
+    }
+
+    function weightedSignal(signals, values, fallback) {
+      var total = 0;
+      var weight = 0;
+      values.forEach(function (item) {
+        var value = signals[item[0]];
+        if (typeof value !== 'number') return;
+        total += value * item[1];
+        weight += item[1];
+      });
+      return weight ? total / weight : fallback;
+    }
+
+    function textUseCaseScore(model, useCase) {
+      var signals = ((model.benchmarks || {}).llm || {});
+      var quality;
+      var outputWeight = useCase === 'customer-support' ? 0.6 : 0.35;
+      if (useCase === 'coding') {
+        quality = weightedSignal(signals, [
+          ['terminalBench', 0.35],
+          ['coding', 0.35],
+          ['instructionFollowing', 0.15],
+          ['intelligence', 0.15]
+        ], 60);
+      } else if (useCase === 'billing') {
+        quality = weightedSignal(signals, [
+          ['instructionFollowing', 0.3],
+          ['intelligence', 0.3],
+          ['professional', 0.2],
+          ['coding', 0.1],
+          ['terminalBench', 0.1]
+        ], 60);
+      } else {
+        quality = weightedSignal(signals, [
+          ['tauTelecom', 0.25],
+          ['instructionFollowing', 0.3],
+          ['intelligence', 0.25],
+          ['professional', 0.1]
+        ], 60);
+      }
+      return quality * 0.68 + textCostScore(model, outputWeight) * 0.24 + Math.min((signals.speed || 0) / 220, 1) * 8;
+    }
+
+    function textRows(models, useCase) {
+      return models
+        .filter(function (model) {
+          var signals = model.benchmarks && model.benchmarks.llm;
+          var input = (model.modalities && model.modalities.input) || [];
+          var output = (model.modalities && model.modalities.output) || [];
+          var hasQualitySignal = signals && [
+            signals.intelligence,
+            signals.coding,
+            signals.instructionFollowing,
+            signals.terminalBench,
+            signals.tauTelecom,
+            signals.professional
+          ].some(function (value) { return typeof value === 'number'; });
+          return !model.deprecated &&
+            hasQualitySignal &&
+            input.indexOf('audio') === -1 &&
+            output.indexOf('audio') === -1 &&
+            output.indexOf('text') !== -1 &&
+            typeof ((model.pricing || {}).outputPerMTok) === 'number';
+        })
+        .map(function (model) {
+          return { model: model, score: textUseCaseScore(model, useCase) };
+        });
+    }
+
+    function commonTextColumns(useCase) {
+      var base = [
+        { key: 'model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
+        { key: 'score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
+      ];
+      if (useCase === 'coding') {
+        base.push(
+          { key: 'coding', value: function (row) { return llmSignals(row).coding; }, render: function (row) { return score(llmSignals(row).coding); } },
+          { key: 'terminal', value: function (row) { return llmSignals(row).terminalBench; }, render: function (row) { return score(llmSignals(row).terminalBench); } },
+          { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } }
+        );
+      } else if (useCase === 'billing') {
+        base.push(
+          { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
+          { key: 'professional', value: function (row) { return llmSignals(row).professional; }, render: function (row) { return score(llmSignals(row).professional); } },
+          { key: 'intelligence', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
+        );
+      } else {
+        base.push(
+          { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
+          { key: 'telecom', value: function (row) { return llmSignals(row).tauTelecom; }, render: function (row) { return score(llmSignals(row).tauTelecom); } },
+          { key: 'intelligence', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
+        );
+      }
+      base.push({ key: 'outputCost', value: outputCost, render: function (row) { return money(outputCost(row)); } });
+      return base;
+    }
+
+    function renderTextBenchmarks(models) {
+      var support = textRows(models, 'customer-support');
+      var coding = textRows(models, 'coding');
+      var billing = textRows(models, 'billing');
+
+      renderSortableTable('supportRows', support, commonTextColumns('customer-support'), 'score', 'desc');
+      renderSortableTable('codingRows', coding, commonTextColumns('coding'), 'score', 'desc');
+      renderSortableTable('billingRows', billing, commonTextColumns('billing'), 'score', 'desc');
+
+      var label = support.length ? 'AA LLM extract' : 'unavailable';
+      setText('supportSource', label);
+      setText('codingSource', coding.length ? 'AA LLM extract' : 'unavailable');
+      setText('billingSource', billing.length ? 'AA LLM extract' : 'unavailable');
     }
 
     fetch('/v1/health')
@@ -735,6 +1035,35 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Voice benchmarks unavailable.</td></tr>';
         setText('voiceSource', 'unavailable');
       });
+
+    fetch('/v1/models')
+      .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
+      .then(function (data) { renderTextBenchmarks(data.models || []); })
+      .catch(function () {
+        ['supportRows', 'codingRows', 'billingRows'].forEach(function (id) {
+          var rows = document.getElementById(id);
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="6">Benchmark data unavailable.</td></tr>';
+        });
+        setText('supportSource', 'unavailable');
+        setText('codingSource', 'unavailable');
+        setText('billingSource', 'unavailable');
+      });
+
+    document.addEventListener('click', function (event) {
+      var header = event.target.closest('th[data-table][data-sort]');
+      if (!header) return;
+      var tableId = header.getAttribute('data-table');
+      var sortKey = header.getAttribute('data-sort');
+      var state = benchmarkTables[tableId];
+      if (!state || !sortKey) return;
+      if (state.sortKey === sortKey) {
+        state.direction = state.direction === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortKey = sortKey;
+        state.direction = sortKey === 'model' ? 'asc' : 'desc';
+      }
+      drawSortableTable(tableId);
+    });
 
     document.querySelectorAll('[data-tabs]').forEach(function (tabs) {
       tabs.addEventListener('click', function (event) {
@@ -800,10 +1129,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         fetch(path)
           .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
           .then(function (data) {
-            if (data.recommendation) fields.result.textContent = data.recommendation.id;
-            else fields.result.textContent = (data.modelCount || 0).toLocaleString() + ' models';
+            if (data.recommendation) {
+              fields.result.textContent = data.recommendation.id;
+              highlightBenchmark(data.recommendation.id, fields.usecase.value);
+            } else {
+              fields.result.textContent = (data.modelCount || 0).toLocaleString() + ' models';
+              highlightBenchmark('', '');
+            }
           })
-          .catch(function () { fields.result.textContent = 'unavailable'; });
+          .catch(function () {
+            fields.result.textContent = 'unavailable';
+            highlightBenchmark('', '');
+          });
       }, 180);
     }
 

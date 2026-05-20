@@ -168,6 +168,13 @@ describe("filtering and recommendations", () => {
         careLevel: "premium",
       })?.id,
     ).toBe("gpt-expensive");
+    expect(
+      catalog.models.find((model) => model.id === "gpt-expensive")?.benchmarks?.llm,
+    ).toMatchObject({
+      coding: 90,
+      terminalBench: 86,
+      instructionFollowing: 96,
+    });
   });
 
   it("uses Artificial Analysis speech-to-speech data for voice recommendations", () => {
@@ -187,6 +194,39 @@ describe("filtering and recommendations", () => {
       },
     });
     expect(recommendation?.pricing.benchmarkInputAudioPerHour).toBeGreaterThan(0);
+    expect(
+      filterModels(catalog.models, { useCase: "voice" }).map((model) => model.id),
+    ).not.toContain("google-gemini-2-5-flash-native-audio-dialog-thinking");
+  });
+
+  it("filters voice input cost by benchmark-run cost, not raw provider input price", () => {
+    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        maxAudioInputCostPerHour: 1,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("falls back to voice input price for voice output cost filters", () => {
+    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+
+    expect(
+      recommendModel(catalog, {
+        provider: "xai",
+        useCase: "voice",
+        maxAudioOutputCostPerHour: 3,
+      })?.id,
+    ).toBe("grok-voice-think-fast-1-0");
+    expect(
+      recommendModel(catalog, {
+        provider: "xai",
+        useCase: "voice",
+        maxAudioOutputCostPerHour: 2,
+      }),
+    ).toBeUndefined();
   });
 
   it("does not recommend embedding models", () => {

@@ -97,8 +97,8 @@ describe("worker routes", () => {
       status: "ok",
       apiVersion: "v1",
       providerCount: 4,
-      modelCount: 9,
-      activeModelCount: 8,
+      modelCount: 10,
+      activeModelCount: 9,
     });
   });
 

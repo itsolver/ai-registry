@@ -170,6 +170,31 @@ describe("filtering and recommendations", () => {
     ).toBe("gpt-expensive");
   });
 
+  it("recommends curated speech-to-speech models for voice", () => {
+    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 1.5,
+      source: "test",
+    });
+
+    expect(recommendModel(catalog, { provider: "xai", useCase: "voice" })).toMatchObject({
+      id: "grok-voice-latest",
+      pricing: { audioPerHour: 4.5 },
+      modalities: {
+        input: ["text", "audio"],
+        output: ["text", "audio"],
+      },
+    });
+    expect(
+      recommendModel(catalog, {
+        provider: "xai",
+        useCase: "voice",
+        maxAudioCostPerHour: 4,
+      }),
+    ).toBeUndefined();
+  });
+
   it("does not recommend embedding models", () => {
     const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
 

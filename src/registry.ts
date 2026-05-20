@@ -57,10 +57,11 @@ export type UseCase = (typeof USE_CASES)[number];
 export type CareLevel = (typeof CARE_LEVELS)[number];
 
 export interface ModelPricing {
-  inputPerMTok: number;
-  outputPerMTok: number;
+  inputPerMTok?: number;
+  outputPerMTok?: number;
   cacheReadPerMTok?: number;
   cacheWritePerMTok?: number;
+  audioPerHour?: number;
 }
 
 export interface ExchangeRate {
@@ -117,6 +118,7 @@ export interface ModelFilters {
   capability?: Capability;
   maxInputCostPerMTok?: number;
   maxOutputCostPerMTok?: number;
+  maxAudioCostPerHour?: number;
   minContextWindow?: number;
   includeDeprecated?: boolean;
 }
@@ -193,6 +195,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     asFiniteNumber(params.get("maxInputCostPerMTok")) ??
     asFiniteNumber(params.get("maxCostPerMTok"));
   const maxOutputCostPerMTok = asFiniteNumber(params.get("maxOutputCostPerMTok"));
+  const maxAudioCostPerHour = asFiniteNumber(params.get("maxAudioCostPerHour"));
   const minContextWindow = asFiniteNumber(params.get("minContextWindow"));
 
   return {
@@ -204,6 +207,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(capability ? { capability } : {}),
     ...(maxInputCostPerMTok !== undefined ? { maxInputCostPerMTok } : {}),
     ...(maxOutputCostPerMTok !== undefined ? { maxOutputCostPerMTok } : {}),
+    ...(maxAudioCostPerHour !== undefined ? { maxAudioCostPerHour } : {}),
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     includeDeprecated: params.get("includeDeprecated") === "true",
   };
@@ -215,7 +219,7 @@ export function normalizeModelsDev(
   exchangeRate?: ExchangeRate,
   artificialAnalysisModels: ArtificialAnalysisModel[] = [],
 ): Catalog {
-  const models: RegistryModel[] = [];
+  const models: RegistryModel[] = supplementalModels(generatedAt, exchangeRate);
 
   for (const provider of SUPPORTED_PROVIDERS) {
     const rawProvider = source[provider];
@@ -260,13 +264,22 @@ export function filterModels(
     }
     if (
       filters.maxInputCostPerMTok !== undefined &&
-      model.pricing.inputPerMTok > filters.maxInputCostPerMTok
+      (model.pricing.inputPerMTok === undefined ||
+        model.pricing.inputPerMTok > filters.maxInputCostPerMTok)
     ) {
       return false;
     }
     if (
       filters.maxOutputCostPerMTok !== undefined &&
-      model.pricing.outputPerMTok > filters.maxOutputCostPerMTok
+      (model.pricing.outputPerMTok === undefined ||
+        model.pricing.outputPerMTok > filters.maxOutputCostPerMTok)
+    ) {
+      return false;
+    }
+    if (
+      filters.maxAudioCostPerHour !== undefined &&
+      (model.pricing.audioPerHour === undefined ||
+        model.pricing.audioPerHour > filters.maxAudioCostPerHour)
     ) {
       return false;
     }
@@ -285,8 +298,8 @@ export function recommendModel(
   filters: ModelFilters,
 ): RegistryModel | undefined {
   const tier = filters.tier ?? "fast";
-  const matches = filterModels(catalog.models, filters).filter(
-    isRecommendationCandidate,
+  const matches = filterModels(catalog.models, filters).filter((model) =>
+    isRecommendationCandidate(model, filters.useCase),
   );
 
   return [...matches].sort((left, right) =>
@@ -303,17 +316,36 @@ export function latestForProvider(
     .sort(compareNewest)[0];
 }
 
-export function isRecommendationCandidate(model: RegistryModel): boolean {
+export function isRecommendationCandidate(
+  model: RegistryModel,
+  useCase?: UseCase,
+): boolean {
   const family = model.family.toLowerCase();
   const id = model.id.toLowerCase();
   const searchable = `${model.id} ${model.name} ${model.family}`.toLowerCase();
+
+  if (useCase === "voice") {
+    return (
+      !model.deprecated &&
+      !model.openWeights &&
+      model.modalities.input.includes("audio") &&
+      model.modalities.output.includes("audio") &&
+      model.pricing.audioPerHour !== undefined &&
+      model.pricing.audioPerHour > 0 &&
+      RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES[model.provider].some((prefix) =>
+        family.startsWith(prefix),
+      )
+    );
+  }
 
   return (
     !model.deprecated &&
     !model.openWeights &&
     model.modalities.input.includes("text") &&
     model.modalities.output.includes("text") &&
+    model.pricing.inputPerMTok !== undefined &&
     model.pricing.inputPerMTok > 0 &&
+    model.pricing.outputPerMTok !== undefined &&
     model.pricing.outputPerMTok > 0 &&
     RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES[model.provider].some((prefix) =>
       family.startsWith(prefix),
@@ -390,13 +422,49 @@ function normalizeModel(
   };
 }
 
+function supplementalModels(
+  generatedAt: string,
+  exchangeRate?: ExchangeRate,
+): RegistryModel[] {
+  const voicePricing: ModelPricing = {
+    audioPerHour: audValue(3, exchangeRate?.rate ?? 1),
+  };
+
+  return [
+    {
+      id: "grok-voice-latest",
+      provider: "xai",
+      name: "Grok Voice Agent",
+      family: "grok-voice",
+      contextWindow: 0,
+      outputLimit: 0,
+      pricing: voicePricing,
+      capabilities: {
+        vision: false,
+        pdf: false,
+        reasoning: true,
+        toolCalling: true,
+        structuredOutput: false,
+      },
+      modalities: {
+        input: ["text", "audio"],
+        output: ["text", "audio"],
+      },
+      openWeights: false,
+      tier: "fast",
+      deprecated: false,
+      updatedAt: generatedAt,
+    },
+  ];
+}
+
 function assignTiers(models: RegistryModel[]): RegistryModel[] {
   const tiers = new Map<string, Tier>();
 
   for (const provider of SUPPORTED_PROVIDERS) {
     const candidates = models
       .filter((model) => model.provider === provider)
-      .filter(isRecommendationCandidate)
+      .filter((model) => isRecommendationCandidate(model))
       .sort(compareCheapest);
 
     const firstBreak = Math.ceil(candidates.length / 3);
@@ -571,7 +639,7 @@ function compareForTier(
     return (
       compareNewest(left, right) ||
       right.contextWindow - left.contextWindow ||
-      right.pricing.inputPerMTok - left.pricing.inputPerMTok ||
+      cheapestPrice(right) - cheapestPrice(left) ||
       left.id.localeCompare(right.id)
     );
   }
@@ -744,12 +812,16 @@ function contextScore(model: RegistryModel): number {
 }
 
 function costScore(model: RegistryModel, useCase?: UseCase): number {
+  if (useCase === "voice" && model.pricing.audioPerHour !== undefined) {
+    return 100 - Math.min(Math.log1p(model.pricing.audioPerHour) / Math.log1p(50), 1) * 100;
+  }
+
   const outputWeight =
     useCase === "customer-support" || useCase === "voice" ? 0.6 : 0.25;
   const inputWeight = 1 - outputWeight;
   const blended =
-    model.pricing.inputPerMTok * inputWeight +
-    model.pricing.outputPerMTok * outputWeight;
+    (model.pricing.inputPerMTok ?? 100) * inputWeight +
+    (model.pricing.outputPerMTok ?? 100) * outputWeight;
   return 100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100;
 }
 
@@ -771,9 +843,17 @@ function weightedAverage(
 
 function compareCheapest(left: RegistryModel, right: RegistryModel): number {
   return (
-    left.pricing.inputPerMTok - right.pricing.inputPerMTok ||
-    left.pricing.outputPerMTok - right.pricing.outputPerMTok ||
+    cheapestPrice(left) - cheapestPrice(right) ||
     compareNewest(left, right)
+  );
+}
+
+function cheapestPrice(model: RegistryModel): number {
+  return (
+    model.pricing.inputPerMTok ??
+    model.pricing.audioPerHour ??
+    model.pricing.outputPerMTok ??
+    Number.POSITIVE_INFINITY
   );
 }
 
@@ -785,8 +865,9 @@ function compareNewest(left: RegistryModel, right: RegistryModel): number {
 }
 
 function fallbackTier(model: RegistryModel): Tier {
-  if (model.pricing.inputPerMTok <= 1) return "fast";
-  if (model.pricing.inputPerMTok <= 5) return "balanced";
+  const price = cheapestPrice(model);
+  if (price <= 1) return "fast";
+  if (price <= 5) return "balanced";
   return "best";
 }
 
@@ -831,8 +912,16 @@ function convertPricing(
   exchangeRate: ExchangeRate,
 ): ModelPricing {
   return {
-    inputPerMTok: audValue(pricing.inputPerMTok, exchangeRate.rate),
-    outputPerMTok: audValue(pricing.outputPerMTok, exchangeRate.rate),
+    ...optionalAudPrice(
+      "inputPerMTok",
+      pricing.inputPerMTok,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "outputPerMTok",
+      pricing.outputPerMTok,
+      exchangeRate.rate,
+    ),
     ...optionalAudPrice(
       "cacheReadPerMTok",
       pricing.cacheReadPerMTok,
@@ -843,11 +932,21 @@ function convertPricing(
       pricing.cacheWritePerMTok,
       exchangeRate.rate,
     ),
+    ...optionalAudPrice(
+      "audioPerHour",
+      pricing.audioPerHour,
+      exchangeRate.rate,
+    ),
   };
 }
 
 function optionalAudPrice(
-  key: "cacheReadPerMTok" | "cacheWritePerMTok",
+  key:
+    | "inputPerMTok"
+    | "outputPerMTok"
+    | "cacheReadPerMTok"
+    | "cacheWritePerMTok"
+    | "audioPerHour",
   value: number | undefined,
   rate: number,
 ): Partial<ModelPricing> {

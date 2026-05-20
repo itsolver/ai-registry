@@ -260,6 +260,61 @@ export const HOME_HTML = String.raw`<!doctype html>
       color: var(--muted);
       font-size: 0.78rem;
     }
+    .voice-bench {
+      margin: 1.5rem 0 2.2rem;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f6f2e9;
+    }
+    .voice-head {
+      display: flex;
+      gap: 1rem;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .voice-head strong { color: var(--ink); }
+    .voice-table-wrap { overflow-x: auto; }
+    .voice-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+    .voice-table th,
+    .voice-table td {
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+    .voice-table th:first-child,
+    .voice-table td:first-child {
+      min-width: 220px;
+      text-align: left;
+      white-space: normal;
+    }
+    .voice-table th {
+      color: #9a9286;
+      font-size: 0.62rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .voice-table tr:last-child td { border-bottom: 0; }
+    .voice-table .provider {
+      color: var(--muted);
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .voice-table .best { background: #e3f6de; }
+    .voice-table .empty {
+      color: var(--muted);
+      text-align: left;
+    }
     .pulse {
       width: 7px;
       height: 7px;
@@ -355,6 +410,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           </select>
         </div>
         <div class="b-field">
+          <label for="b-usecase">For use case</label>
+          <select id="b-usecase">
+            <option value="">general</option>
+            <option value="customer-support">customer support</option>
+            <option value="coding">coding</option>
+            <option value="billing-routine">billing routine</option>
+            <option value="billing-risky">billing risky</option>
+            <option value="billing-incident">billing incident</option>
+            <option value="voice">voice</option>
+          </select>
+        </div>
+        <div class="b-field">
           <label for="b-tier">Speed / quality</label>
           <select id="b-tier">
             <option value="">any tier</option>
@@ -382,18 +449,6 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             <option value="pdf">pdf</option>
             <option value="toolCalling">tool calling</option>
             <option value="structuredOutput">structured output</option>
-          </select>
-        </div>
-        <div class="b-field">
-          <label for="b-usecase">Use case</label>
-          <select id="b-usecase">
-            <option value="">general</option>
-            <option value="customer-support">customer support</option>
-            <option value="coding">coding</option>
-            <option value="billing-routine">billing routine</option>
-            <option value="billing-risky">billing risky</option>
-            <option value="billing-incident">billing incident</option>
-            <option value="voice">voice</option>
           </select>
         </div>
         <div class="b-field">
@@ -444,6 +499,33 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       <span class="pulse" aria-hidden="true"></span>
       <span class="hint-label">live result</span>
       <code id="b-result">checking...</code>
+    </div>
+  </div>
+
+  <h2>Voice Benchmarks</h2>
+  <p>Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
+  <div class="voice-bench">
+    <div class="voice-head">
+      <strong>Current voice candidates</strong>
+      <span id="voiceSource">loading...</span>
+    </div>
+    <div class="voice-table-wrap">
+      <table class="voice-table">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>τ-Voice</th>
+            <th>Speech</th>
+            <th>Telecom</th>
+            <th>TTFA</th>
+            <th>Input AUD/hr</th>
+            <th>Output AUD/hr</th>
+          </tr>
+        </thead>
+        <tbody id="voiceRows">
+          <tr><td class="empty" colspan="7">loading...</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -557,6 +639,79 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (el) el.textContent = value;
     }
 
+    function pct(value) {
+      return typeof value === 'number' ? Math.round(value * 100) + '%' : '-';
+    }
+
+    function money(value) {
+      return typeof value === 'number' ? '$' + value.toFixed(2) : '-';
+    }
+
+    function seconds(value) {
+      return typeof value === 'number' ? value.toFixed(2) + 's' : '-';
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>"']/g, function (char) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[char];
+      });
+    }
+
+    function voiceCost(model) {
+      var pricing = model.pricing || {};
+      return pricing.benchmarkInputAudioPerHour || pricing.audioInputPerHour || Infinity;
+    }
+
+    function voiceScore(model) {
+      var voice = (model.benchmarks && model.benchmarks.voice) || {};
+      var agentic = typeof voice.agenticPerformance === 'number' ? voice.agenticPerformance : 0;
+      var speech = typeof voice.speechReasoning === 'number' ? voice.speechReasoning : 0;
+      var telecom = typeof voice.telecomAgenticPerformance === 'number' ? voice.telecomAgenticPerformance : 0;
+      var ttfa = typeof voice.timeToFirstAudioSeconds === 'number' ? Math.max(0, 1 - voice.timeToFirstAudioSeconds / 5) : 0;
+      var cost = voiceCost(model);
+      var costScore = Number.isFinite(cost) ? Math.max(0, 1 - Math.log1p(cost) / Math.log1p(20)) : 0;
+      return agentic * 0.45 + speech * 0.25 + telecom * 0.1 + ttfa * 0.08 + costScore * 0.12;
+    }
+
+    function renderVoiceBenchmarks(models) {
+      var rows = document.getElementById('voiceRows');
+      if (!rows) return;
+      if (!models.length) {
+        rows.innerHTML = '<tr><td class="empty" colspan="7">No voice benchmark data available.</td></tr>';
+        setText('voiceSource', 'unavailable');
+        return;
+      }
+
+      var sorted = models.slice().sort(function (a, b) {
+        return voiceScore(b) - voiceScore(a) || voiceCost(a) - voiceCost(b);
+      }).slice(0, 8);
+      var source = sorted[0].benchmarks && sorted[0].benchmarks.voice;
+      if (source && source.extractedAt) {
+        setText('voiceSource', 'AA extract ' + formatAge(source.extractedAt));
+      }
+
+      rows.innerHTML = sorted.map(function (model, index) {
+        var voice = (model.benchmarks && model.benchmarks.voice) || {};
+        var pricing = model.pricing || {};
+        var inputCost = pricing.benchmarkInputAudioPerHour || pricing.audioInputPerHour;
+        return '<tr' + (index === 0 ? ' class="best"' : '') + '>' +
+          '<td><strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.provider) + '</div></td>' +
+          '<td>' + pct(voice.agenticPerformance) + '</td>' +
+          '<td>' + pct(voice.speechReasoning) + '</td>' +
+          '<td>' + pct(voice.telecomAgenticPerformance) + '</td>' +
+          '<td>' + seconds(voice.timeToFirstAudioSeconds) + '</td>' +
+          '<td>' + money(inputCost) + '</td>' +
+          '<td>' + money(pricing.audioOutputPerHour) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
     fetch('/v1/health')
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
       .then(function (data) {
@@ -570,6 +725,15 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         setText('activeCount', '?');
         setText('providerCount', '?');
         setText('generatedAt', 'unavailable');
+      });
+
+    fetch('/v1/models?useCase=voice')
+      .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
+      .then(function (data) { renderVoiceBenchmarks(data.models || []); })
+      .catch(function () {
+        var rows = document.getElementById('voiceRows');
+        if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Voice benchmarks unavailable.</td></tr>';
+        setText('voiceSource', 'unavailable');
       });
 
     document.querySelectorAll('[data-tabs]').forEach(function (tabs) {

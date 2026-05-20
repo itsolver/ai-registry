@@ -440,8 +440,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         <div class="b-field">
           <label for="b-tier">Speed / quality</label>
           <select id="b-tier">
-            <option value="">any tier</option>
-            <option value="fast" selected>fast</option>
+            <option value="" selected>any tier</option>
+            <option value="fast">fast</option>
             <option value="balanced">balanced</option>
             <option value="best">best</option>
           </select>
@@ -503,13 +503,13 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     <div class="builder-dark">
       <div class="builder-url">
         <span class="builder-method">GET</span>
-        <div class="builder-url-text"><a id="b-url" href="/v1/models/recommend?tier=fast">/v1/models/recommend?tier=fast</a></div>
+        <div class="builder-url-text"><a id="b-url" href="/v1/models/recommend">/v1/models/recommend</a></div>
         <div class="builder-actions">
           <button class="builder-action" type="button" id="b-copy">copy</button>
-          <a class="builder-action" id="b-open" href="/v1/models/recommend?tier=fast" target="_blank" rel="noopener">open</a>
+          <a class="builder-action" id="b-open" href="/v1/models/recommend" target="_blank" rel="noopener">open</a>
         </div>
       </div>
-      <div class="pre-wrap"><pre><code id="b-code">https://ai.itsolver.au/v1/models/recommend?tier=fast</code></pre></div>
+      <div class="pre-wrap"><pre><code id="b-code">https://ai.itsolver.au/v1/models/recommend</code></pre></div>
     </div>
     <div class="builder-result">
       <span class="pulse" aria-hidden="true"></span>

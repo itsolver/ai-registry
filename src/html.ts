@@ -491,23 +491,23 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             <option value="complex">complex</option>
           </select>
         </div>
-        <div class="b-field">
+        <div class="b-field" data-filter-scope="text">
           <label for="b-maxcost">Max input AUD/MTok</label>
           <input type="number" id="b-maxcost" min="0" step="0.1" placeholder="no limit">
         </div>
-        <div class="b-field">
+        <div class="b-field" data-filter-scope="text">
           <label for="b-maxoutputcost">Max output AUD/MTok</label>
           <input type="number" id="b-maxoutputcost" min="0" step="0.1" placeholder="no limit">
         </div>
-        <div class="b-field">
+        <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudioinputcost">Max input audio AUD/hr</label>
           <input type="number" id="b-maxaudioinputcost" min="0" step="0.1" placeholder="voice only">
         </div>
-        <div class="b-field">
+        <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudiooutputcost">Max output audio AUD/hr</label>
           <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="voice only">
         </div>
-        <div class="b-field">
+        <div class="b-field" data-filter-scope="text">
           <label for="b-minctx">Min context (k)</label>
           <input type="number" id="b-minctx" min="0" step="32" placeholder="e.g. 128">
         </div>
@@ -819,16 +819,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         }
         return (a - b) * direction;
       });
-      if (state.selectedId && !sorted.some(function (row) { return benchmarkRowId(row) === state.selectedId; }) && state.selectedRow) {
-        sorted.push(state.selectedRow);
-      }
-      var visible = sorted.slice(0, 8);
-      if (state.selectedId && !visible.some(function (row) { return benchmarkRowId(row) === state.selectedId; })) {
-        var selectedRow = sorted.find(function (row) { return benchmarkRowId(row) === state.selectedId; });
-        if (selectedRow) visible = visible.slice(0, 7).concat(selectedRow);
-      }
+      var selectedInRows = state.selectedId && sorted.some(function (row) { return benchmarkRowId(row) === state.selectedId; });
+      var visible = selectedInRows || !state.selectedRow ? sorted : [state.selectedRow].concat(sorted);
 
-      tbody.innerHTML = visible.map(function (row, index) {
+      tbody.innerHTML = visible.map(function (row) {
         var classes = [];
         if (benchmarkRowId(row) === state.selectedId) classes.push('selected');
         return '<tr' + (classes.length ? ' class="' + classes.join(' ') + '"' : '') + '>' +
@@ -863,6 +857,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       hint.textContent = active
         ? 'Showing the benchmark table for the selected use case.'
         : 'Select a use case in Build Your Query to bring the matching benchmark table into focus.';
+    }
+
+    function updateFilterVisibility(useCase) {
+      var isVoice = useCase === 'voice';
+      document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
+        var scope = field.getAttribute('data-filter-scope');
+        field.hidden = scope === 'voice' ? !isVoice : isVoice;
+      });
     }
 
     function selectedRowForTable(tableId, modelId, useCase) {
@@ -1271,11 +1273,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (fields.capability.value) params.set('capability', fields.capability.value);
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
       if (fields.carelevel.value) params.set('careLevel', fields.carelevel.value);
-      if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
-      if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
-      if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
-      if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);
-      if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+      if (fields.usecase.value === 'voice') {
+        if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
+        if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);
+      } else {
+        if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+        if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+        if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+      }
       var qs = params.toString();
       return endpoint + (qs ? '?' + qs : '');
     }
@@ -1285,6 +1290,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var path = buildPath();
       var full = origin + path;
       updateBenchmarkPanel(fields.usecase.value);
+      updateFilterVisibility(fields.usecase.value);
       fields.url.textContent = full;
       fields.url.href = path;
       fields.open.href = path;

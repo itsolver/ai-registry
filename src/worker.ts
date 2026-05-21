@@ -11,7 +11,7 @@ import {
   type ExchangeRate,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v1";
+const CACHE_KEY = "catalog:v2";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
 const DEFAULT_MODELS_DEV_URL = "https://models.dev/api.json";

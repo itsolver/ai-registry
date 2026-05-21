@@ -551,10 +551,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
               <th data-table="supportRows" data-sort="telecom">Telecom</th>
               <th data-table="supportRows" data-sort="intelligence">Intel</th>
               <th data-table="supportRows" data-sort="outputCost">Output AUD/MTok</th>
+              <th data-table="supportRows" data-sort="runCost">Run AUD</th>
+              <th data-table="supportRows" data-sort="outTokens">Out Tok</th>
             </tr>
           </thead>
           <tbody id="supportRows">
-            <tr><td class="empty" colspan="6">loading...</td></tr>
+            <tr><td class="empty" colspan="8">loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -577,10 +579,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
               <th data-table="billingRows" data-sort="professional">Pro</th>
               <th data-table="billingRows" data-sort="intelligence">Intel</th>
               <th data-table="billingRows" data-sort="outputCost">Output AUD/MTok</th>
+              <th data-table="billingRows" data-sort="runCost">Run AUD</th>
+              <th data-table="billingRows" data-sort="outTokens">Out Tok</th>
             </tr>
           </thead>
           <tbody id="billingRows">
-            <tr><td class="empty" colspan="6">loading...</td></tr>
+            <tr><td class="empty" colspan="8">loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -744,6 +748,13 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function score(value) {
       return typeof value === 'number' ? Math.round(value) : '-';
+    }
+
+    function compactTokens(value) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+      if (value >= 1000000) return Math.round(value / 1000000) + 'M';
+      if (value >= 1000) return Math.round(value / 1000) + 'k';
+      return String(Math.round(value));
     }
 
     function escapeHtml(value) {
@@ -942,12 +953,35 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return ((row.model || {}).pricing || {}).outputPerMTok;
     }
 
+    function runCost(row) {
+      return llmSignals(row).intelligenceRunTotalCost;
+    }
+
+    function outputTokens(row) {
+      return llmSignals(row).intelligenceRunOutputTokens;
+    }
+
     function textCostScore(model, outputWeight) {
       var pricing = model.pricing || {};
       var input = typeof pricing.inputPerMTok === 'number' ? pricing.inputPerMTok : 100;
       var output = typeof pricing.outputPerMTok === 'number' ? pricing.outputPerMTok : 100;
       var blended = input * (1 - outputWeight) + output * outputWeight;
       return Math.max(0, 100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100);
+    }
+
+    function textEfficiencyScore(model) {
+      var signals = ((model.benchmarks || {}).llm || {});
+      var runCostValue = typeof signals.intelligenceRunTotalCost === 'number'
+        ? Math.max(0, 100 - Math.min(Math.log1p(signals.intelligenceRunTotalCost) / Math.log1p(8000), 1) * 100)
+        : undefined;
+      var outputTokenValue = typeof signals.intelligenceRunOutputTokens === 'number'
+        ? Math.max(0, 100 - Math.min(Math.log1p(signals.intelligenceRunOutputTokens) / Math.log1p(250000000), 1) * 100)
+        : undefined;
+      return weightedSignal(
+        { runCostValue: runCostValue, outputTokenValue: outputTokenValue },
+        [['runCostValue', 0.45], ['outputTokenValue', 0.55]],
+        50
+      );
     }
 
     function weightedSignal(signals, values, fallback) {
@@ -982,7 +1016,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           ['professional', 0.1]
         ], 60);
       }
-      return quality * 0.68 + textCostScore(model, outputWeight) * 0.24 + Math.min((signals.speed || 0) / 220, 1) * 8;
+      return quality * 0.62 + textCostScore(model, outputWeight) * 0.2 + textEfficiencyScore(model) * 0.1 + Math.min((signals.speed || 0) / 220, 1) * 8;
     }
 
     function textRows(models, useCase) {
@@ -1029,7 +1063,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           { key: 'intelligence', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
         );
       }
-      base.push({ key: 'outputCost', value: outputCost, render: function (row) { return money(outputCost(row)); } });
+      base.push(
+        { key: 'outputCost', value: outputCost, render: function (row) { return money(outputCost(row)); } },
+        { key: 'runCost', value: runCost, render: function (row) { return money(runCost(row)); } },
+        { key: 'outTokens', value: outputTokens, render: function (row) { return compactTokens(outputTokens(row)); } }
+      );
       return base;
     }
 
@@ -1084,7 +1122,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         {
           q: 'Which model should customer support use?',
           a: support[0]
-            ? modelName(support[0].model) + ' currently ranks highest for customer support in this registry, using IFBench, telecom workflow, intelligence, speed, and AUD output cost.'
+            ? modelName(support[0].model) + ' currently ranks highest for customer support in this registry, using IFBench, telecom workflow, intelligence, speed, AUD output cost, and AA output-token efficiency.'
             : 'No customer support benchmark data is currently available.'
         },
         {
@@ -1096,7 +1134,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         {
           q: 'Which model should billing / Xero work use?',
           a: billing[0]
-            ? modelName(billing[0].model) + ' currently ranks highest for billing / Xero-style work, weighted toward instruction following, intelligence, professional-task score, and technical-task signals.'
+            ? modelName(billing[0].model) + ' currently ranks highest for billing / Xero-style work, weighted toward instruction following, intelligence, professional-task score, technical-task signals, and AA cost-to-run efficiency.'
             : 'No billing benchmark data is currently available.'
         },
         {
@@ -1125,7 +1163,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         },
         {
           q: 'How are recommendations compared here?',
-          a: 'The registry combines models.dev pricing and model metadata with cached Artificial Analysis benchmark signals. Customer support gives extra weight to output cost and instruction following; billing emphasizes instruction following and professional-task ability; voice uses AA speech-to-speech benchmark pricing and latency.'
+          a: 'The registry combines models.dev pricing and model metadata with cached Artificial Analysis benchmark signals. Customer support gives extra weight to output cost, output-token efficiency, and instruction following; billing emphasizes instruction following, professional-task ability, and cost-to-run efficiency; voice uses AA speech-to-speech benchmark pricing and latency.'
         }
       ];
 
@@ -1168,7 +1206,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       .catch(function () {
         ['supportRows', 'billingRows'].forEach(function (id) {
           var rows = document.getElementById(id);
-          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="6">Benchmark data unavailable.</td></tr>';
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="8">Benchmark data unavailable.</td></tr>';
         });
         setText('supportSource', 'unavailable');
         setText('billingSource', 'unavailable');

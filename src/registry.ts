@@ -2,6 +2,7 @@ import {
   AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
   AA_SPEECH_TO_SPEECH_MODELS,
 } from "./generated/aa-speech-to-speech";
+import { AA_LLM_EFFICIENCY_MODELS } from "./generated/aa-llm-efficiency";
 
 export const SUPPORTED_PROVIDERS = [
   "openai",
@@ -204,6 +205,13 @@ export interface BenchmarkSignals {
   professional?: number;
   speed?: number;
   latency?: number;
+  intelligenceRunAnswerCost?: number;
+  intelligenceRunReasoningCost?: number;
+  intelligenceRunInputCost?: number;
+  intelligenceRunTotalCost?: number;
+  intelligenceRunAnswerTokens?: number;
+  intelligenceRunReasoningTokens?: number;
+  intelligenceRunOutputTokens?: number;
 }
 
 interface ArtificialAnalysisSpeechToSpeechModel {
@@ -225,6 +233,20 @@ interface ArtificialAnalysisSpeechToSpeechModel {
   pricePerHourInput?: number;
   pricePerHourOutput?: number;
   averageCostPerTask?: number;
+}
+
+interface ArtificialAnalysisLlmEfficiencyModel {
+  label: string;
+  slug: string;
+  detailsUrl: string;
+  intelligenceIndex?: number;
+  intelligenceRunAnswerCost?: number;
+  intelligenceRunReasoningCost?: number;
+  intelligenceRunInputCost?: number;
+  intelligenceRunTotalCost?: number;
+  intelligenceRunAnswerTokens?: number;
+  intelligenceRunReasoningTokens?: number;
+  intelligenceRunOutputTokens?: number;
 }
 
 export function parseFilters(params: URLSearchParams): ModelFilters {
@@ -288,7 +310,11 @@ export function normalizeModelsDev(
   }
 
   const tiered = assignTiers(models);
-  const benchmarkSignals = buildBenchmarkSignals(tiered, artificialAnalysisModels);
+  const benchmarkSignals = buildBenchmarkSignals(
+    tiered,
+    artificialAnalysisModels,
+    exchangeRate,
+  );
   const benchmarked = attachBenchmarkSignals(tiered, benchmarkSignals);
   const providers = buildProviderSummaries(benchmarked);
 
@@ -629,6 +655,7 @@ function buildProviderSummaries(models: RegistryModel[]): ProviderSummary[] {
 function buildBenchmarkSignals(
   models: RegistryModel[],
   artificialAnalysisModels: ArtificialAnalysisModel[],
+  exchangeRate?: ExchangeRate,
 ): Record<string, BenchmarkSignals> {
   const matches = new Map<string, BenchmarkSignals>();
 
@@ -644,10 +671,43 @@ function buildBenchmarkSignals(
     );
     if (!model) continue;
 
-    matches.set(modelKey(model), benchmarkSignalsFromArtificialAnalysis(aaModel));
+    mergeBenchmarkSignals(
+      matches,
+      model,
+      benchmarkSignalsFromArtificialAnalysis(aaModel),
+    );
+  }
+
+  for (const efficiencyModel of AA_LLM_EFFICIENCY_MODELS as readonly ArtificialAnalysisLlmEfficiencyModel[]) {
+    const efficiencyKeys = artificialAnalysisEfficiencyKeys(efficiencyModel);
+    const model = models.find((candidate) =>
+      modelKeys(candidate).some((key) => efficiencyKeys.has(key)),
+    );
+    if (!model) continue;
+
+    mergeBenchmarkSignals(
+      matches,
+      model,
+      benchmarkSignalsFromArtificialAnalysisEfficiency(
+        efficiencyModel,
+        exchangeRate,
+      ),
+    );
   }
 
   return Object.fromEntries(matches);
+}
+
+function mergeBenchmarkSignals(
+  matches: Map<string, BenchmarkSignals>,
+  model: RegistryModel,
+  signals: BenchmarkSignals,
+): void {
+  const key = modelKey(model);
+  matches.set(key, {
+    ...(matches.get(key) ?? {}),
+    ...signals,
+  });
 }
 
 function attachBenchmarkSignals(
@@ -752,6 +812,44 @@ function benchmarkSignalsFromArtificialAnalysis(
   };
 }
 
+function benchmarkSignalsFromArtificialAnalysisEfficiency(
+  model: ArtificialAnalysisLlmEfficiencyModel,
+  exchangeRate?: ExchangeRate,
+): BenchmarkSignals {
+  const rate = exchangeRate?.rate ?? 1;
+  return {
+    ...optionalSignal("intelligence", model.intelligenceIndex),
+    ...optionalSignal(
+      "intelligenceRunAnswerCost",
+      audValueOrUndefined(model.intelligenceRunAnswerCost, rate),
+    ),
+    ...optionalSignal(
+      "intelligenceRunReasoningCost",
+      audValueOrUndefined(model.intelligenceRunReasoningCost, rate),
+    ),
+    ...optionalSignal(
+      "intelligenceRunInputCost",
+      audValueOrUndefined(model.intelligenceRunInputCost, rate),
+    ),
+    ...optionalSignal(
+      "intelligenceRunTotalCost",
+      audValueOrUndefined(model.intelligenceRunTotalCost, rate),
+    ),
+    ...optionalSignal(
+      "intelligenceRunAnswerTokens",
+      model.intelligenceRunAnswerTokens,
+    ),
+    ...optionalSignal(
+      "intelligenceRunReasoningTokens",
+      model.intelligenceRunReasoningTokens,
+    ),
+    ...optionalSignal(
+      "intelligenceRunOutputTokens",
+      model.intelligenceRunOutputTokens,
+    ),
+  };
+}
+
 function firstScore(
   evaluations: Record<string, unknown>,
   keys: string[],
@@ -780,6 +878,16 @@ function optionalSignal<K extends keyof BenchmarkSignals>(
 function artificialAnalysisKeys(model: ArtificialAnalysisModel): Set<string> {
   return new Set(
     [model.id, model.name, model.slug]
+      .filter((value): value is string => typeof value === "string")
+      .map(normalizeMatchKey),
+  );
+}
+
+function artificialAnalysisEfficiencyKeys(
+  model: ArtificialAnalysisLlmEfficiencyModel,
+): Set<string> {
+  return new Set(
+    [model.slug, model.label, model.detailsUrl.split("/").filter(Boolean).at(-1)]
       .filter((value): value is string => typeof value === "string")
       .map(normalizeMatchKey),
   );
@@ -851,7 +959,7 @@ function scoreRecommendation(
   const latency = latencyScore(signals, model, useCase);
   const speed = speedScore(signals);
   const context = contextScore(model);
-  const cost = costScore(model, useCase);
+  const cost = costScore(model, useCase, signals);
   const weights = scoringWeights(useCase, careLevel);
 
   return (
@@ -974,7 +1082,11 @@ function contextScore(model: RegistryModel): number {
   return Math.min(model.contextWindow / 1_000_000, 1) * 100;
 }
 
-function costScore(model: RegistryModel, useCase?: UseCase): number {
+function costScore(
+  model: RegistryModel,
+  useCase?: UseCase,
+  signals?: BenchmarkSignals,
+): number {
   if (useCase === "voice") {
     const cost = voiceCost(model);
     return cost === undefined
@@ -988,7 +1100,48 @@ function costScore(model: RegistryModel, useCase?: UseCase): number {
   const blended =
     (model.pricing.inputPerMTok ?? 100) * inputWeight +
     (model.pricing.outputPerMTok ?? 100) * outputWeight;
-  return 100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100;
+  const priceScore =
+    100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100;
+  const runCostScore = benchmarkRunCostScore(signals);
+  const outputTokenScore = benchmarkOutputTokenScore(signals);
+
+  if (useCase === "customer-support") {
+    return weightedAverage(
+      [
+        [priceScore, 0.45],
+        [outputTokenScore, 0.35],
+        [runCostScore, 0.2],
+      ],
+      priceScore,
+    );
+  }
+
+  if (useCase === "billing") {
+    return weightedAverage(
+      [
+        [priceScore, 0.55],
+        [runCostScore, 0.25],
+        [outputTokenScore, 0.2],
+      ],
+      priceScore,
+    );
+  }
+
+  return priceScore;
+}
+
+function benchmarkRunCostScore(signals: BenchmarkSignals | undefined): number | undefined {
+  const cost = signals?.intelligenceRunTotalCost;
+  if (cost === undefined) return undefined;
+  return 100 - Math.min(Math.log1p(cost) / Math.log1p(8_000), 1) * 100;
+}
+
+function benchmarkOutputTokenScore(
+  signals: BenchmarkSignals | undefined,
+): number | undefined {
+  const tokens = signals?.intelligenceRunOutputTokens;
+  if (tokens === undefined) return undefined;
+  return 100 - Math.min(Math.log1p(tokens) / Math.log1p(250_000_000), 1) * 100;
 }
 
 function weightedAverage(
@@ -1166,6 +1319,13 @@ function optionalAudPrice(
 
 function audValue(value: number, rate: number): number {
   return Number((value * rate).toFixed(6));
+}
+
+function audValueOrUndefined(
+  value: number | undefined,
+  rate: number,
+): number | undefined {
+  return value === undefined ? undefined : audValue(value, rate);
 }
 
 function optionalString<K extends "releaseDate" | "knowledgeCutoff">(

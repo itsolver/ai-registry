@@ -7,6 +7,7 @@ import {
   parseFilters,
   recommendModel,
 } from "../src/registry";
+import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
 import { artificialAnalysisFixture, modelsDevFixture } from "./fixtures";
 
 describe("models.dev normalization", () => {
@@ -197,6 +198,43 @@ describe("filtering and recommendations", () => {
       catalog.models.find((model) => model.id === "gpt-cheap")?.benchmarks?.llm
         ?.latency,
     ).toBeUndefined();
+  });
+
+  it("attaches Artificial Analysis output-token efficiency signals", () => {
+    const source = {
+      openai: {
+        models: {
+          "gpt-5-5": {
+            id: "gpt-5-5",
+            name: "GPT-5.5",
+            family: "gpt",
+            reasoning: true,
+            tool_call: true,
+            modalities: { input: ["text"], output: ["text"] },
+            open_weights: false,
+            limit: { context: 400000, output: 128000 },
+            cost: { input: 1, output: 10 },
+          },
+        },
+      },
+    };
+    const catalog = normalizeModelsDev(source, "2026-05-21T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 2,
+      source: "test",
+    });
+    const model = catalog.models.find((item) => item.id === "gpt-5-5");
+    const sourceRecord = AA_LLM_EFFICIENCY_MODELS.find(
+      (item) => item.slug === "gpt-5-5",
+    );
+
+    expect(model?.benchmarks?.llm?.intelligenceRunOutputTokens).toBe(
+      sourceRecord?.intelligenceRunOutputTokens,
+    );
+    expect(model?.benchmarks?.llm?.intelligenceRunTotalCost).toBeCloseTo(
+      (sourceRecord?.intelligenceRunTotalCost ?? 0) * 2,
+    );
   });
 
   it("uses Artificial Analysis speech-to-speech data for voice recommendations", () => {

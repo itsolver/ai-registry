@@ -444,8 +444,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         <div class="b-field">
           <label for="b-usecase">For use case</label>
           <select id="b-usecase">
-            <option value="">general</option>
-            <option value="customer-support">customer support</option>
+            <option value="customer-support" selected>customer support</option>
             <option value="billing">billing</option>
             <option value="voice">voice</option>
           </select>
@@ -531,8 +530,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     </div>
   </div>
 
-  <h2>Relevant Benchmark</h2>
-  <p class="bench-note" id="benchmarkHint">Select a use case in Build Your Query to bring the matching benchmark table into focus.</p>
+  <h2 id="benchmarkTitle">Customer Support Benchmark</h2>
+  <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.</p>
   <div class="benchmark-panels">
     <div class="benchmark-panel" data-benchmark-panel="customer-support" hidden>
       <p class="bench-note">Customer support models are ranked from the cached Artificial Analysis LLM extract, with AUD output cost weighted because generated replies are where support costs bite.</p>
@@ -770,8 +769,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     var benchmarkTables = {};
-    var selectedBenchmark = { tableId: '', modelId: '', useCase: '' };
-    var allModels = [];
+    var selectedBenchmark = { tableId: '', modelId: '' };
 
     function sortValue(value) {
       return value === undefined || value === null || Number.isNaN(value) ? -Infinity : value;
@@ -791,10 +789,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         columns: columns,
         sortKey: defaultSortKey,
         direction: defaultDirection || 'desc',
-        selectedId: selectedBenchmark.tableId === tableId ? selectedBenchmark.modelId : '',
-        selectedRow: selectedBenchmark.tableId === tableId
-          ? selectedRowForTable(tableId, selectedBenchmark.modelId, selectedBenchmark.useCase)
-          : undefined
+        selectedId: selectedBenchmark.tableId === tableId ? selectedBenchmark.modelId : ''
       };
       drawSortableTable(tableId);
     }
@@ -819,10 +814,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         }
         return (a - b) * direction;
       });
-      var selectedInRows = state.selectedId && sorted.some(function (row) { return benchmarkRowId(row) === state.selectedId; });
-      var visible = selectedInRows || !state.selectedRow ? sorted : [state.selectedRow].concat(sorted);
-
-      tbody.innerHTML = visible.map(function (row) {
+      tbody.innerHTML = sorted.map(function (row) {
         var classes = [];
         if (benchmarkRowId(row) === state.selectedId) classes.push('selected');
         return '<tr' + (classes.length ? ' class="' + classes.join(' ') + '"' : '') + '>' +
@@ -847,16 +839,35 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return '';
     }
 
+    function benchmarkCopy(useCase) {
+      if (useCase === 'voice') {
+        return {
+          title: 'Voice Benchmark',
+          hint: 'Voice models are ranked for speech-to-speech agents using τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
+        };
+      }
+      if (useCase === 'billing' || (useCase && useCase.indexOf('billing-') === 0)) {
+        return {
+          title: 'Billing / Xero Benchmark',
+          hint: 'Billing models are ranked for Xero-style reconciliation work using instruction following, professional-task ability, intelligence, technical judgment, output-token efficiency, and AUD output cost.'
+        };
+      }
+      return {
+        title: 'Customer Support Benchmark',
+        hint: 'Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.'
+      };
+    }
+
     function updateBenchmarkPanel(useCase) {
       var active = benchmarkPanelForUseCase(useCase);
       document.querySelectorAll('[data-benchmark-panel]').forEach(function (panel) {
         panel.hidden = panel.getAttribute('data-benchmark-panel') !== active;
       });
+      var copy = benchmarkCopy(useCase);
+      setText('benchmarkTitle', copy.title);
       var hint = document.getElementById('benchmarkHint');
       if (!hint) return;
-      hint.textContent = active
-        ? 'Showing the benchmark table for the selected use case.'
-        : 'Select a use case in Build Your Query to bring the matching benchmark table into focus.';
+      hint.textContent = copy.hint;
     }
 
     function updateFilterVisibility(useCase) {
@@ -867,28 +878,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       });
     }
 
-    function selectedRowForTable(tableId, modelId, useCase) {
-      var model = allModels.find(function (item) { return item.id === modelId; });
-      if (!model) return undefined;
-      if (tableId === 'voiceRows') return model;
-      if (tableId === 'supportRows') return { model: model, score: textUseCaseScore(model, 'customer-support') };
-      if (tableId === 'billingRows') return { model: model, score: textUseCaseScore(model, useCase || 'billing') };
-      return undefined;
-    }
-
     function highlightBenchmark(modelId, useCase) {
       selectedBenchmark = {
         tableId: benchmarkTableForUseCase(useCase),
-        modelId: modelId || '',
-        useCase: useCase || ''
+        modelId: modelId || ''
       };
       Object.keys(benchmarkTables).forEach(function (tableId) {
         benchmarkTables[tableId].selectedId =
           tableId === selectedBenchmark.tableId ? selectedBenchmark.modelId : '';
-        benchmarkTables[tableId].selectedRow =
-          tableId === selectedBenchmark.tableId
-            ? selectedRowForTable(tableId, selectedBenchmark.modelId, selectedBenchmark.useCase)
-            : undefined;
         drawSortableTable(tableId);
       });
     }
@@ -1201,9 +1198,9 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     fetch('/v1/models')
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
       .then(function (data) {
-        allModels = data.models || [];
-        renderTextBenchmarks(allModels);
-        renderFaq(allModels);
+        var models = data.models || [];
+        renderTextBenchmarks(models);
+        renderFaq(models);
       })
       .catch(function () {
         ['supportRows', 'billingRows'].forEach(function (id) {

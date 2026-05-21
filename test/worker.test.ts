@@ -128,7 +128,7 @@ describe("worker routes", () => {
   it("uses useCase and careLevel for benchmark-aware recommendations", async () => {
     const response = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/models/recommend?provider=openai&useCase=coding&careLevel=premium",
+        "https://ai.itsolver.au/v1/models/recommend?provider=openai&useCase=billing&careLevel=premium",
         {
           headers: { Authorization: "Bearer test-secret" },
         },

@@ -21,10 +21,7 @@ export const CAPABILITIES = [
 export const TIERS = ["fast", "balanced", "best"] as const;
 export const USE_CASES = [
   "customer-support",
-  "coding",
-  "billing-routine",
-  "billing-risky",
-  "billing-incident",
+  "billing",
   "voice",
 ] as const;
 export const CARE_LEVELS = [
@@ -234,8 +231,10 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
   const providerParam = params.get("provider");
   const provider = asProvider(providerParam);
   const tier = asTier(params.get("tier"));
-  const useCase = asUseCase(params.get("useCase"));
-  const careLevel = asCareLevel(params.get("careLevel"));
+  const useCaseParam = params.get("useCase");
+  const useCase = asUseCase(useCaseParam);
+  const careLevel =
+    asCareLevel(params.get("careLevel")) ?? legacyBillingCareLevel(useCaseParam);
   const capability = asCapability(params.get("capability"));
   const maxInputCostPerMTok =
     asFiniteNumber(params.get("maxInputCostPerMTok")) ??
@@ -442,7 +441,21 @@ function asTier(value: string | null): Tier | undefined {
 
 function asUseCase(value: string | null): UseCase | undefined {
   if (value === "support") return "customer-support";
+  if (
+    value === "billing-routine" ||
+    value === "billing-risky" ||
+    value === "billing-incident"
+  ) {
+    return "billing";
+  }
   return USE_CASES.find((useCase) => useCase === value);
+}
+
+function legacyBillingCareLevel(value: string | null): CareLevel | undefined {
+  if (value === "billing-routine") return "standard";
+  if (value === "billing-risky") return "premium";
+  if (value === "billing-incident") return "complex";
+  return undefined;
 }
 
 function asCareLevel(value: string | null): CareLevel | undefined {
@@ -852,8 +865,6 @@ function scoreRecommendation(
 
 function defaultCareLevel(useCase: UseCase): CareLevel {
   if (useCase === "customer-support" || useCase === "voice") return "standard";
-  if (useCase === "billing-routine") return "standard";
-  if (useCase === "billing-incident") return "complex";
   return "premium";
 }
 
@@ -865,20 +876,14 @@ function scoringWeights(
     return { quality: 0.45, latency: 0.2, speed: 0, context: 0, cost: 0.35 };
   }
 
-  if (useCase === "coding") {
-    return { quality: 0.52, latency: 0.08, speed: 0.08, context: 0.12, cost: 0.2 };
-  }
-
-  if (useCase === "billing-routine") {
-    return { quality: 0.34, latency: 0.08, speed: 0.06, context: 0.12, cost: 0.4 };
-  }
-
-  if (useCase === "billing-risky") {
+  if (useCase === "billing") {
+    if (careLevel === "triage" || careLevel === "standard") {
+      return { quality: 0.34, latency: 0.08, speed: 0.06, context: 0.12, cost: 0.4 };
+    }
+    if (careLevel === "complex") {
+      return { quality: 0.62, latency: 0.08, speed: 0.04, context: 0.2, cost: 0.06 };
+    }
     return { quality: 0.54, latency: 0.05, speed: 0.04, context: 0.18, cost: 0.19 };
-  }
-
-  if (useCase === "billing-incident") {
-    return { quality: 0.62, latency: 0.08, speed: 0.04, context: 0.2, cost: 0.06 };
   }
 
   if (careLevel === "triage") {
@@ -910,18 +915,6 @@ function qualityScore(
   }
 
   if (!signals) return fallback;
-
-  if (useCase === "coding") {
-    return weightedAverage(
-      [
-        [signals.terminalBench, 0.35],
-        [signals.coding, 0.35],
-        [signals.instructionFollowing, 0.15],
-        [signals.intelligence, 0.15],
-      ],
-      fallback,
-    );
-  }
 
   if (useCase === "customer-support") {
     return weightedAverage(

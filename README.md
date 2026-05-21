@@ -10,7 +10,7 @@ https://ai.itsolver.au
 
 The Worker imports `https://models.dev/api.json`, keeps only `openai`, `google`, `xai`, and `anthropic`, then exposes a small `/v1/...` API with cost-derived recommendation tiers.
 
-Recommendations are tuned for IT Solver customer support, coding, and voice-agent work. The raw `/v1/models` catalog can include broader provider models, but `/v1/models/recommend` only considers work-appropriate OpenAI, Google Gemini, xAI Grok, and Anthropic Claude models with real pricing. Text recommendations exclude open-weight, image, audio, live, embedding, moderation, and transcription-style models. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract.
+Recommendations are tuned for IT Solver customer support, billing, and voice-agent API work. The raw `/v1/models` catalog can include broader provider models, but `/v1/models/recommend` only considers work-appropriate OpenAI, Google Gemini, xAI Grok, and Anthropic Claude models with real pricing. Text recommendations exclude open-weight, image, audio, live, embedding, moderation, and transcription-style models. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract.
 
 Model pricing from models.dev is converted to AUD using the daily USD to AUD rate from Frankfurter. The API only returns AUD pricing.
 
@@ -47,7 +47,7 @@ maxAudioInputCostPerHour=5          # max voice input/cost-to-run AUD per hour
 maxAudioOutputCostPerHour=5         # max voice output AUD per hour
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
-useCase=customer-support|coding|billing-routine|billing-risky|billing-incident|voice
+useCase=customer-support|billing|voice
 careLevel=triage|standard|essential|premium|complex
 includeDeprecated=true
 ```

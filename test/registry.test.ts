@@ -116,6 +116,15 @@ describe("filtering and recommendations", () => {
       "customer-support",
     );
     expect(parseFilters(new URLSearchParams("useCase=billing")).useCase).toBe(
+      "billing",
+    );
+    expect(
+      parseFilters(new URLSearchParams("useCase=billing-incident")),
+    ).toMatchObject({
+      useCase: "billing",
+      careLevel: "complex",
+    });
+    expect(parseFilters(new URLSearchParams("useCase=coding")).useCase).toBe(
       undefined,
     );
   });
@@ -153,7 +162,7 @@ describe("filtering and recommendations", () => {
     ).toBe("gpt-expensive");
   });
 
-  it("uses benchmark-aware scoring for coding recommendations", () => {
+  it("uses benchmark-aware scoring for billing recommendations", () => {
     const catalog = normalizeModelsDev(
       modelsDevFixture,
       "2026-05-19T00:00:00Z",
@@ -164,7 +173,7 @@ describe("filtering and recommendations", () => {
     expect(
       recommendModel(catalog, {
         provider: "openai",
-        useCase: "coding",
+        useCase: "billing",
         careLevel: "premium",
       })?.id,
     ).toBe("gpt-expensive");

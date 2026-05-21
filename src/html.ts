@@ -446,10 +446,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           <select id="b-usecase">
             <option value="">general</option>
             <option value="customer-support">customer support</option>
-            <option value="coding">coding</option>
-            <option value="billing-routine">billing routine</option>
-            <option value="billing-risky">billing risky</option>
-            <option value="billing-incident">billing incident</option>
+            <option value="billing">billing</option>
             <option value="voice">voice</option>
           </select>
         </div>
@@ -563,34 +560,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       </div>
     </div>
     </div>
-    <div class="benchmark-panel" data-benchmark-panel="coding" hidden>
-      <p class="bench-note">Coding models are ranked with TerminalBench, coding score, IFBench, intelligence, speed, context, and AUD output cost in mind.</p>
-      <div class="voice-bench">
-      <div class="voice-head">
-        <strong>Coding</strong>
-        <span id="codingSource">loading...</span>
-      </div>
-      <div class="voice-table-wrap">
-        <table class="voice-table">
-          <thead>
-            <tr>
-              <th data-table="codingRows" data-sort="model">Model</th>
-              <th data-table="codingRows" data-sort="score">Score</th>
-              <th data-table="codingRows" data-sort="coding">Coding</th>
-              <th data-table="codingRows" data-sort="terminal">Terminal</th>
-              <th data-table="codingRows" data-sort="ifbench">IFBench</th>
-              <th data-table="codingRows" data-sort="outputCost">Output AUD/MTok</th>
-            </tr>
-          </thead>
-          <tbody id="codingRows">
-            <tr><td class="empty" colspan="6">loading...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-    </div>
     <div class="benchmark-panel" data-benchmark-panel="billing" hidden>
-      <p class="bench-note">Billing / Xero models are ranked for instruction following, professional-task ability, intelligence, coding judgment, and output cost.</p>
+      <p class="bench-note">Billing / Xero models are ranked for instruction following, professional-task ability, intelligence, technical judgment, and output cost.</p>
       <div class="voice-bench">
       <div class="voice-head">
         <strong>Billing / Xero</strong>
@@ -662,7 +633,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
-    <p>The opinionated endpoint. Apply filters and get one support/coding-appropriate model back.</p>
+    <p>The opinionated endpoint. Apply filters and get one customer support, billing, or voice-appropriate model back.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/providers</code>
@@ -708,7 +679,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     <li>Only OpenAI, Google, xAI, and Anthropic are exposed.</li>
     <li>Each model includes AUD pricing converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Text recommendations exclude open-weight, zero-priced, image, audio, live, embedding, moderation, and transcription-style models. Voice recommendations use the cached Artificial Analysis speech-to-speech leaderboard extract.</li>
-    <li>Recommendation tiers are cost-derived from the remaining support/coding candidate set.</li>
+    <li>Recommendation tiers are cost-derived from the remaining customer support, billing, and voice candidate set.</li>
     <li>Always code a local fallback in client apps.</li>
   </ul>
 
@@ -859,17 +830,15 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function benchmarkTableForUseCase(useCase) {
       if (useCase === 'voice') return 'voiceRows';
-      if (useCase === 'coding') return 'codingRows';
       if (useCase === 'customer-support') return 'supportRows';
-      if (useCase && useCase.indexOf('billing-') === 0) return 'billingRows';
+      if (useCase === 'billing' || (useCase && useCase.indexOf('billing-') === 0)) return 'billingRows';
       return '';
     }
 
     function benchmarkPanelForUseCase(useCase) {
       if (useCase === 'voice') return 'voice';
-      if (useCase === 'coding') return 'coding';
       if (useCase === 'customer-support') return 'customer-support';
-      if (useCase && useCase.indexOf('billing-') === 0) return 'billing';
+      if (useCase === 'billing' || (useCase && useCase.indexOf('billing-') === 0)) return 'billing';
       return '';
     }
 
@@ -890,7 +859,6 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (!model) return undefined;
       if (tableId === 'voiceRows') return model;
       if (tableId === 'supportRows') return { model: model, score: textUseCaseScore(model, 'customer-support') };
-      if (tableId === 'codingRows') return { model: model, score: textUseCaseScore(model, 'coding') };
       if (tableId === 'billingRows') return { model: model, score: textUseCaseScore(model, useCase || 'billing') };
       return undefined;
     }
@@ -998,14 +966,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var signals = ((model.benchmarks || {}).llm || {});
       var quality;
       var outputWeight = useCase === 'customer-support' ? 0.6 : 0.35;
-      if (useCase === 'coding') {
-        quality = weightedSignal(signals, [
-          ['terminalBench', 0.35],
-          ['coding', 0.35],
-          ['instructionFollowing', 0.15],
-          ['intelligence', 0.15]
-        ], 60);
-      } else if (useCase === 'billing') {
+      if (useCase === 'billing') {
         quality = weightedSignal(signals, [
           ['instructionFollowing', 0.3],
           ['intelligence', 0.3],
@@ -1055,13 +1016,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         { key: 'model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
         { key: 'score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
       ];
-      if (useCase === 'coding') {
-        base.push(
-          { key: 'coding', value: function (row) { return llmSignals(row).coding; }, render: function (row) { return score(llmSignals(row).coding); } },
-          { key: 'terminal', value: function (row) { return llmSignals(row).terminalBench; }, render: function (row) { return score(llmSignals(row).terminalBench); } },
-          { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } }
-        );
-      } else if (useCase === 'billing') {
+      if (useCase === 'billing') {
         base.push(
           { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
           { key: 'professional', value: function (row) { return llmSignals(row).professional; }, render: function (row) { return score(llmSignals(row).professional); } },
@@ -1080,16 +1035,13 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function renderTextBenchmarks(models) {
       var support = textRows(models, 'customer-support');
-      var coding = textRows(models, 'coding');
       var billing = textRows(models, 'billing');
 
       renderSortableTable('supportRows', support, commonTextColumns('customer-support'), 'score', 'desc');
-      renderSortableTable('codingRows', coding, commonTextColumns('coding'), 'score', 'desc');
       renderSortableTable('billingRows', billing, commonTextColumns('billing'), 'score', 'desc');
 
       var label = support.length ? 'AA LLM extract' : 'unavailable';
       setText('supportSource', label);
-      setText('codingSource', coding.length ? 'AA LLM extract' : 'unavailable');
       setText('billingSource', billing.length ? 'AA LLM extract' : 'unavailable');
     }
 
@@ -1114,7 +1066,6 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (!faq) return;
 
       var support = topBy(textRows(models, 'customer-support'), function (row) { return row.score; });
-      var coding = topBy(textRows(models, 'coding'), function (row) { return row.score; });
       var billing = topBy(textRows(models, 'billing'), function (row) { return row.score; });
       var voice = topBy(voiceBenchmarkModels(models), voiceScore);
       var cheapestVoice = topBy(voiceBenchmarkModels(models), voiceCost, 'asc');
@@ -1143,15 +1094,9 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             : 'No customer support benchmark data is currently available.'
         },
         {
-          q: 'Which model should coding use?',
-          a: coding[0]
-            ? modelName(coding[0].model) + ' currently ranks highest for coding, weighted toward TerminalBench, coding score, IFBench, intelligence, and output cost.'
-            : 'No coding benchmark data is currently available.'
-        },
-        {
           q: 'Which model should billing / Xero work use?',
           a: billing[0]
-            ? modelName(billing[0].model) + ' currently ranks highest for billing / Xero-style work, weighted toward instruction following, intelligence, professional-task score, coding, and TerminalBench.'
+            ? modelName(billing[0].model) + ' currently ranks highest for billing / Xero-style work, weighted toward instruction following, intelligence, professional-task score, and technical-task signals.'
             : 'No billing benchmark data is currently available.'
         },
         {
@@ -1180,7 +1125,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         },
         {
           q: 'How are recommendations compared here?',
-          a: 'The registry combines models.dev pricing and model metadata with cached Artificial Analysis benchmark signals. Customer support gives extra weight to output cost and instruction following; coding emphasizes TerminalBench and coding; billing emphasizes instruction following and professional-task ability; voice uses AA speech-to-speech benchmark pricing and latency.'
+          a: 'The registry combines models.dev pricing and model metadata with cached Artificial Analysis benchmark signals. Customer support gives extra weight to output cost and instruction following; billing emphasizes instruction following and professional-task ability; voice uses AA speech-to-speech benchmark pricing and latency.'
         }
       ];
 
@@ -1221,12 +1166,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         renderFaq(allModels);
       })
       .catch(function () {
-        ['supportRows', 'codingRows', 'billingRows'].forEach(function (id) {
+        ['supportRows', 'billingRows'].forEach(function (id) {
           var rows = document.getElementById(id);
           if (rows) rows.innerHTML = '<tr><td class="empty" colspan="6">Benchmark data unavailable.</td></tr>';
         });
         setText('supportSource', 'unavailable');
-        setText('codingSource', 'unavailable');
         setText('billingSource', 'unavailable');
         var faq = document.getElementById('faqRows');
         if (faq) faq.innerHTML = '<p>FAQ data unavailable.</p>';

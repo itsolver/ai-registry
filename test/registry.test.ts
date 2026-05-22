@@ -1,252 +1,366 @@
 import { describe, expect, it } from "vitest";
 import {
-  filterModels,
-  isRecommendationCandidate,
-  latestForProvider,
-  normalizeModelsDev,
+  benchmarkCandidates,
+  normalizeArtificialAnalysisCatalog,
   parseFilters,
   recommendModel,
+  type Catalog,
 } from "../src/registry";
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
-import { artificialAnalysisFixture, modelsDevFixture } from "./fixtures";
+import { artificialAnalysisFixture } from "./fixtures";
 
-describe("models.dev normalization", () => {
-  it("imports only the configured private provider set", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+describe("filter parsing", () => {
+  it("parses supported filters and legacy use-case aliases", () => {
+    const filters = parseFilters(
+      new URLSearchParams(
+        "useCase=customer-support&minCostPerMTok=1&maxCostPerMTok=2&minOutputCostPerMTok=4&maxOutputCostPerMTok=8&minRunCostAud=100&maxRunCostAud=500&maxContextWindow=1000000",
+      ),
+    );
 
+    expect(filters).toMatchObject({
+      useCase: "customer-support",
+      minInputCostPerMTok: 1,
+      maxInputCostPerMTok: 2,
+      minOutputCostPerMTok: 4,
+      maxOutputCostPerMTok: 8,
+      minRunCostAud: 100,
+      maxRunCostAud: 500,
+      maxContextWindow: 1000000,
+    });
+    expect(parseFilters(new URLSearchParams("useCase=support")).useCase).toBe(
+      "customer-support",
+    );
+    expect(parseFilters(new URLSearchParams("useCase=billing-incident"))).toMatchObject({
+      useCase: "customer-support",
+    });
+    expect(parseFilters(new URLSearchParams("provider=nvidia"))).toMatchObject({
+      unsupportedProvider: true,
+    });
+  });
+});
+
+describe("Artificial Analysis catalog", () => {
+  it("builds an AA-only catalog without registry models", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-05-19T00:00:00Z",
+      undefined,
+      artificialAnalysisFixture.data,
+    );
+
+    expect(catalog.models).toEqual([]);
+    expect(catalog.modelCount).toBeGreaterThan(0);
     expect(catalog.providers.map((provider) => provider.provider)).toEqual([
       "openai",
       "google",
       "xai",
       "anthropic",
     ]);
-    expect(catalog.models.map((model) => model.provider as string)).not.toContain(
-      "cohere",
-    );
   });
 
-  it("maps models.dev fields into the public API schema", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z", {
-      base: "USD",
-      quote: "AUD",
-      rate: 1.5,
-      date: "2026-05-19",
-      source: "test",
-    });
-    const model = catalog.models.find((item) => item.id === "gemini-fast");
-
-    expect(catalog.exchangeRate).toMatchObject({
-      base: "USD",
-      quote: "AUD",
-      rate: 1.5,
-    });
-    expect(model).toMatchObject({
-      provider: "google",
-      contextWindow: 1000000,
-      outputLimit: 64000,
-      pricing: {
-        inputPerMTok: 0.75,
-        outputPerMTok: 4.5,
-      },
-      capabilities: {
-        vision: true,
-        pdf: true,
-        reasoning: true,
-        toolCalling: true,
-        structuredOutput: true,
-      },
-      openWeights: false,
-      deprecated: false,
-    });
-  });
-
-  it("derives cost-first tiers per provider", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-
-    expect(catalog.models.find((model) => model.id === "gpt-cheap")?.tier).toBe(
-      "fast",
-    );
-    expect(catalog.models.find((model) => model.id === "gpt-middle")?.tier).toBe(
-      "balanced",
-    );
-    expect(
-      catalog.models.find((model) => model.id === "gpt-expensive")?.tier,
-    ).toBe("best");
-  });
-});
-
-describe("filtering and recommendations", () => {
-  it("filters by provider, capability, cost, and context", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-    const models = filterModels(catalog.models, {
-      provider: "openai",
-      capability: "reasoning",
-      maxInputCostPerMTok: 3,
-      minContextWindow: 300000,
-    });
-
-    expect(models.map((model) => model.id)).toEqual(["gpt-middle"]);
-  });
-
-  it("filters by output token cost separately from input token cost", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-    const models = filterModels(catalog.models, {
-      provider: "openai",
-      capability: "reasoning",
-      maxInputCostPerMTok: 20,
-      maxOutputCostPerMTok: 10,
-      includeDeprecated: true,
-    });
-
-    expect(models.map((model) => model.id)).toEqual(["gpt-middle"]);
-  });
-
-  it("parses customer support use case and keeps legacy input cost alias", () => {
-    const filters = parseFilters(
-      new URLSearchParams(
-        "useCase=customer-support&maxCostPerMTok=2&maxOutputCostPerMTok=8",
-      ),
-    );
-
-    expect(filters).toMatchObject({
-      useCase: "customer-support",
-      maxInputCostPerMTok: 2,
-      maxOutputCostPerMTok: 8,
-    });
-    expect(parseFilters(new URLSearchParams("useCase=support")).useCase).toBe(
-      "customer-support",
-    );
-    expect(parseFilters(new URLSearchParams("useCase=billing")).useCase).toBe(
-      "billing",
-    );
-    expect(
-      parseFilters(new URLSearchParams("useCase=billing-incident")),
-    ).toMatchObject({
-      useCase: "billing",
-      careLevel: "complex",
-    });
-    expect(parseFilters(new URLSearchParams("useCase=coding")).useCase).toBe(
-      undefined,
-    );
-  });
-
-  it("does not treat unsupported providers as any provider", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-    const filters = parseFilters(new URLSearchParams("provider=nvidia"));
-
-    expect(filters).toMatchObject({ unsupportedProvider: true });
-    expect(filterModels(catalog.models, { provider: "openai" })).not.toEqual([]);
-    expect(filterModels(catalog.models, filters)).toEqual([]);
-  });
-
-  it("excludes deprecated models by default", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-
-    expect(filterModels(catalog.models, {}).some((model) => model.deprecated)).toBe(
-      false,
-    );
-    expect(
-      filterModels(catalog.models, { includeDeprecated: true }).some(
-        (model) => model.id === "claude-old",
-      ),
-    ).toBe(true);
-  });
-
-  it("recommends within the requested tier after filters", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-
-    expect(
-      recommendModel(catalog, { provider: "openai", tier: "fast" })?.id,
-    ).toBe("gpt-cheap");
-    expect(
-      recommendModel(catalog, { provider: "openai", tier: "best" })?.id,
-    ).toBe("gpt-expensive");
-  });
-
-  it("uses benchmark-aware scoring for billing recommendations", () => {
-    const catalog = normalizeModelsDev(
-      modelsDevFixture,
+  it("includes supported-provider AA rows and excludes unsupported providers", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
       "2026-05-19T00:00:00Z",
       undefined,
       artificialAnalysisFixture.data,
     );
+    const rows = benchmarkCandidates(catalog, { useCase: "customer-support" });
+    const ids = rows.map((row) => row.id);
 
-    expect(
-      recommendModel(catalog, {
-        provider: "openai",
-        useCase: "billing",
-        careLevel: "premium",
-      })?.id,
-    ).toBe("gpt-expensive");
-    expect(
-      catalog.models.find((model) => model.id === "gpt-expensive")?.benchmarks?.llm,
-    ).toMatchObject({
-      coding: 90,
-      terminalBench: 86,
-      instructionFollowing: 96,
+    expect(ids).toContain("gemini-fast");
+    expect(ids).toContain("grok-4-3");
+    expect(ids).not.toContain("grok-4.20-0309-non-reasoning");
+    expect(ids).not.toContain("grok-4.20-multi-agent-0309");
+    expect(ids).not.toContain("gemini-2.0-flash-lite");
+    expect(ids).not.toContain("unsupported-model");
+    const geminiLite = benchmarkCandidates(catalog, {}).find(
+      (row) => row.id === "gemini-2.0-flash-lite",
+    );
+    expect(geminiLite).toMatchObject({
+      provider: "google",
+      recommendable: false,
+      contextWindow: null,
     });
-    expect(catalog.models.find((model) => model.id === "gpt-cheap")?.benchmarks?.llm)
-      .toMatchObject({
-        tauTelecom: 40,
-        professional: 50,
-      });
-    expect(
-      catalog.models.find((model) => model.id === "gpt-cheap")?.benchmarks?.llm
-        ?.speed,
-    ).toBeUndefined();
-    expect(
-      catalog.models.find((model) => model.id === "gpt-cheap")?.benchmarks?.llm
-        ?.latency,
-    ).toBeUndefined();
+    expect(geminiLite?.registryModelId).toBeUndefined();
   });
 
-  it("attaches Artificial Analysis output-token efficiency signals", () => {
-    const source = {
-      openai: {
-        models: {
-          "gpt-5-5": {
-            id: "gpt-5-5",
-            name: "GPT-5.5",
-            family: "gpt",
-            reasoning: true,
-            tool_call: true,
-            modalities: { input: ["text"], output: ["text"] },
-            open_weights: false,
-            limit: { context: 400000, output: 128000 },
-            cost: { input: 1, output: 10 },
-          },
-        },
-      },
-    };
-    const catalog = normalizeModelsDev(source, "2026-05-21T00:00:00Z", {
+  it("displays AA-only rows without pricing but does not recommend them", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-05-19T00:00:00Z",
+      undefined,
+      artificialAnalysisFixture.data,
+    );
+    const geminiFast = benchmarkCandidates(catalog, {
+      provider: "google",
+      useCase: "customer-support",
+    }).find((row) => row.id === "gemini-fast");
+
+    expect(geminiFast?.recommendable).toBe(false);
+    expect(geminiFast?.pricing).toEqual({});
+  });
+
+  it("merges cached AA pricing into benchmark rows by slug", () => {
+    const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z", {
       base: "USD",
       quote: "AUD",
       rate: 2,
       source: "test",
     });
-    const model = catalog.models.find((item) => item.id === "gpt-5-5");
-    const sourceRecord = AA_LLM_EFFICIENCY_MODELS.find(
-      (item) => item.slug === "gpt-5-5",
+    const grok = benchmarkCandidates(catalog, {
+      provider: "xai",
+      useCase: "customer-support",
+    }).find((row) => row.id === "grok-4-3");
+
+    expect(grok).toMatchObject({
+      provider: "xai",
+      recommendable: true,
+      pricing: {
+        inputPerMTok: 2.5,
+        outputPerMTok: 5,
+        cacheReadPerMTok: 0.4,
+      },
+    });
+    expect(grok?.registryModelId).toBeUndefined();
+  });
+
+  it("allows AA-origin rows with real token pricing to be recommended", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-05-19T00:00:00Z",
+      undefined,
+      artificialAnalysisFixture.data,
     );
 
-    expect(model?.benchmarks?.llm?.intelligenceRunOutputTokens).toBe(
-      sourceRecord?.intelligenceRunOutputTokens,
+    const recommendation = recommendModel(catalog, {
+      provider: "xai",
+      useCase: "customer-support",
+      tier: "best",
+    });
+
+    expect(recommendation).toMatchObject({
+      provider: "xai",
+      recommendable: true,
+      source: "artificialanalysis",
+    });
+    expect(recommendation?.pricing.inputPerMTok).toBeGreaterThan(0);
+    expect(recommendation?.pricing.outputPerMTok).toBeGreaterThan(0);
+  });
+
+  it("uses auto-close false positives before cost for customer support rankings", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-05-19T00:00:00Z",
+      undefined,
+      artificialAnalysisFixture.data,
     );
-    expect(model?.benchmarks?.llm?.intelligenceRunTotalCost).toBeCloseTo(
-      (sourceRecord?.intelligenceRunTotalCost ?? 0) * 2,
+    const openaiRecommendation = recommendModel(catalog, {
+      provider: "openai",
+      useCase: "customer-support",
+    });
+    const gpt54Low = benchmarkCandidates(catalog, {
+      provider: "openai",
+      useCase: "customer-support",
+    }).find((row) => row.id === "gpt-5-4-low");
+    const googlePreviewRecommendation = recommendModel(catalog, {
+      provider: "google",
+      useCase: "customer-support",
+    });
+    const googlePreview = benchmarkCandidates(catalog, {
+      provider: "google",
+      useCase: "customer-support",
+    }).find((row) => row.id === "gemini-3-flash-reasoning");
+
+    const fastRecommendation = recommendModel(catalog, {
+      useCase: "customer-support",
+      tier: "fast",
+    });
+    const balancedRecommendation = recommendModel(catalog, {
+      useCase: "customer-support",
+      tier: "balanced",
+    });
+    const bestRecommendation = recommendModel(catalog, {
+      useCase: "customer-support",
+      tier: "best",
+    });
+
+    expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
+      balancedRecommendation?.id,
+    );
+    expect(
+      fastRecommendation?.benchmarks?.llm?.intelligenceRunTotalCost ??
+        Number.POSITIVE_INFINITY,
+    ).toBeLessThanOrEqual(
+      bestRecommendation?.benchmarks?.llm?.intelligenceRunTotalCost ??
+        Number.POSITIVE_INFINITY,
+    );
+    expect(bestRecommendation?.benchmarks?.llm?.intelligence ?? 0).toBeGreaterThanOrEqual(
+      fastRecommendation?.benchmarks?.llm?.intelligence ?? 0,
+    );
+    expect(openaiRecommendation).toMatchObject({
+      id: "gpt-5-4-low",
+      provider: "openai",
+      recommendable: true,
+      pricing: {
+        inputPerMTok: 2.5,
+        outputPerMTok: 15,
+      },
+      benchmarks: {
+        llm: {
+          autoClose: expect.objectContaining({
+            falsePositiveCount: 6,
+            accuracy: expect.any(Number),
+            sourceUrl: expect.any(String),
+            verifiedOn: "2026-05-21",
+          }),
+        },
+      },
+    });
+    expect(gpt54Low).toMatchObject({
+      contextWindow: 1050000,
+      benchmarks: {
+        llm: {
+          customerSupportRank: 6,
+          instructionFollowing: expect.any(Number),
+          agentic: expect.any(Number),
+          autoClose: expect.objectContaining({
+            falsePositiveCount: 6,
+            benchmarkReport: "AI_AUTOCLOSE_CODEX_GPT_5_4_LOW.md",
+          }),
+        },
+      },
+    });
+    expect(googlePreviewRecommendation).toBeUndefined();
+    expect(googlePreview).toMatchObject({
+      recommendable: false,
+      benchmarks: {
+        llm: {
+          autoClose: expect.objectContaining({
+            availability: expect.objectContaining({
+              status: "preview",
+              acceptedRisk: false,
+            }),
+          }),
+        },
+      },
+    });
+  });
+
+  it("does not recommend deprecated or retired customer-support models by default", () => {
+    const safeCandidate = {
+      id: "safe-model",
+      provider: "openai",
+      name: "Safe Model",
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          instructionFollowing: 99,
+          intelligenceRunTotalCost: 100,
+          autoClose: {
+            source: "itsolver-autoclose",
+            modelKey: "openai:safe-model",
+            apiModel: "safe-model",
+            displayName: "Safe Model",
+            benchmarkReport: "safe.md",
+            resultsFile: "safe.json",
+            generatedAt: "2026-05-22T00:00:00Z",
+            benchmarkCodeSha: "test",
+            total: 100,
+            correctCount: 90,
+            accuracy: 0.9,
+            falsePositiveCount: 1,
+            falseNegativeCount: 9,
+            invalidCount: 0,
+            errorCount: 0,
+            parseSuccessRate: 1,
+            avgLatencyMs: 1000,
+            p95LatencyMs: 1200,
+            avgInputTokens: 1000,
+            avgOutputTokens: 100,
+            weightedScore: 55,
+            sourceUrl: "https://example.test/safe",
+            verifiedOn: "2026-05-22",
+            availability: {
+              status: "production",
+              acceptedRisk: false,
+              reason: "test",
+            },
+          },
+        },
+      },
+      pricing: { inputPerMTok: 1, outputPerMTok: 1 },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    } as const;
+    const riskyBenchmarks = {
+      llm: {
+        instructionFollowing: 100,
+        intelligenceRunTotalCost: 1,
+        autoClose: {
+          ...safeCandidate.benchmarks.llm.autoClose,
+          falsePositiveCount: 0,
+          accuracy: 1,
+          weightedScore: 100,
+          availability: {
+            status: "retired",
+            acceptedRisk: false,
+            reason: "test retired model",
+          },
+        },
+      },
+    } as const;
+    const catalog: Catalog = {
+      generatedAt: "2026-05-22T00:00:00Z",
+      modelCount: 3,
+      activeModelCount: 3,
+      providers: [{ provider: "openai", total: 3, active: 3 }],
+      models: [],
+      benchmarkCandidates: [
+        {
+          ...safeCandidate,
+        },
+        {
+          ...safeCandidate,
+          id: "deprecated-model",
+          name: "Deprecated Model",
+          deprecated: true,
+          benchmarks: riskyBenchmarks,
+        },
+        {
+          ...safeCandidate,
+          id: "retired-model",
+          name: "Retired Model",
+          benchmarks: riskyBenchmarks,
+        },
+      ],
+    };
+
+    expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
+      "safe-model",
     );
   });
 
+  it("keeps plain recommendations without a use case empty in AA-only mode", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-05-19T00:00:00Z",
+      undefined,
+      artificialAnalysisFixture.data,
+    );
+
+    expect(recommendModel(catalog, { provider: "xai" })).toBeUndefined();
+  });
+
   it("uses Artificial Analysis speech-to-speech data for voice recommendations", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+    const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z");
     const recommendation = recommendModel(catalog, { provider: "xai", useCase: "voice" });
 
     expect(recommendation).toMatchObject({
       provider: "xai",
-      modalities: {
-        input: ["audio"],
-        output: ["audio"],
-      },
+      source: "artificialanalysis",
       benchmarks: {
         voice: {
           source: "artificialanalysis",
@@ -254,68 +368,112 @@ describe("filtering and recommendations", () => {
       },
     });
     expect(recommendation?.pricing.benchmarkInputAudioPerHour).toBeGreaterThan(0);
-    expect(
-      filterModels(catalog.models, { useCase: "voice" }).map((model) => model.id),
-    ).not.toContain("google-gemini-2-5-flash-native-audio-dialog-thinking");
   });
 
-  it("filters voice input cost by benchmark-run cost, not raw provider input price", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+  it("applies cost caps before use-case scoring", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-05-19T00:00:00Z",
+      undefined,
+      artificialAnalysisFixture.data,
+    );
 
     expect(
       recommendModel(catalog, {
-        useCase: "voice",
-        maxAudioInputCostPerHour: 1,
+        useCase: "customer-support",
+        tier: "best",
+        maxOutputCostPerMTok: 1,
       }),
     ).toBeUndefined();
-  });
-
-  it("falls back to voice input price for voice output cost filters", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-
     expect(
       recommendModel(catalog, {
-        provider: "xai",
-        useCase: "voice",
-        maxAudioOutputCostPerHour: 3,
-      })?.id,
-    ).toBe("grok-voice-think-fast-1-0");
-    expect(
-      recommendModel(catalog, {
-        provider: "xai",
-        useCase: "voice",
-        maxAudioOutputCostPerHour: 2,
+        useCase: "customer-support",
+        tier: "best",
+        maxRunCostAud: 1,
       }),
     ).toBeUndefined();
+    expect(
+      benchmarkCandidates(catalog, {
+        useCase: "customer-support",
+        minRunCostAud: 100,
+        maxRunCostAud: 500,
+      }).every(
+        (row) =>
+          (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.NEGATIVE_INFINITY) >=
+            100 &&
+          (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.POSITIVE_INFINITY) <=
+          500,
+      ),
+    ).toBe(true);
   });
 
-  it("does not recommend embedding models", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
+  it("attaches cached AA efficiency rows without requiring live API data", () => {
+    const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 2,
+      source: "test",
+    });
+    const sourceRecord = AA_LLM_EFFICIENCY_MODELS.find(
+      (item) => item.slug === "gpt-5-5",
+    );
+    const row = benchmarkCandidates(catalog, {
+      provider: "openai",
+      useCase: "customer-support",
+    }).find((item) => item.id === "gpt-5-5");
 
-    expect(recommendModel(catalog, { provider: "openai" })?.id).not.toContain(
-      "embedding",
+    expect(row?.benchmarks.llm?.intelligenceRunOutputTokens).toBe(
+      sourceRecord?.intelligenceRunOutputTokens,
+    );
+    expect(row?.benchmarks.llm?.intelligenceRunTotalCost).toBeCloseTo(
+      (sourceRecord?.intelligenceRunTotalCost ?? 0) * 2,
     );
   });
 
-  it("does not recommend open-weight or zero-priced models", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-    const gemma = catalog.models.find((model) => model.id === "gemma-open");
+  it("maps AA frontier support signals and pricing onto Anthropic rows", () => {
+    const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 2,
+      source: "test",
+    });
+    const sourceRecord = AA_LLM_EFFICIENCY_MODELS.find(
+      (item) => item.slug === "claude-opus-4-7",
+    );
+    const row = benchmarkCandidates(catalog, {
+      provider: "anthropic",
+      useCase: "customer-support",
+    }).find((item) => item.id === "claude-opus-4-7");
 
-    expect(gemma).toBeDefined();
-    expect(isRecommendationCandidate(gemma!)).toBe(false);
+    expect(row).toMatchObject({
+      provider: "anthropic",
+      pricing: {
+        inputPerMTok: (sourceRecord?.inputPrice ?? 0) * 2,
+        outputPerMTok: (sourceRecord?.outputPrice ?? 0) * 2,
+      },
+      benchmarks: {
+        llm: {
+          intelligence: sourceRecord?.intelligenceIndex,
+          agentic: sourceRecord?.agenticIndex,
+          instructionFollowing: sourceRecord?.ifbench,
+          tauTelecom: sourceRecord?.tau2,
+          professional: sourceRecord?.gdpvalNormalized,
+          terminalBench: sourceRecord?.terminalBenchHard,
+          coding: sourceRecord?.codingIndex,
+          lcr: sourceRecord?.lcr,
+          gpqa: sourceRecord?.gpqa,
+          intelligenceRunOutputTokens: sourceRecord?.intelligenceRunOutputTokens,
+        },
+      },
+    });
+    expect(row?.benchmarks.llm?.intelligenceRunTotalCost).toBeCloseTo(
+      (sourceRecord?.intelligenceRunTotalCost ?? 0) * 2,
+    );
+    expect(row?.benchmarks.llm?.autoClose).toBeUndefined();
     expect(
       recommendModel(catalog, {
-        provider: "google",
-        tier: "fast",
-        capability: "reasoning",
-      })?.id,
-    ).toBe("gemini-fast");
-  });
-
-  it("returns the latest non-deprecated provider model", () => {
-    const catalog = normalizeModelsDev(modelsDevFixture, "2026-05-19T00:00:00Z");
-
-    expect(latestForProvider(catalog, "openai")?.id).toBe("text-embedding-3-large");
-    expect(latestForProvider(catalog, "anthropic")?.id).toBe("claude-current");
+        provider: "anthropic",
+        useCase: "customer-support",
+      }),
+    ).toBeUndefined();
   });
 });

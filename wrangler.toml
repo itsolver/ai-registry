@@ -12,7 +12,6 @@ crons = ["0 6 * * *"]
 
 [vars]
 ALLOWED_IPS = "203.12.1.95"
-MODELS_DEV_URL = "https://models.dev/api.json"
 FX_RATE_URL = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD"
 
 # Create this namespace with:

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "refresh:aa-customer-support": "node scripts/extract-aa-customer-support-recommendations.mjs",
     "refresh:aa-llm-efficiency": "node scripts/extract-aa-llm-efficiency.mjs",
+    "refresh:aa-llm-pricing": "node scripts/extract-aa-llm-pricing.mjs",
     "refresh:aa-voice": "node scripts/extract-aa-speech-to-speech.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

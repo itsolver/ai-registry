@@ -1,9 +1,10 @@
 import { HOME_HTML } from "./html";
 import {
   asProvider,
+  benchmarkCandidates,
   filterModels,
   latestForProvider,
-  normalizeModelsDev,
+  normalizeArtificialAnalysisCatalog,
   parseFilters,
   recommendModel,
   type ArtificialAnalysisModel,
@@ -11,10 +12,9 @@ import {
   type ExchangeRate,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v2";
+const CACHE_KEY = "catalog:v8";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
-const DEFAULT_MODELS_DEV_URL = "https://models.dev/api.json";
 const DEFAULT_FX_RATE_URL =
   "https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD";
 const DEFAULT_ARTIFICIAL_ANALYSIS_LLM_URL =
@@ -26,10 +26,10 @@ export interface Env {
   MODEL_REGISTRY_API_KEY?: string;
   MODEL_REGISTRY_API_KEYS?: string;
   ALLOWED_IPS?: string;
-  MODELS_DEV_URL?: string;
   FX_RATE_URL?: string;
   ARTIFICIAL_ANALYSIS_API_KEY?: string;
   ARTIFICIAL_ANALYSIS_LLM_URL?: string;
+  LOCAL_DEV_AUTH_BYPASS?: string;
 }
 
 export default {
@@ -110,6 +110,9 @@ export async function refreshCatalog(env: Env): Promise<Catalog> {
 }
 
 export function isAuthorized(request: Request, env: Env): boolean {
+  if (env.LOCAL_DEV_AUTH_BYPASS === "true") return true;
+  if (isLocalhostRequest(request)) return true;
+
   const allowedIps = splitList(env.ALLOWED_IPS || DEFAULT_ALLOWED_IPS);
   const connectingIp = request.headers.get("CF-Connecting-IP");
   if (connectingIp && allowedIps.includes(connectingIp)) return true;
@@ -124,6 +127,16 @@ export function isAuthorized(request: Request, env: Env): boolean {
   return keys.some((key) => constantTimeEqual(key, token));
 }
 
+function isLocalhostRequest(request: Request): boolean {
+  const hostname = new URL(request.url).hostname;
+  const host = request.headers.get("Host")?.split(":")[0] ?? "";
+  return isLocalhost(hostname) || isLocalhost(host);
+}
+
+function isLocalhost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+}
+
 async function routeApi(
   route: string,
   params: URLSearchParams,
@@ -131,9 +144,9 @@ async function routeApi(
 ): Promise<Response> {
   if (route === "/health") {
     return jsonResponse({
+      ...catalogResponseMetadata(catalog),
       status: "ok",
       apiVersion: "v1",
-      generatedAt: catalog.generatedAt,
       providerCount: catalog.providers.length,
       modelCount: catalog.modelCount,
       activeModelCount: catalog.activeModelCount,
@@ -142,7 +155,7 @@ async function routeApi(
 
   if (route === "/models/providers") {
     return jsonResponse({
-      generatedAt: catalog.generatedAt,
+      ...catalogResponseMetadata(catalog),
       providers: catalog.providers,
     });
   }
@@ -160,15 +173,30 @@ async function routeApi(
     }
 
     return jsonResponse({
-      generatedAt: catalog.generatedAt,
+      ...catalogResponseMetadata(catalog),
       recommendation,
     });
   }
 
-  if (route === "/models") {
-    const models = filterModels(catalog.models, parseFilters(params));
+  if (route === "/benchmarks") {
+    const filters = parseFilters(params);
+    const rows = benchmarkCandidates(catalog, filters).filter(
+      (row) => !filters.useCase || row.recommendable,
+    );
     return jsonResponse({
-      generatedAt: catalog.generatedAt,
+      ...catalogResponseMetadata(catalog),
+      benchmarkCount: rows.length,
+      benchmarks: rows,
+    });
+  }
+
+  if (route === "/models") {
+    const filters = parseFilters(params);
+    const models = catalog.models.length
+      ? filterModels(catalog.models, filters)
+      : benchmarkCandidates(catalog, filters);
+    return jsonResponse({
+      ...catalogResponseMetadata(catalog),
       modelCount: models.length,
       models,
     });
@@ -187,12 +215,21 @@ async function routeApi(
     }
 
     return jsonResponse({
-      generatedAt: catalog.generatedAt,
+      ...catalogResponseMetadata(catalog),
       model,
     });
   }
 
   return jsonResponse({ error: "not_found" }, 404);
+}
+
+function catalogResponseMetadata(catalog: Catalog): Record<string, unknown> {
+  return {
+    generatedAt: catalog.generatedAt,
+    pricingCurrency: catalog.exchangeRate?.quote ?? "USD",
+    sourcePricingCurrency: catalog.exchangeRate?.base ?? "USD",
+    ...(catalog.exchangeRate ? { exchangeRate: catalog.exchangeRate } : {}),
+  };
 }
 
 async function getCatalog(
@@ -232,21 +269,12 @@ async function writeCachedCatalog(env: Env, catalog: Catalog): Promise<void> {
 }
 
 async function fetchCatalog(env: Env): Promise<Catalog> {
-  const [modelsResponse, exchangeRate, artificialAnalysisModels] = await Promise.all([
-    fetch(env.MODELS_DEV_URL || DEFAULT_MODELS_DEV_URL, {
-      headers: { Accept: "application/json" },
-    }),
+  const [exchangeRate, artificialAnalysisModels] = await Promise.all([
     fetchUsdAudRate(env),
     fetchArtificialAnalysisModels(env),
   ]);
 
-  if (!modelsResponse.ok) {
-    throw new Error(`models.dev returned ${modelsResponse.status}`);
-  }
-
-  const source = await modelsResponse.json();
-  return normalizeModelsDev(
-    source as Parameters<typeof normalizeModelsDev>[0],
+  return normalizeArtificialAnalysisCatalog(
     new Date().toISOString(),
     exchangeRate,
     artificialAnalysisModels,

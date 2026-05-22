@@ -19,7 +19,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     * { box-sizing: border-box; }
     body {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      max-width: 760px;
+      max-width: 912px;
       margin: 3rem auto;
       padding: 1.5rem;
       line-height: 1.65;
@@ -185,6 +185,17 @@ export const HOME_HTML = String.raw`<!doctype html>
       gap: 0.3rem;
     }
     .b-field[hidden] { display: none; }
+    .range-field { grid-column: 1 / -1; }
+    .range-group {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.9rem;
+    }
+    .range-group[hidden] { display: none; }
+    .range-group .b-field {
+      min-width: 0;
+    }
     .b-field label {
       color: #9a9286;
       font-size: 0.62rem;
@@ -202,6 +213,81 @@ export const HOME_HTML = String.raw`<!doctype html>
       color: var(--ink);
       padding: 0.5rem 0.65rem;
       font-size: 0.88rem;
+    }
+    .check-field {
+      justify-content: flex-end;
+    }
+    .check-row {
+      display: flex;
+      min-height: 38px;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--ink);
+      font-size: 0.82rem;
+    }
+    .check-row input {
+      width: 16px;
+      min-height: 16px;
+      accent-color: var(--accent);
+    }
+    .price-filter-card {
+      border: 1px solid #d4cfc4;
+      border-radius: 8px;
+      background: var(--paper);
+      padding: 0.6rem 0.7rem 0.55rem;
+    }
+    .compact-filter {
+      padding: 0.5rem 0.6rem 0.45rem;
+    }
+    .price-filter-top,
+    .price-filter-scale {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .price-filter-top strong {
+      color: var(--ink);
+      font-size: 0.88rem;
+    }
+    .compact-filter .price-filter-top strong {
+      font-size: 0.78rem;
+    }
+    .price-filter-top button {
+      border: 1px solid #d4cfc4;
+      border-radius: 999px;
+      background: #f7f4ec;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0.18rem 0.5rem;
+      font: inherit;
+      font-size: 0.72rem;
+    }
+    .price-filter-card input[type="range"] {
+      width: 100%;
+      min-height: 24px;
+      margin: 0.45rem 0 0.25rem;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      accent-color: var(--accent);
+    }
+    .range-stack {
+      position: relative;
+      min-height: 30px;
+      margin: 0.45rem 0 0.25rem;
+    }
+    .range-stack input[type="range"] {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      pointer-events: none;
+    }
+    .range-stack input[type="range"]::-webkit-slider-thumb { pointer-events: auto; }
+    .range-stack input[type="range"]::-moz-range-thumb { pointer-events: auto; }
+    .price-filter-scale {
+      color: var(--muted);
+      font-size: 0.68rem;
     }
     .builder-dark { background: #0e0e0e; }
     .builder-url {
@@ -260,6 +346,35 @@ export const HOME_HTML = String.raw`<!doctype html>
       color: var(--muted);
       font-size: 0.78rem;
     }
+    .definitions {
+      margin: 1.35rem 0 2.2rem;
+      padding: 1rem 1.1rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f6f2e9;
+    }
+    .definitions h3 {
+      margin: 0 0 0.75rem;
+      color: var(--ink);
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .definitions dl {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.34fr) 1fr;
+      gap: 0.55rem 0.9rem;
+      margin: 0;
+      font-size: 0.78rem;
+    }
+    .definitions dt {
+      color: #4c4741;
+      font-weight: 700;
+    }
+    .definitions dd {
+      margin: 0;
+      color: var(--muted);
+    }
     .voice-bench {
       margin: 1.5rem 0 2.2rem;
       overflow: hidden;
@@ -271,13 +386,20 @@ export const HOME_HTML = String.raw`<!doctype html>
       display: flex;
       gap: 1rem;
       justify-content: space-between;
-      align-items: baseline;
+      align-items: center;
       padding: 0.9rem 1rem;
       border-bottom: 1px solid var(--line);
       color: var(--muted);
       font-size: 0.78rem;
     }
     .voice-head strong { color: var(--ink); }
+    .voice-head-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
     .voice-table-wrap { overflow-x: auto; }
     .voice-table {
       width: 100%;
@@ -312,6 +434,24 @@ export const HOME_HTML = String.raw`<!doctype html>
       letter-spacing: 0.06em;
       text-transform: uppercase;
     }
+    .voice-table .not-rec {
+      display: inline-block;
+      margin-top: 0.2rem;
+      color: #8d3b28;
+      font-size: 0.68rem;
+      letter-spacing: 0.02em;
+    }
+    .voice-table .note-cell {
+      max-width: 220px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.35;
+      white-space: normal;
+    }
+    .voice-table .provider-focus.provider-openai td { background: #eef0f2; }
+    .voice-table .provider-focus.provider-google td { background: #e8f4ec; }
+    .voice-table .provider-focus.provider-xai td { background: #eeecfb; }
+    .voice-table .provider-focus.provider-anthropic td { background: #f7eadf; }
     .voice-table .selected td {
       background: #dff4d8;
       box-shadow: inset 0 1px 0 rgba(63,140,60,0.2), inset 0 -1px 0 rgba(63,140,60,0.2);
@@ -381,9 +521,12 @@ export const HOME_HTML = String.raw`<!doctype html>
       h1 { font-size: 1.85rem; }
       .tagline { font-size: 1.02rem; }
       .builder-controls { grid-template-columns: 1fr; }
+      .range-group { grid-template-columns: 1fr; }
       .builder-url { flex-wrap: wrap; }
       .builder-url-text { width: 100%; padding-left: 1rem; }
       .builder-actions { width: 100%; justify-content: flex-end; padding: 0 0.6rem 0.55rem; }
+      .definitions dl { grid-template-columns: 1fr; }
+      .definitions dt { margin-top: 0.3rem; }
     }
   </style>
 </head>
@@ -411,8 +554,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       <button class="tab" type="button" data-tab="python">python</button>
     </div>
     <div class="tab-panel pre-wrap" data-panel="curl"><pre><code>curl -H "Authorization: Bearer $MODEL_REGISTRY_API_KEY" \
-  "https://ai.itsolver.au/v1/models/recommend?tier=fast"</code></pre></div>
-    <div class="tab-panel pre-wrap" data-panel="js" hidden><pre><code>const res = await fetch('https://ai.itsolver.au/v1/models/recommend?tier=fast', {
+  "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"</code></pre></div>
+    <div class="tab-panel pre-wrap" data-panel="js" hidden><pre><code>const res = await fetch('https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast', {
   headers: { Authorization: 'Bearer ' + process.env.MODEL_REGISTRY_API_KEY }
 });
 const { recommendation } = await res.json();
@@ -422,12 +565,12 @@ import requests
 
 r = requests.get(
     'https://ai.itsolver.au/v1/models/recommend',
-    params={'tier': 'fast'},
+    params={'useCase': 'customer-support', 'tier': 'fast'},
     headers={'Authorization': f"Bearer {os.environ['MODEL_REGISTRY_API_KEY']}"}
 )
 print(r.json()['recommendation']['id'])</code></pre></div>
   </div>
-  <p>Returns a cost-first fast model from the private curated provider set. Cache it locally and keep a fallback in production clients.</p>
+  <p>Returns a benchmark-backed fast model for customer support. Cache it locally and keep a fallback in production clients.</p>
 
   <h2>Build Your Query</h2>
   <div class="builder">
@@ -445,17 +588,15 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           <label for="b-usecase">For use case</label>
           <select id="b-usecase">
             <option value="customer-support" selected>customer support</option>
-            <option value="billing">billing</option>
             <option value="voice">voice</option>
           </select>
         </div>
         <div class="b-field">
-          <label for="b-tier">Speed / quality</label>
+          <label for="b-tier">Recommendation priority</label>
           <select id="b-tier">
-            <option value="" selected>any tier</option>
-            <option value="fast">fast</option>
-            <option value="balanced">balanced</option>
-            <option value="best">best</option>
+            <option value="" selected>balanced</option>
+            <option value="fast">lower Run AUD</option>
+            <option value="best">highest score</option>
           </select>
         </div>
         <div class="b-field">
@@ -479,25 +620,6 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             <option value="structuredOutput">structured output</option>
           </select>
         </div>
-        <div class="b-field">
-          <label for="b-carelevel">Care level</label>
-          <select id="b-carelevel">
-            <option value="">default</option>
-            <option value="triage">triage</option>
-            <option value="standard">standard</option>
-            <option value="essential">essential</option>
-            <option value="premium">premium</option>
-            <option value="complex">complex</option>
-          </select>
-        </div>
-        <div class="b-field" data-filter-scope="text">
-          <label for="b-maxcost">Max input AUD/MTok</label>
-          <input type="number" id="b-maxcost" min="0" step="0.1" placeholder="no limit">
-        </div>
-        <div class="b-field" data-filter-scope="text">
-          <label for="b-maxoutputcost">Max output AUD/MTok</label>
-          <input type="number" id="b-maxoutputcost" min="0" step="0.1" placeholder="no limit">
-        </div>
         <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudioinputcost">Max input audio AUD/hr</label>
           <input type="number" id="b-maxaudioinputcost" min="0" step="0.1" placeholder="voice only">
@@ -506,9 +628,83 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           <label for="b-maxaudiooutputcost">Max output audio AUD/hr</label>
           <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="voice only">
         </div>
+        <div class="range-group" data-filter-scope="text">
         <div class="b-field" data-filter-scope="text">
-          <label for="b-minctx">Min context (k)</label>
-          <input type="number" id="b-minctx" min="0" step="32" placeholder="e.g. 128">
+          <label for="b-input-min-range">Input AUD/MTok range</label>
+          <input type="hidden" id="b-mincost">
+          <input type="hidden" id="b-maxcost">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-inputcost-label">Any input AUD</strong>
+              <button type="button" id="b-inputcost-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-input-min-range" min="0" max="50" step="0.05" value="0" aria-label="Minimum input AUD per million tokens">
+              <input type="range" id="b-input-max-range" min="0" max="50" step="0.05" value="50" aria-label="Maximum input AUD per million tokens">
+            </div>
+            <div class="price-filter-scale">
+              <span>$0</span>
+              <span>$50+</span>
+            </div>
+          </div>
+        </div>
+        <div class="b-field" data-filter-scope="text">
+          <label for="b-output-min-range">Output AUD/MTok range</label>
+          <input type="hidden" id="b-minoutputcost">
+          <input type="hidden" id="b-maxoutputcost">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-outputcost-label">Any output AUD</strong>
+              <button type="button" id="b-outputcost-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-output-min-range" min="0" max="75" step="0.05" value="0" aria-label="Minimum output AUD per million tokens">
+              <input type="range" id="b-output-max-range" min="0" max="75" step="0.05" value="75" aria-label="Maximum output AUD per million tokens">
+            </div>
+            <div class="price-filter-scale">
+              <span>$0</span>
+              <span>$75+</span>
+            </div>
+          </div>
+        </div>
+        <div class="b-field" data-filter-scope="text">
+          <label for="b-context-min-range">Context range</label>
+          <input type="hidden" id="b-minctx">
+          <input type="hidden" id="b-maxctx">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-context-label">Any context</strong>
+              <button type="button" id="b-context-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-context-min-range" min="0" max="1200" step="25" value="0" aria-label="Minimum context window in thousands of tokens">
+              <input type="range" id="b-context-max-range" min="0" max="1200" step="25" value="1200" aria-label="Maximum context window in thousands of tokens">
+            </div>
+            <div class="price-filter-scale">
+              <span>0k</span>
+              <span>1.2M+</span>
+            </div>
+          </div>
+        </div>
+        </div>
+        <div class="b-field range-field" data-filter-scope="text">
+          <label for="b-run-min-range">Run AUD range</label>
+          <input type="hidden" id="b-minruncost">
+          <input type="hidden" id="b-maxruncost">
+          <div class="price-filter-card">
+            <div class="price-filter-top">
+              <strong id="b-runcost-label">Any Run AUD</strong>
+              <button type="button" id="b-runcost-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-run-min-range" min="0" max="8000" step="50" value="0" aria-label="Minimum Run AUD">
+              <input type="range" id="b-run-max-range" min="0" max="8000" step="50" value="8000" aria-label="Maximum Run AUD">
+            </div>
+            <div class="price-filter-scale">
+              <span>$0</span>
+              <span>$8,000+</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -534,11 +730,17 @@ print(r.json()['recommendation']['id'])</code></pre></div>
   <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.</p>
   <div class="benchmark-panels">
     <div class="benchmark-panel" data-benchmark-panel="customer-support" hidden>
-      <p class="bench-note">Customer support models are ranked from the cached Artificial Analysis LLM extract, with AUD output cost weighted because generated replies are where support costs bite.</p>
+      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Run AUD/token efficiency.</p>
       <div class="voice-bench">
       <div class="voice-head">
         <strong>Customer support</strong>
-        <span id="supportSource">loading...</span>
+        <div class="voice-head-meta">
+          <label class="check-row" for="b-provider-table-only">
+            <input type="checkbox" id="b-provider-table-only">
+            <span>Only show selected provider</span>
+          </label>
+          <span id="supportSource">loading...</span>
+        </div>
       </div>
       <div class="voice-table-wrap">
         <table class="voice-table">
@@ -546,44 +748,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             <tr>
               <th data-table="supportRows" data-sort="model">Model</th>
               <th data-table="supportRows" data-sort="score">Score</th>
+              <th data-table="supportRows" data-sort="falsePositives">ITS FP</th>
+              <th data-table="supportRows" data-sort="accuracy">ITS Acc</th>
               <th data-table="supportRows" data-sort="ifbench">IFBench</th>
-              <th data-table="supportRows" data-sort="telecom">Telecom</th>
+              <th data-table="supportRows" data-sort="agentic">Agentic</th>
               <th data-table="supportRows" data-sort="intelligence">Intel</th>
               <th data-table="supportRows" data-sort="outputCost">Output AUD/MTok</th>
               <th data-table="supportRows" data-sort="runCost">Run AUD</th>
-              <th data-table="supportRows" data-sort="outTokens">Out Tok</th>
+              <th data-table="supportRows" data-sort="note">ITS Notes</th>
             </tr>
           </thead>
           <tbody id="supportRows">
-            <tr><td class="empty" colspan="8">loading...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-    </div>
-    <div class="benchmark-panel" data-benchmark-panel="billing" hidden>
-      <p class="bench-note">Billing / Xero models are ranked for instruction following, professional-task ability, intelligence, technical judgment, and output cost.</p>
-      <div class="voice-bench">
-      <div class="voice-head">
-        <strong>Billing / Xero</strong>
-        <span id="billingSource">loading...</span>
-      </div>
-      <div class="voice-table-wrap">
-        <table class="voice-table">
-          <thead>
-            <tr>
-              <th data-table="billingRows" data-sort="model">Model</th>
-              <th data-table="billingRows" data-sort="score">Score</th>
-              <th data-table="billingRows" data-sort="ifbench">IFBench</th>
-              <th data-table="billingRows" data-sort="professional">Pro</th>
-              <th data-table="billingRows" data-sort="intelligence">Intel</th>
-              <th data-table="billingRows" data-sort="outputCost">Output AUD/MTok</th>
-              <th data-table="billingRows" data-sort="runCost">Run AUD</th>
-              <th data-table="billingRows" data-sort="outTokens">Out Tok</th>
-            </tr>
-          </thead>
-          <tbody id="billingRows">
-            <tr><td class="empty" colspan="8">loading...</td></tr>
+            <tr><td class="empty" colspan="10">loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -618,6 +794,36 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     </div>
   </div>
 
+  <div class="definitions" aria-labelledby="definitionsTitle">
+    <h3 id="definitionsTitle">Definitions</h3>
+    <dl>
+      <dt>any tier</dt>
+      <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is balanced.</dd>
+      <dt>fast</dt>
+      <dd>For customer support, only affects tie-breaks after false positives and accuracy. For voice, prefers lower latency and lower audio cost.</dd>
+      <dt>balanced</dt>
+      <dd>The default. Customer support uses auto-close benchmark safety first, then accuracy, then Run AUD/token efficiency.</dd>
+      <dt>best</dt>
+      <dd>Favors stronger benchmark scores only after customer-support safety and accuracy are tied.</dd>
+      <dt>cost caps</dt>
+      <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
+      <dt>AUD/MTok</dt>
+      <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
+      <dt>voice AUD/hr</dt>
+      <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
+      <dt>benchmark table</dt>
+      <dd>The live recommendation for customer support or voice must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
+      <dt>IT Solver auto-close benchmark</dt>
+      <dd>Our reopened-ticket classifier replay. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
+      <dt>false positives / accuracy</dt>
+      <dd>False positives are unresolved tickets predicted as resolved. Accuracy is overall classifier correctness on the auto-close replay set.</dd>
+      <dt>ITS columns</dt>
+      <dd><code>ITS</code> marks IT Solver auto-close benchmark fields. <code>ITS FP</code>, <code>ITS Acc</code>, and <code>ITS Notes</code> come from our Zendesk ticket-classification replay, not Artificial Analysis.</dd>
+      <dt>IFBench / Agentic / τ-Voice / TTFA</dt>
+      <dd>IFBench measures instruction following, Agentic measures multi-step task performance, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
+    </dl>
+  </div>
+
   <h2>Frequently Asked Questions</h2>
   <div class="faq" id="faqRows">
     <p>loading...</p>
@@ -632,11 +838,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
   </div>
   <div class="endpoint">
     <code>GET /v1/models</code>
-    <p>Every imported model from OpenAI, Google, xAI, and Anthropic. Filter by provider, tier, capability, AUD cost, context, and deprecated status.</p>
+    <p>Artificial Analysis benchmark candidates from OpenAI, Google, xAI, and Anthropic. Filter by provider, use case, and cost caps.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
-    <p>The opinionated endpoint. Apply filters and get one customer support, billing, or voice-appropriate model back.</p>
+    <p>The opinionated endpoint. Apply filters and get one customer support or voice-appropriate model back.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/providers</code>
@@ -649,48 +855,48 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
   <h2>Schema</h2>
   <div class="pre-wrap"><pre><code>{
-  "id": "claude-sonnet-4-5",
-  "provider": "anthropic",
-  "name": "Claude Sonnet 4.5",
-  "family": "claude-sonnet",
-  "contextWindow": 200000,
-  "outputLimit": 64000,
-  "pricing": {
-    "inputPerMTok": 4.2153,
-    "outputPerMTok": 21.0765
+  "generatedAt": "2026-05-21T13:03:34.674Z",
+  "pricingCurrency": "AUD",
+  "sourcePricingCurrency": "USD",
+  "exchangeRate": {
+    "base": "USD",
+    "quote": "AUD",
+    "rate": 1.4042
   },
-  "capabilities": {
-    "vision": true,
-    "pdf": true,
-    "reasoning": true,
-    "toolCalling": true,
-    "structuredOutput": false
-  },
-  "tier": "balanced",
-  "deprecated": false
+  "recommendation": {
+    "id": "claude-sonnet-4-6-adaptive",
+    "provider": "anthropic",
+    "name": "Claude Sonnet 4.6 (max)",
+    "source": "artificialanalysis",
+    "pricing": {
+      "inputPerMTok": 5.2601,
+      "outputPerMTok": 21.0405
+    },
+    "recommendable": true
+  }
 }</code></pre></div>
 
   <h2>Freshness</h2>
-  <p>The Worker refreshes the catalog from <a href="https://models.dev">models.dev</a> every morning at 06:00 UTC and caches the normalized result at the edge.</p>
+  <p>The Worker refreshes Artificial Analysis data every morning at 06:00 UTC and caches the normalized result at the edge.</p>
 
   <h2>Cost</h2>
-  <p><span class="pill">$0.00-ish</span> - runs on Cloudflare Workers. Pricing data still belongs to the providers, so production billing decisions should verify current provider pricing directly.</p>
+  <p><span class="pill">$0.00-ish</span> - runs on Cloudflare Workers. Pricing data still belongs to the providers, so production cost decisions should verify current provider pricing directly.</p>
 
   <h2>Caveats</h2>
   <ul>
     <li>This is private infrastructure for IT Solver and personal projects.</li>
     <li>Only OpenAI, Google, xAI, and Anthropic are exposed.</li>
     <li>Each model includes AUD pricing converted from USD with the current cached Frankfurter exchange rate.</li>
-    <li>Text recommendations exclude open-weight, zero-priced, image, audio, live, embedding, moderation, and transcription-style models. Voice recommendations use the cached Artificial Analysis speech-to-speech leaderboard extract.</li>
-    <li>Recommendation tiers are cost-derived from the remaining customer support, billing, and voice candidate set.</li>
+    <li>Use-case recommendations require real token or audio pricing before a row can be recommended.</li>
+    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice recommendations use the relevant Artificial Analysis benchmark-backed candidate set.</li>
     <li>Always code a local fallback in client apps.</li>
   </ul>
 
-  <p class="footnote">Last data refresh: <span id="generatedAt">checking...</span></p>
+  <p class="footnote">Last data refresh: <span id="generatedAt">checking...</span><br>Pricing shown as: <span id="pricingContext">checking...</span></p>
 
   <div class="legal">
-    <p><strong>IT Solver AI Registry</strong>. Private service. Data is aggregated from <a href="https://models.dev">models.dev</a> and public provider information.</p>
-    <p><strong>Disclaimer:</strong> Pricing and model availability change frequently. Verify model status and pricing with the provider before using this data for billing decisions or production rollouts.</p>
+    <p><strong>IT Solver AI Registry</strong>. Private service. Data is aggregated from Artificial Analysis and public provider information.</p>
+    <p><strong>Disclaimer:</strong> Pricing and model availability change frequently. Verify model status and pricing with the provider before using this data for cost decisions or production rollouts.</p>
   </div>
 
   <script>
@@ -700,14 +906,35 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       endpoint: document.getElementById('b-endpoint'),
       tier: document.getElementById('b-tier'),
       provider: document.getElementById('b-provider'),
+      providerTableOnly: document.getElementById('b-provider-table-only'),
       capability: document.getElementById('b-capability'),
       usecase: document.getElementById('b-usecase'),
-      carelevel: document.getElementById('b-carelevel'),
+      mincost: document.getElementById('b-mincost'),
       maxcost: document.getElementById('b-maxcost'),
+      minoutputcost: document.getElementById('b-minoutputcost'),
       maxoutputcost: document.getElementById('b-maxoutputcost'),
+      inputminrange: document.getElementById('b-input-min-range'),
+      inputmaxrange: document.getElementById('b-input-max-range'),
+      inputcostlabel: document.getElementById('b-inputcost-label'),
+      inputcostany: document.getElementById('b-inputcost-any'),
+      outputminrange: document.getElementById('b-output-min-range'),
+      outputmaxrange: document.getElementById('b-output-max-range'),
+      outputcostlabel: document.getElementById('b-outputcost-label'),
+      outputcostany: document.getElementById('b-outputcost-any'),
+      minruncost: document.getElementById('b-minruncost'),
+      maxruncost: document.getElementById('b-maxruncost'),
+      runminrange: document.getElementById('b-run-min-range'),
+      runmaxrange: document.getElementById('b-run-max-range'),
+      runcostlabel: document.getElementById('b-runcost-label'),
+      runcostany: document.getElementById('b-runcost-any'),
       maxaudioinputcost: document.getElementById('b-maxaudioinputcost'),
       maxaudiooutputcost: document.getElementById('b-maxaudiooutputcost'),
       minctx: document.getElementById('b-minctx'),
+      maxctx: document.getElementById('b-maxctx'),
+      contextminrange: document.getElementById('b-context-min-range'),
+      contextmaxrange: document.getElementById('b-context-max-range'),
+      contextlabel: document.getElementById('b-context-label'),
+      contextany: document.getElementById('b-context-any'),
       url: document.getElementById('b-url'),
       open: document.getElementById('b-open'),
       copy: document.getElementById('b-copy'),
@@ -749,13 +976,6 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return typeof value === 'number' ? Math.round(value) : '-';
     }
 
-    function compactTokens(value) {
-      if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
-      if (value >= 1000000) return Math.round(value / 1000000) + 'M';
-      if (value >= 1000) return Math.round(value / 1000) + 'k';
-      return String(Math.round(value));
-    }
-
     function escapeHtml(value) {
       return String(value || '').replace(/[&<>"']/g, function (char) {
         return {
@@ -770,17 +990,42 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     var benchmarkTables = {};
     var selectedBenchmark = { tableId: '', modelId: '' };
+    var textBenchmarkModels = null;
 
     function sortValue(value) {
       return value === undefined || value === null || Number.isNaN(value) ? -Infinity : value;
     }
 
+    function nonRecommendableReason(model) {
+      if (model.recommendable !== false) return '';
+      if (model.deprecated === true) return 'deprecated';
+
+      var pricing = model.pricing || {};
+      if (model.benchmarks && model.benchmarks.voice) {
+        if (typeof pricing.benchmarkInputAudioPerHour !== 'number') return 'no audio pricing';
+        if (typeof pricing.audioOutputPerHour !== 'number' && typeof pricing.benchmarkCostPerTask !== 'number') return 'no audio pricing';
+      }
+      if (model.benchmarks && model.benchmarks.llm) {
+        if (typeof pricing.inputPerMTok !== 'number' || typeof pricing.outputPerMTok !== 'number') return 'no token pricing';
+      }
+
+      return 'not eligible';
+    }
+
     function renderModelCell(model) {
-      return '<strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.provider) + '</div>';
+      var reason = nonRecommendableReason(model);
+      var marker = reason ? '<span class="not-rec">' + escapeHtml(reason) + '</span>' : '';
+      return '<strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.provider) + '</div>' + marker;
     }
 
     function benchmarkRowId(row) {
-      return ((row.model || row) || {}).id || '';
+      var item = (row.model || row) || {};
+      return item.id || item.registryModelId || '';
+    }
+
+    function benchmarkRowProvider(row) {
+      var item = (row.model || row) || {};
+      return item.provider || '';
     }
 
     function renderSortableTable(tableId, rows, columns, defaultSortKey, defaultDirection) {
@@ -806,7 +1051,17 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
       var column = state.columns.find(function (item) { return item.key === state.sortKey; }) || state.columns[0];
       var direction = state.direction === 'asc' ? 1 : -1;
-      var sorted = state.rows.slice().sort(function (left, right) {
+      var providerFilter = fields.provider.value;
+      var visibleRows = providerFilter && fields.providerTableOnly.checked
+        ? state.rows.filter(function (row) { return benchmarkRowProvider(row) === providerFilter; })
+        : state.rows;
+      if (!visibleRows.length) {
+        var emptyCount = tbody.closest('table').querySelectorAll('thead th').length;
+        tbody.innerHTML = '<tr><td class="empty" colspan="' + (state.columns.length || emptyCount || 1) + '">No benchmark rows match the selected provider.</td></tr>';
+        return;
+      }
+
+      var sorted = visibleRows.slice().sort(function (left, right) {
         var a = sortValue(column.value(left));
         var b = sortValue(column.value(right));
         if (typeof a === 'string' || typeof b === 'string') {
@@ -814,10 +1069,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         }
         return (a - b) * direction;
       });
-      tbody.innerHTML = sorted.map(function (row) {
-        var classes = [];
-        if (benchmarkRowId(row) === state.selectedId) classes.push('selected');
-        return '<tr' + (classes.length ? ' class="' + classes.join(' ') + '"' : '') + '>' +
+	      tbody.innerHTML = sorted.map(function (row) {
+	        var classes = [];
+        var provider = benchmarkRowProvider(row);
+        if (providerFilter && provider === providerFilter) {
+          classes.push('provider-focus', 'provider-' + provider);
+        }
+	        if (benchmarkRowId(row) === state.selectedId) classes.push('selected');
+	        return '<tr' + (classes.length ? ' class="' + classes.join(' ') + '"' : '') + '>' +
           state.columns.map(function (item) {
             return '<td>' + item.render(row) + '</td>';
           }).join('') +
@@ -828,14 +1087,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     function benchmarkTableForUseCase(useCase) {
       if (useCase === 'voice') return 'voiceRows';
       if (useCase === 'customer-support') return 'supportRows';
-      if (useCase === 'billing' || (useCase && useCase.indexOf('billing-') === 0)) return 'billingRows';
       return '';
     }
 
     function benchmarkPanelForUseCase(useCase) {
       if (useCase === 'voice') return 'voice';
       if (useCase === 'customer-support') return 'customer-support';
-      if (useCase === 'billing' || (useCase && useCase.indexOf('billing-') === 0)) return 'billing';
       return '';
     }
 
@@ -844,12 +1101,6 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         return {
           title: 'Voice Benchmark',
           hint: 'Voice models are ranked for speech-to-speech agents using τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
-        };
-      }
-      if (useCase === 'billing' || (useCase && useCase.indexOf('billing-') === 0)) {
-        return {
-          title: 'Billing / Xero Benchmark',
-          hint: 'Billing models are ranked for Xero-style reconciliation work using instruction following, professional-task ability, intelligence, technical judgment, output-token efficiency, and AUD output cost.'
         };
       }
       return {
@@ -870,6 +1121,15 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       hint.textContent = copy.hint;
     }
 
+    function pricingContext(data) {
+      if (data && data.exchangeRate) {
+        var rate = Number(data.exchangeRate.rate).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+        var date = data.exchangeRate.date ? ', ' + data.exchangeRate.date : '';
+        return data.pricingCurrency + ' converted from ' + data.sourcePricingCurrency + ' at 1 ' + data.sourcePricingCurrency + ' = ' + rate + ' ' + data.pricingCurrency + date;
+      }
+      return ((data && data.pricingCurrency) || 'USD') + ' with no FX conversion applied';
+    }
+
     function updateFilterVisibility(useCase) {
       var isVoice = useCase === 'voice';
       document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
@@ -888,6 +1148,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           tableId === selectedBenchmark.tableId ? selectedBenchmark.modelId : '';
         drawSortableTable(tableId);
       });
+    }
+
+    function redrawBenchmarkTables() {
+      Object.keys(benchmarkTables).forEach(drawSortableTable);
     }
 
     function voiceCost(model) {
@@ -913,27 +1177,24 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function voiceBenchmarkModels(models) {
       return models.filter(function (model) {
-        var pricing = model.pricing || {};
-        return !model.deprecated &&
-          model.benchmarks &&
-          model.benchmarks.voice &&
-          typeof pricing.benchmarkInputAudioPerHour === 'number';
+        return model.recommendable !== false && model.benchmarks && model.benchmarks.voice;
       });
     }
 
     function renderVoiceBenchmarks(models) {
-      if (!models.length) {
+      var rows = voiceBenchmarkModels(models);
+      if (!rows.length) {
         renderSortableTable('voiceRows', [], [], 'agentic');
         setText('voiceSource', 'unavailable');
         return;
       }
 
-      var source = models[0].benchmarks && models[0].benchmarks.voice;
+      var source = rows[0].benchmarks && rows[0].benchmarks.voice;
       if (source && source.extractedAt) {
         setText('voiceSource', 'AA extract ' + formatAge(source.extractedAt));
       }
 
-      renderSortableTable('voiceRows', models, [
+      renderSortableTable('voiceRows', rows, [
         { key: 'model', value: function (model) { return model.name; }, render: renderModelCell },
         { key: 'agentic', value: function (model) { return ((model.benchmarks || {}).voice || {}).agenticPerformance; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).agenticPerformance); } },
         { key: 'speech', value: function (model) { return ((model.benchmarks || {}).voice || {}).speechReasoning; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).speechReasoning); } },
@@ -945,19 +1206,114 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function llmSignals(row) {
-      return (((row.model || {}).benchmarks || {}).llm || {});
+      return (((row.model || row || {}).benchmarks || {}).llm || {});
     }
 
     function outputCost(row) {
-      return ((row.model || {}).pricing || {}).outputPerMTok;
+      return ((row.model || row || {}).pricing || {}).outputPerMTok;
     }
 
     function runCost(row) {
       return llmSignals(row).intelligenceRunTotalCost;
     }
 
-    function outputTokens(row) {
-      return llmSignals(row).intelligenceRunOutputTokens;
+    function autoCloseSignals(row) {
+      return llmSignals(row).autoClose || {};
+    }
+
+    function falsePositiveRate(row) {
+      var signals = autoCloseSignals(row);
+      if (typeof signals.falsePositiveCount !== 'number' || typeof signals.total !== 'number' || signals.total <= 0) return undefined;
+      return signals.falsePositiveCount / signals.total;
+    }
+
+    function falsePositiveLabel(row) {
+      var signals = autoCloseSignals(row);
+      if (typeof signals.falsePositiveCount !== 'number') return '-';
+      return String(signals.falsePositiveCount) + (typeof signals.total === 'number' ? '/' + signals.total : '');
+    }
+
+    function accuracyLabel(row) {
+      var accuracy = autoCloseSignals(row).accuracy;
+      return typeof accuracy === 'number' ? Math.round(accuracy * 1000) / 10 + '%' : '-';
+    }
+
+    function autoCloseNote(row) {
+      var signals = autoCloseSignals(row);
+      if (!signals.source) return 'No auto-close benchmark yet';
+      var bits = [];
+      if (typeof signals.parseSuccessRate === 'number') bits.push('parse ' + Math.round(signals.parseSuccessRate * 1000) / 10 + '%');
+      if (typeof signals.invalidCount === 'number' && signals.invalidCount > 0) bits.push(String(signals.invalidCount) + ' invalid');
+      if (typeof signals.errorCount === 'number' && signals.errorCount > 0) bits.push(String(signals.errorCount) + ' errors');
+      if (signals.availability && signals.availability.status && signals.availability.status !== 'production') bits.push(signals.availability.status);
+      return bits.length ? bits.join('; ') : 'Auto-close benchmarked';
+    }
+
+    function formatMoneyCap(value, isMax, max) {
+      if (isMax && value >= max) return '$' + max.toLocaleString() + '+';
+      return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function formatContextCap(value, isMax, max) {
+      if (isMax && value >= max) return (max / 1000).toFixed(1).replace(/\.0$/, '') + 'M+';
+      if (value >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'M';
+      return Math.round(value) + 'k';
+    }
+
+    function syncDualRange(config) {
+      var min = Number(config.minRange.value);
+      var max = Number(config.maxRange.value);
+      if (!Number.isFinite(min)) min = config.min;
+      if (!Number.isFinite(max)) max = config.max;
+      if (min > max) {
+        var active = document.activeElement === config.minRange ? 'min' : 'max';
+        if (active === 'min') max = min;
+        else min = max;
+        config.minRange.value = String(min);
+        config.maxRange.value = String(max);
+      }
+      config.hiddenMin.value = min > config.min ? String(min) : '';
+      config.hiddenMax.value = max < config.max ? String(max) : '';
+      config.label.textContent =
+        min === config.min && max >= config.max
+          ? config.anyLabel
+          : config.format(min, false, config.max) + ' - ' + config.format(max, true, config.max);
+    }
+
+    function resetDualRange(config) {
+      config.minRange.value = String(config.min);
+      config.maxRange.value = String(config.max);
+      syncDualRange(config);
+      refreshBuilder();
+    }
+
+    function formatRunCostCap(value, isMax, max) {
+      if (isMax && value >= 8000) return '$8,000+';
+      return '$' + Math.round(value).toLocaleString();
+    }
+
+    var inputCostRange;
+    var outputCostRange;
+    var contextRange;
+    var runCostRange;
+
+    function syncRunCostRange() {
+      syncDualRange(inputCostRange);
+      syncDualRange(outputCostRange);
+      syncDualRange(contextRange);
+      syncDualRange(runCostRange);
+    }
+
+    function runCostFloor() {
+      if (!fields.minruncost.value) return undefined;
+      var value = Number(fields.minruncost.value);
+      return Number.isFinite(value) ? value : undefined;
+    }
+
+    function runCostCeiling() {
+      if (!fields.maxruncost.value) return undefined;
+      var value = Number(fields.maxruncost.value);
+      return Number.isFinite(value) ? value : undefined;
     }
 
     function textCostScore(model, outputWeight) {
@@ -997,47 +1353,40 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function textUseCaseScore(model, useCase) {
       var signals = ((model.benchmarks || {}).llm || {});
-      var quality;
-      var outputWeight = useCase === 'customer-support' ? 0.6 : 0.35;
-      if (useCase === 'billing') {
-        quality = weightedSignal(signals, [
-          ['instructionFollowing', 0.3],
-          ['intelligence', 0.3],
-          ['professional', 0.2],
-          ['coding', 0.1],
-          ['terminalBench', 0.1]
-        ], 60);
-      } else {
-        quality = weightedSignal(signals, [
-          ['tauTelecom', 0.25],
-          ['instructionFollowing', 0.3],
-          ['intelligence', 0.25],
-          ['professional', 0.1]
-        ], 60);
+      if (useCase === 'customer-support' && typeof signals.customerSupportRank === 'number') {
+        return 102 - signals.customerSupportRank * 2;
       }
+      var quality;
+      var outputWeight = 0.6;
+      quality = weightedSignal(signals, [
+        ['agentic', 0.25],
+        ['instructionFollowing', 0.3],
+        ['intelligence', 0.25],
+        ['professional', 0.1]
+      ], 60);
       return quality * 0.62 + textCostScore(model, outputWeight) * 0.2 + textEfficiencyScore(model) * 0.1 + Math.min((signals.speed || 0) / 220, 1) * 8;
     }
 
     function textRows(models, useCase) {
+      var floor = useCase === 'customer-support' ? runCostFloor() : undefined;
+      var ceiling = useCase === 'customer-support' ? runCostCeiling() : undefined;
       return models
         .filter(function (model) {
+          if (useCase === 'customer-support' && model.recommendable === false) return false;
           var signals = model.benchmarks && model.benchmarks.llm;
-          var input = (model.modalities && model.modalities.input) || [];
-          var output = (model.modalities && model.modalities.output) || [];
+          if (floor !== undefined && (!signals || typeof signals.intelligenceRunTotalCost !== 'number' || signals.intelligenceRunTotalCost < floor)) return false;
+          if (ceiling !== undefined && (!signals || typeof signals.intelligenceRunTotalCost !== 'number' || signals.intelligenceRunTotalCost > ceiling)) return false;
+          if (useCase === 'customer-support' && (!signals || typeof signals.instructionFollowing !== 'number' || typeof signals.agentic !== 'number')) return false;
           var hasQualitySignal = signals && [
             signals.intelligence,
             signals.coding,
             signals.instructionFollowing,
             signals.terminalBench,
+            signals.agentic,
             signals.tauTelecom,
             signals.professional
           ].some(function (value) { return typeof value === 'number'; });
-          return !model.deprecated &&
-            hasQualitySignal &&
-            input.indexOf('audio') === -1 &&
-            output.indexOf('audio') === -1 &&
-            output.indexOf('text') !== -1 &&
-            typeof ((model.pricing || {}).outputPerMTok) === 'number';
+          return hasQualitySignal;
         })
         .map(function (model) {
           return { model: model, score: textUseCaseScore(model, useCase) };
@@ -1049,37 +1398,28 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         { key: 'model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
         { key: 'score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
       ];
-      if (useCase === 'billing') {
-        base.push(
-          { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
-          { key: 'professional', value: function (row) { return llmSignals(row).professional; }, render: function (row) { return score(llmSignals(row).professional); } },
-          { key: 'intelligence', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
-        );
-      } else {
-        base.push(
-          { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
-          { key: 'telecom', value: function (row) { return llmSignals(row).tauTelecom; }, render: function (row) { return score(llmSignals(row).tauTelecom); } },
-          { key: 'intelligence', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
-        );
-      }
+      base.push(
+        { key: 'falsePositives', value: function (row) { var rate = falsePositiveRate(row); return typeof rate === 'number' ? -rate : -Infinity; }, render: falsePositiveLabel },
+        { key: 'accuracy', value: function (row) { var accuracy = autoCloseSignals(row).accuracy; return typeof accuracy === 'number' ? accuracy : -Infinity; }, render: accuracyLabel },
+        { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
+        { key: 'agentic', value: function (row) { return llmSignals(row).agentic; }, render: function (row) { return score(llmSignals(row).agentic); } },
+        { key: 'intelligence', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
+      );
       base.push(
         { key: 'outputCost', value: outputCost, render: function (row) { return money(outputCost(row)); } },
-        { key: 'runCost', value: runCost, render: function (row) { return money(runCost(row)); } },
-        { key: 'outTokens', value: outputTokens, render: function (row) { return compactTokens(outputTokens(row)); } }
+        { key: 'runCost', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } },
+        { key: 'note', value: autoCloseNote, render: function (row) { return '<div class="note-cell">' + escapeHtml(autoCloseNote(row)) + '</div>'; } }
       );
       return base;
     }
 
     function renderTextBenchmarks(models) {
       var support = textRows(models, 'customer-support');
-      var billing = textRows(models, 'billing');
 
-      renderSortableTable('supportRows', support, commonTextColumns('customer-support'), 'score', 'desc');
-      renderSortableTable('billingRows', billing, commonTextColumns('billing'), 'score', 'desc');
+      renderSortableTable('supportRows', support, commonTextColumns('customer-support'), 'runCost', 'asc');
 
       var label = support.length ? 'AA LLM extract' : 'unavailable';
       setText('supportSource', label);
-      setText('billingSource', billing.length ? 'AA LLM extract' : 'unavailable');
     }
 
     function topBy(items, valueFn, direction) {
@@ -1089,7 +1429,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function modelName(model) {
-      return model ? escapeHtml(model.name) : 'Unavailable';
+      var item = model && (model.model || model);
+      return item ? escapeHtml(item.name) : 'Unavailable';
     }
 
     function topList(rows, valueFn, formatValue) {
@@ -1098,16 +1439,50 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       }).join(', ');
     }
 
+    function autoCloseRankValue(row) {
+      var signals = autoCloseSignals(row);
+      if (!signals.source) return Number.POSITIVE_INFINITY;
+      var fpRate = typeof signals.falsePositiveCount === 'number' && typeof signals.total === 'number' && signals.total > 0
+        ? signals.falsePositiveCount / signals.total
+        : 1;
+      var accuracy = typeof signals.accuracy === 'number' ? signals.accuracy : 0;
+      var cost = typeof runCost(row) === 'number' ? runCost(row) / 100000 : 1;
+      return fpRate - accuracy / 1000 + cost;
+    }
+
+    function topAutoCloseRows(models) {
+      return textRows(models, 'customer-support')
+        .filter(function (row) {
+          var signals = autoCloseSignals(row);
+          return signals.source && row.model.recommendable !== false;
+        })
+        .sort(function (left, right) {
+          return autoCloseRankValue(left) - autoCloseRankValue(right);
+        });
+    }
+
+    function autoCloseSummary(row) {
+      return falsePositiveLabel(row) + ' FP, ' + accuracyLabel(row) + ' accuracy, ' + money(runCost(row)) + ' Run AUD';
+    }
+
+    function topAutoCloseList(rows) {
+      return rows.slice(0, 3).map(function (row, index) {
+        return (index + 1) + '. ' + modelName(row.model) + ' (' + autoCloseSummary(row) + ')';
+      }).join(', ');
+    }
+
     function renderFaq(models) {
       var faq = document.getElementById('faqRows');
       if (!faq) return;
 
+      var autoCloseSupport = topAutoCloseRows(models);
       var support = topBy(textRows(models, 'customer-support'), function (row) { return row.score; });
-      var billing = topBy(textRows(models, 'billing'), function (row) { return row.score; });
       var voice = topBy(voiceBenchmarkModels(models), voiceScore);
       var cheapestVoice = topBy(voiceBenchmarkModels(models), voiceCost, 'asc');
       var cheapestOutput = topBy(
-        textRows(models, 'customer-support'),
+        textRows(models, 'customer-support').filter(function (row) {
+          return typeof outputCost(row) === 'number';
+        }),
         function (row) { return outputCost(row); },
         'asc'
       );
@@ -1120,21 +1495,15 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var items = [
         {
           q: 'Which model should customer support use?',
-          a: support[0]
-            ? modelName(support[0].model) + ' currently ranks highest for customer support in this registry, using IFBench, telecom workflow, intelligence, speed, AUD output cost, and AA output-token efficiency.'
+          a: autoCloseSupport[0]
+            ? modelName(autoCloseSupport[0].model) + ' is the current safety-first recommendation from the IT Solver auto-close benchmark: ' + autoCloseSummary(autoCloseSupport[0]) + '.'
             : 'No customer support benchmark data is currently available.'
         },
         {
           q: 'What are the top customer support models?',
-          a: support.length
-            ? 'The top customer support models are: ' + topList(support, function (row) { return row.score; }, score) + '.'
+          a: autoCloseSupport.length
+            ? 'Using the auto-close benchmark ordering, the top customer support models are: ' + topAutoCloseList(autoCloseSupport) + '.'
             : 'No customer support benchmark data is currently available.'
-        },
-        {
-          q: 'Which model should billing / Xero work use?',
-          a: billing[0]
-            ? modelName(billing[0].model) + ' currently ranks highest for billing / Xero-style work, weighted toward instruction following, intelligence, professional-task score, technical-task signals, and AA cost-to-run efficiency.'
-            : 'No billing benchmark data is currently available.'
         },
         {
           q: 'Which voice model is strongest overall?',
@@ -1162,7 +1531,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         },
         {
           q: 'How are recommendations compared here?',
-          a: 'The registry combines models.dev pricing and model metadata with cached Artificial Analysis benchmark signals. Customer support gives extra weight to output cost, output-token efficiency, and instruction following; billing emphasizes instruction following, professional-task ability, and cost-to-run efficiency; voice uses AA speech-to-speech benchmark pricing and latency.'
+          a: 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Run AUD/token efficiency. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
         }
       ];
 
@@ -1178,37 +1547,40 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         setText('activeCount', data.activeModelCount.toLocaleString());
         setText('providerCount', data.providerCount.toLocaleString());
         setText('generatedAt', new Date(data.generatedAt).toUTCString() + ' (' + formatAge(data.generatedAt) + ')');
+        setText('pricingContext', pricingContext(data));
       })
       .catch(function () {
         setText('modelCount', '?');
         setText('activeCount', '?');
         setText('providerCount', '?');
         setText('generatedAt', 'unavailable');
+        setText('pricingContext', 'unavailable');
       });
 
-    fetch('/v1/models?useCase=voice')
+    fetch('/v1/benchmarks?useCase=voice', { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
-      .then(function (data) { renderVoiceBenchmarks(data.models || []); })
+      .then(function (data) { renderVoiceBenchmarks(data.benchmarks || []); })
       .catch(function () {
         var rows = document.getElementById('voiceRows');
         if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Voice benchmarks unavailable.</td></tr>';
         setText('voiceSource', 'unavailable');
       });
 
-    fetch('/v1/models')
-      .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
-      .then(function (data) {
-        var models = data.models || [];
-        renderTextBenchmarks(models);
-        renderFaq(models);
+    Promise.all([
+      fetch('/v1/benchmarks?useCase=customer-support', { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
+    ])
+      .then(function (responses) {
+        textBenchmarkModels = responses[0].benchmarks || [];
+        renderTextBenchmarks(textBenchmarkModels);
+        renderFaq(textBenchmarkModels);
       })
       .catch(function () {
-        ['supportRows', 'billingRows'].forEach(function (id) {
+        ['supportRows'].forEach(function (id) {
           var rows = document.getElementById(id);
-          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="8">Benchmark data unavailable.</td></tr>';
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
         });
         setText('supportSource', 'unavailable');
-        setText('billingSource', 'unavailable');
         var faq = document.getElementById('faqRows');
         if (faq) faq.innerHTML = '<p>FAQ data unavailable.</p>';
       });
@@ -1269,14 +1641,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (fields.provider.value) params.set('provider', fields.provider.value);
       if (fields.capability.value) params.set('capability', fields.capability.value);
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
-      if (fields.carelevel.value) params.set('careLevel', fields.carelevel.value);
       if (fields.usecase.value === 'voice') {
         if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
         if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);
       } else {
+        if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
         if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+        if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
         if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+        if (fields.minruncost.value) params.set('minRunCostAud', fields.minruncost.value);
+        if (fields.maxruncost.value) params.set('maxRunCostAud', fields.maxruncost.value);
         if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+        if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
       }
       var qs = params.toString();
       return endpoint + (qs ? '?' + qs : '');
@@ -1284,10 +1660,16 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     var previewTimer = 0;
     function refreshBuilder() {
+      syncRunCostRange();
       var path = buildPath();
       var full = origin + path;
       updateBenchmarkPanel(fields.usecase.value);
       updateFilterVisibility(fields.usecase.value);
+      if (textBenchmarkModels) {
+        renderTextBenchmarks(textBenchmarkModels);
+        renderFaq(textBenchmarkModels);
+      }
+      redrawBenchmarkTables();
       fields.url.textContent = full;
       fields.url.href = path;
       fields.open.href = path;
@@ -1316,6 +1698,55 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     ['change', 'input'].forEach(function (eventName) {
       document.querySelector('.builder').addEventListener(eventName, refreshBuilder);
     });
+    fields.providerTableOnly.addEventListener('change', refreshBuilder);
+    inputCostRange = {
+      min: 0,
+      max: 50,
+      minRange: fields.inputminrange,
+      maxRange: fields.inputmaxrange,
+      hiddenMin: fields.mincost,
+      hiddenMax: fields.maxcost,
+      label: fields.inputcostlabel,
+      anyLabel: 'Any input AUD',
+      format: formatMoneyCap
+    };
+    outputCostRange = {
+      min: 0,
+      max: 75,
+      minRange: fields.outputminrange,
+      maxRange: fields.outputmaxrange,
+      hiddenMin: fields.minoutputcost,
+      hiddenMax: fields.maxoutputcost,
+      label: fields.outputcostlabel,
+      anyLabel: 'Any output AUD',
+      format: formatMoneyCap
+    };
+    contextRange = {
+      min: 0,
+      max: 1200,
+      minRange: fields.contextminrange,
+      maxRange: fields.contextmaxrange,
+      hiddenMin: fields.minctx,
+      hiddenMax: fields.maxctx,
+      label: fields.contextlabel,
+      anyLabel: 'Any context',
+      format: formatContextCap
+    };
+    runCostRange = {
+      min: 0,
+      max: 8000,
+      minRange: fields.runminrange,
+      maxRange: fields.runmaxrange,
+      hiddenMin: fields.minruncost,
+      hiddenMax: fields.maxruncost,
+      label: fields.runcostlabel,
+      anyLabel: 'Any Run AUD',
+      format: formatRunCostCap
+    };
+    fields.inputcostany.addEventListener('click', function () { resetDualRange(inputCostRange); });
+    fields.outputcostany.addEventListener('click', function () { resetDualRange(outputCostRange); });
+    fields.contextany.addEventListener('click', function () { resetDualRange(contextRange); });
+    fields.runcostany.addEventListener('click', function () { resetDualRange(runCostRange); });
 
     fields.copy.addEventListener('click', function () {
       navigator.clipboard.writeText(fields.code.textContent).then(function () {
@@ -1324,6 +1755,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       });
     });
 
+    syncRunCostRange();
     refreshBuilder();
   }());
   </script>

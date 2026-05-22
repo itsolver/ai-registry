@@ -8,11 +8,11 @@ Production URL:
 https://ai.itsolver.au
 ```
 
-The Worker imports `https://models.dev/api.json`, keeps only `openai`, `google`, `xai`, and `anthropic`, then exposes a small `/v1/...` API with cost-derived recommendation tiers.
+The Worker uses Artificial Analysis data for OpenAI, Google, xAI, and Anthropic benchmark candidates, then exposes a small `/v1/...` API with recommendation tiers.
 
-Recommendations are tuned for IT Solver customer support, billing, and voice-agent API work. The raw `/v1/models` catalog can include broader provider models, but `/v1/models/recommend` only considers work-appropriate OpenAI, Google Gemini, xAI Grok, and Anthropic Claude models with real pricing. Text recommendations exclude open-weight, image, audio, live, embedding, moderation, and transcription-style models. Text benchmark scoring includes cached Artificial Analysis cost-to-run and output-token efficiency data. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract.
+Recommendations are tuned for IT Solver customer support and voice-agent API work. For customer support, recommendations require real token pricing, a local auto-close benchmark result, and default-production availability. Ranking is safety-first: false positives sort first, accuracy second, and expected Run AUD/token efficiency third. Deprecated, retired, preview-only, experimental, latest-alias, and near-retirement text models are not default production recommendations. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract.
 
-Model pricing from models.dev is converted to AUD using the daily USD to AUD rate from Frankfurter. The API only returns AUD pricing.
+Model pricing from Artificial Analysis is converted to AUD using the daily USD to AUD rate from Frankfurter. The API only returns AUD pricing.
 
 ## Endpoints
 
@@ -20,19 +20,20 @@ All API endpoints require a bearer token unless the request comes from the allow
 
 ```text
 GET /v1/health
+GET /v1/benchmarks?useCase=customer-support|voice
 GET /v1/models
 GET /v1/models/recommend
 GET /v1/models/providers
 GET /v1/models/:provider/latest
 ```
 
-Unprefixed `/models`, `/models/recommend`, `/models/providers`, and `/models/:provider/latest` mirror v1. The old `/models.json` and `/model-registry.json` registry documents are intentionally gone.
+Unprefixed `/benchmarks`, `/models`, `/models/recommend`, `/models/providers`, and `/models/:provider/latest` mirror v1. The old `/models.json` and `/model-registry.json` registry documents are intentionally gone.
 
 Example:
 
 ```bash
 curl -H "Authorization: Bearer $MODEL_REGISTRY_API_KEY" \
-  "https://ai.itsolver.au/v1/models/recommend?tier=fast"
+  "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"
 ```
 
 Supported filters:
@@ -43,12 +44,13 @@ tier=fast|balanced|best
 capability=vision|pdf|reasoning|toolCalling|structuredOutput
 maxInputCostPerMTok=2               # max input AUD per million tokens
 maxOutputCostPerMTok=10             # max output AUD per million tokens
+minRunCostAud=100                   # min AA benchmark Run AUD
+maxRunCostAud=500                   # max AA benchmark Run AUD
 maxAudioInputCostPerHour=5          # max voice input/cost-to-run AUD per hour
 maxAudioOutputCostPerHour=5         # max voice output AUD per hour
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
-useCase=customer-support|billing|voice
-careLevel=triage|standard|essential|premium|complex
+useCase=customer-support|voice
 includeDeprecated=true
 ```
 
@@ -64,17 +66,24 @@ npm run dev
 Refresh the cached Artificial Analysis speech-to-speech extract:
 
 ```bash
+npm run refresh:aa-customer-support
 npm run refresh:aa-llm-efficiency
+npm run refresh:aa-llm-pricing
 npm run refresh:aa-voice
 ```
 
-For local authenticated requests, create `.dev.vars`:
+Do not run a new Anthropic customer-support auto-close benchmark from this repo
+without a manual approval checkpoint. A benchmark proposal may list candidate
+Anthropic model names and estimated cost, but execution requires explicit human
+approval before any API calls are made.
+
+Local dev uses `.dev.vars` to bypass auth for fast browser iteration:
 
 ```text
-MODEL_REGISTRY_API_KEY=local-secret
+LOCAL_DEV_AUTH_BYPASS=true
 ```
 
-Then call the local Worker with `Authorization: Bearer local-secret`.
+Do not put `LOCAL_DEV_AUTH_BYPASS` in production secrets or `wrangler.toml`.
 
 ## Cloudflare Setup
 

@@ -1,6 +1,6 @@
 # AI Registry
 
-Private Cloudflare Workers API for IT Solver model recommendations.
+Public Cloudflare Workers API for IT Solver model recommendations.
 
 Production URL:
 
@@ -16,7 +16,7 @@ Model pricing from Artificial Analysis is converted to AUD using the daily USD t
 
 ## Endpoints
 
-All API endpoints require a bearer token unless the request comes from the allowlisted WAN IP.
+All API endpoints are public and require no bearer token or IP allowlist.
 
 ```text
 GET /v1/health
@@ -32,8 +32,7 @@ Unprefixed `/benchmarks`, `/models`, `/models/recommend`, `/models/providers`, a
 Example:
 
 ```bash
-curl -H "Authorization: Bearer $MODEL_REGISTRY_API_KEY" \
-  "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"
+curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"
 ```
 
 Supported filters:
@@ -52,6 +51,7 @@ maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
 useCase=customer-support|voice
 includeDeprecated=true
+includeItsBenchmark=false              # omit IT Solver auto-close ranking for customer support
 ```
 
 ## Local Development
@@ -77,14 +77,6 @@ without a manual approval checkpoint. A benchmark proposal may list candidate
 Anthropic model names and estimated cost, but execution requires explicit human
 approval before any API calls are made.
 
-Local dev uses `.dev.vars` to bypass auth for fast browser iteration:
-
-```text
-LOCAL_DEV_AUTH_BYPASS=true
-```
-
-Do not put `LOCAL_DEV_AUTH_BYPASS` in production secrets or `wrangler.toml`.
-
 ## Cloudflare Setup
 
 Create the KV namespace used for the normalized catalog cache and replace the placeholder IDs in `wrangler.toml`:
@@ -92,18 +84,6 @@ Create the KV namespace used for the normalized catalog cache and replace the pl
 ```bash
 wrangler kv namespace create MODEL_CACHE
 wrangler kv namespace create MODEL_CACHE --preview
-```
-
-Set the API key secret:
-
-```bash
-wrangler secret put MODEL_REGISTRY_API_KEY
-```
-
-The default allowlisted IP is configured in `wrangler.toml`:
-
-```text
-ALLOWED_IPS=203.12.1.95
 ```
 
 Deploy:

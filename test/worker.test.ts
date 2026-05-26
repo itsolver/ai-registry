@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handleRequest, isAuthorized, type Env } from "../src/worker";
+import { handleRequest, type Env } from "../src/worker";
 import { artificialAnalysisFixture } from "./fixtures";
 
 interface JsonObject {
@@ -17,8 +17,6 @@ const artificialAnalysisUrl =
 
 function env(): Env {
   return {
-    MODEL_REGISTRY_API_KEY: "test-secret",
-    ALLOWED_IPS: "203.12.1.95",
     FX_RATE_URL: fxUrl,
     ARTIFICIAL_ANALYSIS_API_KEY: "aa-secret",
     ARTIFICIAL_ANALYSIS_LLM_URL: artificialAnalysisUrl,
@@ -31,60 +29,10 @@ const ctx = {
   },
 };
 
-describe("auth", () => {
-  it("allows bearer tokens", () => {
-    const request = new Request("https://ai.itsolver.au/v1/health", {
-      headers: { Authorization: "Bearer test-secret" },
-    });
-
-    expect(isAuthorized(request, env())).toBe(true);
-  });
-
-  it("allows the configured WAN IP", () => {
-    const request = new Request("https://ai.itsolver.au/v1/health", {
-      headers: { "CF-Connecting-IP": "203.12.1.95" },
-    });
-
-    expect(isAuthorized(request, env())).toBe(true);
-  });
-
-  it("rejects unauthenticated requests", () => {
-    const request = new Request("https://ai.itsolver.au/v1/health");
-
-    expect(isAuthorized(request, env())).toBe(false);
-  });
-
-  it("allows localhost requests for local development", () => {
-    const request = new Request("http://localhost:8787/v1/health");
-
-    expect(isAuthorized(request, env())).toBe(true);
-  });
-
-  it("allows explicit local development auth bypass", () => {
-    const request = new Request("https://ai.itsolver.au/v1/health");
-
-    expect(isAuthorized(request, { ...env(), LOCAL_DEV_AUTH_BYPASS: "true" })).toBe(
-      true,
-    );
-  });
-});
-
 describe("worker routes", () => {
-  it("protects the homepage", async () => {
+  it("serves the homepage without auth", async () => {
     const response = await handleRequest(
       new Request("https://ai.itsolver.au/"),
-      env(),
-      ctx,
-    );
-
-    expect(response.status).toBe(401);
-  });
-
-  it("serves the homepage for the allowlisted IP", async () => {
-    const response = await handleRequest(
-      new Request("https://ai.itsolver.au/", {
-        headers: { "CF-Connecting-IP": "203.12.1.95" },
-      }),
       env(),
       ctx,
     );
@@ -95,9 +43,7 @@ describe("worker routes", () => {
 
   it("serves health metadata", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/v1/health", {
-        headers: { Authorization: "Bearer test-secret" },
-      }),
+      new Request("https://ai.itsolver.au/v1/health"),
       env(),
       ctx,
     );
@@ -124,9 +70,6 @@ describe("worker routes", () => {
     const response = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/models/recommend?provider=openai&tier=best",
-        {
-          headers: { Authorization: "Bearer test-secret" },
-        },
       ),
       env(),
       ctx,
@@ -139,9 +82,6 @@ describe("worker routes", () => {
     const response = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/models/recommend?provider=xai&useCase=customer-support",
-        {
-          headers: { Authorization: "Bearer test-secret" },
-        },
       ),
       env(),
       ctx,
@@ -168,9 +108,7 @@ describe("worker routes", () => {
 
   it("serves recommendable AA benchmark rows without registry joins", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=customer-support", {
-        headers: { Authorization: "Bearer test-secret" },
-      }),
+      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=customer-support"),
       env(),
       ctx,
     );
@@ -206,9 +144,6 @@ describe("worker routes", () => {
     const response = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/models/recommend?provider=xai&useCase=customer-support&tier=best",
-        {
-          headers: { Authorization: "Bearer test-secret" },
-        },
       ),
       env(),
       ctx,
@@ -231,9 +166,6 @@ describe("worker routes", () => {
     const response = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&minRunCostAud=100&maxRunCostAud=500",
-        {
-          headers: { Authorization: "Bearer test-secret" },
-        },
       ),
       env(),
       ctx,
@@ -257,9 +189,6 @@ describe("worker routes", () => {
     const response = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/models/recommend?provider=openai&useCase=customer-support",
-        {
-          headers: { Authorization: "Bearer test-secret" },
-        },
       ),
       env(),
       ctx,
@@ -288,9 +217,6 @@ describe("worker routes", () => {
     const bestResponse = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/models/recommend?provider=openai&useCase=customer-support&tier=best",
-        {
-          headers: { Authorization: "Bearer test-secret" },
-        },
       ),
       env(),
       ctx,
@@ -314,9 +240,7 @@ describe("worker routes", () => {
 
   it("mirrors unprefixed model endpoints", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/models/providers", {
-        headers: { Authorization: "Bearer test-secret" },
-      }),
+      new Request("https://ai.itsolver.au/models/providers"),
       env(),
       ctx,
     );
@@ -333,9 +257,7 @@ describe("worker routes", () => {
 
   it("does not serve the old static registry URLs", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/models.json", {
-        headers: { Authorization: "Bearer test-secret" },
-      }),
+      new Request("https://ai.itsolver.au/models.json"),
       env(),
       ctx,
     );

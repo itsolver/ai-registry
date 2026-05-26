@@ -26,7 +26,12 @@ describe("filter parsing", () => {
       minRunCostAud: 100,
       maxRunCostAud: 500,
       maxContextWindow: 1000000,
+      includeItsBenchmark: true,
     });
+    expect(
+      parseFilters(new URLSearchParams("includeItsBenchmark=false"))
+        .includeItsBenchmark,
+    ).toBe(false);
     expect(parseFilters(new URLSearchParams("useCase=support")).useCase).toBe(
       "customer-support",
     );
@@ -475,5 +480,15 @@ describe("Artificial Analysis catalog", () => {
         useCase: "customer-support",
       }),
     ).toBeUndefined();
+    expect(
+      recommendModel(catalog, {
+        provider: "anthropic",
+        useCase: "customer-support",
+        includeItsBenchmark: false,
+      }),
+    ).toMatchObject({
+      id: "claude-opus-4-7-non-reasoning",
+      provider: "anthropic",
+    });
   });
 });

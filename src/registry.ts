@@ -228,6 +228,7 @@ export interface ModelFilters {
   minContextWindow?: number;
   maxContextWindow?: number;
   includeDeprecated?: boolean;
+  includeItsBenchmark?: boolean;
 }
 
 export interface ArtificialAnalysisModel {
@@ -455,6 +456,9 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     ...(maxContextWindow !== undefined ? { maxContextWindow } : {}),
     includeDeprecated: params.get("includeDeprecated") === "true",
+    includeItsBenchmark:
+      params.get("includeItsBenchmark") !== "false" &&
+      params.get("includeITSBenchmark") !== "false",
   };
 }
 
@@ -630,7 +634,7 @@ function isUseCaseRecommendationCandidate(
   if (candidate.deprecated === true) return false;
 
   const signals = candidate.benchmarks.llm;
-  if (!signals?.autoClose) return false;
+  if (filters.includeItsBenchmark !== false && !signals?.autoClose) return false;
 
   return isProductionAvailabilityAllowed(
     productionAvailabilityForTextModel(candidate.id, candidate.name, signals),
@@ -1754,7 +1758,7 @@ function compareBenchmarkCandidates(
   tier: Tier,
   filters: ModelFilters,
 ): number {
-  if (filters.useCase === "customer-support") {
+  if (filters.useCase === "customer-support" && filters.includeItsBenchmark !== false) {
     return compareCustomerSupportBenchmarkCandidates(left, right, tier);
   }
 

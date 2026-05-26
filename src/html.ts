@@ -4,7 +4,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ai.itsolver.au - stop hardcoding model names</title>
-  <meta name="description" content="A private IT Solver API that recommends current AI models from OpenAI, Google, xAI, and Anthropic.">
+  <meta name="description" content="A public IT Solver API that recommends current AI models from OpenAI, Google, xAI, and Anthropic.">
   <style>
     :root {
       --ink: #1a1a1a;
@@ -64,14 +64,6 @@ export const HOME_HTML = String.raw`<!doctype html>
     li { margin: 0.3rem 0; }
     select, input, button {
       font: inherit;
-    }
-    .private-bar {
-      text-align: center;
-      color: var(--muted);
-      padding-bottom: 0.75rem;
-      margin-bottom: 2rem;
-      border-bottom: 1px dashed var(--line);
-      font-size: 0.75rem;
     }
     .tagline {
       font-size: 1.12rem;
@@ -276,6 +268,20 @@ export const HOME_HTML = String.raw`<!doctype html>
       position: relative;
       min-height: 30px;
       margin: 0.45rem 0 0.25rem;
+      cursor: pointer;
+      --range-start: 0%;
+      --range-end: 100%;
+      background:
+        linear-gradient(
+          to right,
+          #d4cfc4 0%,
+          #d4cfc4 var(--range-start),
+          var(--accent) var(--range-start),
+          var(--accent) var(--range-end),
+          #d4cfc4 var(--range-end),
+          #d4cfc4 100%
+        )
+        center / 100% 4px no-repeat;
     }
     .range-stack input[type="range"] {
       position: absolute;
@@ -284,7 +290,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       pointer-events: none;
     }
     .range-stack input[type="range"]::-webkit-slider-thumb { pointer-events: auto; }
+    .range-stack input[type="range"]::-webkit-slider-runnable-track { background: transparent; }
     .range-stack input[type="range"]::-moz-range-thumb { pointer-events: auto; }
+    .range-stack input[type="range"]::-moz-range-track { background: transparent; }
     .price-filter-scale {
       color: var(--muted);
       font-size: 0.68rem;
@@ -531,14 +539,12 @@ export const HOME_HTML = String.raw`<!doctype html>
   </style>
 </head>
 <body>
-  <div class="private-bar">Private IT Solver model registry. API key or home IP required.</div>
-
   <h1>ai<span class="blink">.</span>itsolver<span class="blink">.</span>au</h1>
-  <p class="tagline">A private API that tells IT Solver projects which AI model to actually use, so model names stop getting hardcoded across repos.</p>
+  <p class="tagline">A public API that tells IT Solver projects which AI model to actually use, so model names stop getting hardcoded across repos.</p>
 
   <h2>The Problem</h2>
   <p>OpenAI ships a new model. Google ships a new model. Anthropic ships a new model. Your <code>config.ts</code> goes stale by lunchtime. You update it in fourteen places. You miss two.</p>
-  <p>This API is the private source of truth.</p>
+  <p>This API is the public source of truth.</p>
 
   <div class="stats">
     <div class="stat"><strong id="modelCount">-</strong><span>models tracked</span></div>
@@ -553,20 +559,15 @@ export const HOME_HTML = String.raw`<!doctype html>
       <button class="tab" type="button" data-tab="js">javascript</button>
       <button class="tab" type="button" data-tab="python">python</button>
     </div>
-    <div class="tab-panel pre-wrap" data-panel="curl"><pre><code>curl -H "Authorization: Bearer $MODEL_REGISTRY_API_KEY" \
-  "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"</code></pre></div>
-    <div class="tab-panel pre-wrap" data-panel="js" hidden><pre><code>const res = await fetch('https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast', {
-  headers: { Authorization: 'Bearer ' + process.env.MODEL_REGISTRY_API_KEY }
-});
+    <div class="tab-panel pre-wrap" data-panel="curl"><pre><code>curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"</code></pre></div>
+    <div class="tab-panel pre-wrap" data-panel="js" hidden><pre><code>const res = await fetch('https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast');
 const { recommendation } = await res.json();
 console.log(recommendation.id);</code></pre></div>
-    <div class="tab-panel pre-wrap" data-panel="python" hidden><pre><code>import os
-import requests
+    <div class="tab-panel pre-wrap" data-panel="python" hidden><pre><code>import requests
 
 r = requests.get(
     'https://ai.itsolver.au/v1/models/recommend',
-    params={'useCase': 'customer-support', 'tier': 'fast'},
-    headers={'Authorization': f"Bearer {os.environ['MODEL_REGISTRY_API_KEY']}"}
+    params={'useCase': 'customer-support', 'tier': 'fast'}
 )
 print(r.json()['recommendation']['id'])</code></pre></div>
   </div>
@@ -619,6 +620,13 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             <option value="toolCalling">tool calling</option>
             <option value="structuredOutput">structured output</option>
           </select>
+        </div>
+        <div class="b-field check-field" data-filter-scope="text">
+          <label for="b-includeits">Benchmark source</label>
+          <label class="check-row">
+            <input type="checkbox" id="b-includeits" checked>
+            <span>Include ITS benchmark</span>
+          </label>
         </div>
         <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudioinputcost">Max input audio AUD/hr</label>
@@ -884,7 +892,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
   <h2>Caveats</h2>
   <ul>
-    <li>This is private infrastructure for IT Solver and personal projects.</li>
+    <li>This public endpoint is maintained for IT Solver projects and shared as-is.</li>
     <li>Only OpenAI, Google, xAI, and Anthropic are exposed.</li>
     <li>Each model includes AUD pricing converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token or audio pricing before a row can be recommended.</li>
@@ -895,7 +903,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
   <p class="footnote">Last data refresh: <span id="generatedAt">checking...</span><br>Pricing shown as: <span id="pricingContext">checking...</span></p>
 
   <div class="legal">
-    <p><strong>IT Solver AI Registry</strong>. Private service. Data is aggregated from Artificial Analysis and public provider information.</p>
+    <p><strong>IT Solver AI Registry</strong>. Public service. Data is aggregated from Artificial Analysis and public provider information.</p>
     <p><strong>Disclaimer:</strong> Pricing and model availability change frequently. Verify model status and pricing with the provider before using this data for cost decisions or production rollouts.</p>
   </div>
 
@@ -908,6 +916,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       provider: document.getElementById('b-provider'),
       providerTableOnly: document.getElementById('b-provider-table-only'),
       capability: document.getElementById('b-capability'),
+      includeits: document.getElementById('b-includeits'),
       usecase: document.getElementById('b-usecase'),
       mincost: document.getElementById('b-mincost'),
       maxcost: document.getElementById('b-maxcost'),
@@ -991,6 +1000,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     var benchmarkTables = {};
     var selectedBenchmark = { tableId: '', modelId: '' };
     var textBenchmarkModels = null;
+    var textBenchmarkModelsWithoutIts = null;
 
     function sortValue(value) {
       return value === undefined || value === null || Number.isNaN(value) ? -Infinity : value;
@@ -1036,7 +1046,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         direction: defaultDirection || 'desc',
         selectedId: selectedBenchmark.tableId === tableId ? selectedBenchmark.modelId : ''
       };
+      renderSortableHeader(tableId, columns);
       drawSortableTable(tableId);
+    }
+
+    function renderSortableHeader(tableId, columns) {
+      if (!columns.some(function (column) { return column.label; })) return;
+      var tbody = document.getElementById(tableId);
+      var header = tbody && tbody.closest('table').querySelector('thead tr');
+      if (!header) return;
+      header.innerHTML = columns.map(function (column) {
+        return '<th data-table="' + tableId + '" data-sort="' + escapeHtml(column.key) + '">' + escapeHtml(column.label) + '</th>';
+      }).join('');
     }
 
     function drawSortableTable(tableId) {
@@ -1278,6 +1299,17 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         min === config.min && max >= config.max
           ? config.anyLabel
           : config.format(min, false, config.max) + ' - ' + config.format(max, true, config.max);
+      updateRangeFill(config, min, max);
+    }
+
+    function updateRangeFill(config, min, max) {
+      var stack = config.minRange.parentElement;
+      if (!stack) return;
+      var span = config.max - config.min;
+      var start = span > 0 ? ((min - config.min) / span) * 100 : 0;
+      var end = span > 0 ? ((max - config.min) / span) * 100 : 100;
+      stack.style.setProperty('--range-start', Math.min(Math.max(start, 0), 100) + '%');
+      stack.style.setProperty('--range-end', Math.min(Math.max(end, 0), 100) + '%');
     }
 
     function resetDualRange(config) {
@@ -1285,6 +1317,70 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       config.maxRange.value = String(config.max);
       syncDualRange(config);
       refreshBuilder();
+    }
+
+    function decimalPlaces(value) {
+      var text = String(value);
+      var exponent = text.match(/e-(\d+)$/);
+      if (exponent) return Number(exponent[1]);
+      var decimal = text.indexOf('.');
+      return decimal === -1 ? 0 : text.length - decimal - 1;
+    }
+
+    function steppedRangeValue(config, clientX) {
+      var rect = config.minRange.parentElement.getBoundingClientRect();
+      var pct = rect.width > 0 ? Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1) : 0;
+      var step = Number(config.minRange.step) || 1;
+      var raw = config.min + pct * (config.max - config.min);
+      var stepped = Math.round((raw - config.min) / step) * step + config.min;
+      var places = decimalPlaces(step);
+      return Math.min(config.max, Math.max(config.min, Number(stepped.toFixed(places))));
+    }
+
+    function closestRangeInput(config, value) {
+      var minValue = Number(config.minRange.value);
+      var maxValue = Number(config.maxRange.value);
+      var minDistance = Math.abs(value - minValue);
+      var maxDistance = Math.abs(value - maxValue);
+      if (minDistance === maxDistance) {
+        return value <= (minValue + maxValue) / 2 ? config.minRange : config.maxRange;
+      }
+      return minDistance < maxDistance ? config.minRange : config.maxRange;
+    }
+
+    function moveDualRangeThumb(config, input, clientX) {
+      input.focus();
+      input.value = String(steppedRangeValue(config, clientX));
+      syncDualRange(config);
+      refreshBuilder();
+    }
+
+    function installDualRangePointer(config) {
+      var stack = config.minRange.parentElement;
+      if (!stack) return;
+      stack.addEventListener('pointerdown', function (event) {
+        if (event.button !== undefined && event.button !== 0) return;
+        var value = steppedRangeValue(config, event.clientX);
+        var input = closestRangeInput(config, value);
+        event.preventDefault();
+        stack.setPointerCapture(event.pointerId);
+        moveDualRangeThumb(config, input, event.clientX);
+
+        function onPointerMove(moveEvent) {
+          moveDualRangeThumb(config, input, moveEvent.clientX);
+        }
+
+        function onPointerUp(upEvent) {
+          stack.releasePointerCapture(upEvent.pointerId);
+          stack.removeEventListener('pointermove', onPointerMove);
+          stack.removeEventListener('pointerup', onPointerUp);
+          stack.removeEventListener('pointercancel', onPointerUp);
+        }
+
+        stack.addEventListener('pointermove', onPointerMove);
+        stack.addEventListener('pointerup', onPointerUp);
+        stack.addEventListener('pointercancel', onPointerUp);
+      });
     }
 
     function formatRunCostCap(value, isMax, max) {
@@ -1367,6 +1463,21 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return quality * 0.62 + textCostScore(model, outputWeight) * 0.2 + textEfficiencyScore(model) * 0.1 + Math.min((signals.speed || 0) / 220, 1) * 8;
     }
 
+    function supportAgenticSignal(row) {
+      var signals = llmSignals(row);
+      return typeof signals.agentic === 'number' ? signals.agentic : signals.tauTelecom;
+    }
+
+    function includeItsBenchmark() {
+      return fields.includeits ? fields.includeits.checked : true;
+    }
+
+    function currentTextBenchmarkModels() {
+      return includeItsBenchmark() || !textBenchmarkModelsWithoutIts
+        ? textBenchmarkModels
+        : textBenchmarkModelsWithoutIts;
+    }
+
     function textRows(models, useCase) {
       var floor = useCase === 'customer-support' ? runCostFloor() : undefined;
       var ceiling = useCase === 'customer-support' ? runCostCeiling() : undefined;
@@ -1376,7 +1487,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           var signals = model.benchmarks && model.benchmarks.llm;
           if (floor !== undefined && (!signals || typeof signals.intelligenceRunTotalCost !== 'number' || signals.intelligenceRunTotalCost < floor)) return false;
           if (ceiling !== undefined && (!signals || typeof signals.intelligenceRunTotalCost !== 'number' || signals.intelligenceRunTotalCost > ceiling)) return false;
-          if (useCase === 'customer-support' && (!signals || typeof signals.instructionFollowing !== 'number' || typeof signals.agentic !== 'number')) return false;
+          if (
+            useCase === 'customer-support' &&
+            (!signals ||
+              typeof signals.instructionFollowing !== 'number' ||
+              ![signals.agentic, signals.tauTelecom, signals.professional].some(function (value) { return typeof value === 'number'; }))
+          ) return false;
           var hasQualitySignal = signals && [
             signals.intelligence,
             signals.coding,
@@ -1393,30 +1509,43 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         });
     }
 
-    function commonTextColumns(useCase) {
+    function commonTextColumns(useCase, includeIts) {
       var base = [
-        { key: 'model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
-        { key: 'score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
+        { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
+        { key: 'score', label: 'Score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
       ];
+      if (includeIts) {
+        base.push(
+          { key: 'falsePositives', label: 'ITS FP', value: function (row) { var rate = falsePositiveRate(row); return typeof rate === 'number' ? -rate : -Infinity; }, render: falsePositiveLabel },
+          { key: 'accuracy', label: 'ITS Acc', value: function (row) { var accuracy = autoCloseSignals(row).accuracy; return typeof accuracy === 'number' ? accuracy : -Infinity; }, render: accuracyLabel }
+        );
+      }
       base.push(
-        { key: 'falsePositives', value: function (row) { var rate = falsePositiveRate(row); return typeof rate === 'number' ? -rate : -Infinity; }, render: falsePositiveLabel },
-        { key: 'accuracy', value: function (row) { var accuracy = autoCloseSignals(row).accuracy; return typeof accuracy === 'number' ? accuracy : -Infinity; }, render: accuracyLabel },
-        { key: 'ifbench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
-        { key: 'agentic', value: function (row) { return llmSignals(row).agentic; }, render: function (row) { return score(llmSignals(row).agentic); } },
-        { key: 'intelligence', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
+        { key: 'ifbench', label: 'IFBench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
+        { key: 'agentic', label: 'Agentic', value: supportAgenticSignal, render: function (row) { return score(supportAgenticSignal(row)); } },
+        { key: 'intelligence', label: 'Intel', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
       );
       base.push(
-        { key: 'outputCost', value: outputCost, render: function (row) { return money(outputCost(row)); } },
-        { key: 'runCost', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } },
-        { key: 'note', value: autoCloseNote, render: function (row) { return '<div class="note-cell">' + escapeHtml(autoCloseNote(row)) + '</div>'; } }
+        { key: 'outputCost', label: 'Output AUD/MTok', value: outputCost, render: function (row) { return money(outputCost(row)); } },
+        { key: 'runCost', label: 'Run AUD', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } }
       );
+      if (includeIts) {
+        base.push({ key: 'note', label: 'ITS Notes', value: autoCloseNote, render: function (row) { return '<div class="note-cell">' + escapeHtml(autoCloseNote(row)) + '</div>'; } });
+      }
       return base;
     }
 
     function renderTextBenchmarks(models) {
       var support = textRows(models, 'customer-support');
+      var includeIts = includeItsBenchmark();
 
-      renderSortableTable('supportRows', support, commonTextColumns('customer-support'), 'runCost', 'asc');
+      renderSortableTable(
+        'supportRows',
+        support,
+        commonTextColumns('customer-support', includeIts),
+        includeIts ? 'runCost' : 'score',
+        includeIts ? 'asc' : 'desc'
+      );
 
       var label = support.length ? 'AA LLM extract' : 'unavailable';
       setText('supportSource', label);
@@ -1475,6 +1604,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var faq = document.getElementById('faqRows');
       if (!faq) return;
 
+      var includeIts = includeItsBenchmark();
       var autoCloseSupport = topAutoCloseRows(models);
       var support = topBy(textRows(models, 'customer-support'), function (row) { return row.score; });
       var voice = topBy(voiceBenchmarkModels(models), voiceScore);
@@ -1495,15 +1625,19 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var items = [
         {
           q: 'Which model should customer support use?',
-          a: autoCloseSupport[0]
+          a: includeIts && autoCloseSupport[0]
             ? modelName(autoCloseSupport[0].model) + ' is the current safety-first recommendation from the IT Solver auto-close benchmark: ' + autoCloseSummary(autoCloseSupport[0]) + '.'
-            : 'No customer support benchmark data is currently available.'
+            : support[0]
+              ? modelName(support[0].model) + ' is the current recommendation using Artificial Analysis customer-support signals without ITS auto-close ranking.'
+              : 'No customer support benchmark data is currently available.'
         },
         {
           q: 'What are the top customer support models?',
-          a: autoCloseSupport.length
+          a: includeIts && autoCloseSupport.length
             ? 'Using the auto-close benchmark ordering, the top customer support models are: ' + topAutoCloseList(autoCloseSupport) + '.'
-            : 'No customer support benchmark data is currently available.'
+            : support.length
+              ? 'Using Artificial Analysis customer-support signals, the top customer support models are: ' + topList(support, function (row) { return row.score; }, score) + '.'
+              : 'No customer support benchmark data is currently available.'
         },
         {
           q: 'Which voice model is strongest overall?',
@@ -1531,7 +1665,9 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         },
         {
           q: 'How are recommendations compared here?',
-          a: 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Run AUD/token efficiency. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
+          a: includeIts
+            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Run AUD/token efficiency. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
+            : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
         }
       ];
 
@@ -1568,12 +1704,16 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     Promise.all([
       fetch('/v1/benchmarks?useCase=customer-support', { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : Promise.reject(res); }),
+      fetch('/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
     ])
       .then(function (responses) {
         textBenchmarkModels = responses[0].benchmarks || [];
-        renderTextBenchmarks(textBenchmarkModels);
-        renderFaq(textBenchmarkModels);
+        textBenchmarkModelsWithoutIts = responses[1].benchmarks || [];
+        var currentModels = currentTextBenchmarkModels();
+        renderTextBenchmarks(currentModels);
+        renderFaq(currentModels);
       })
       .catch(function () {
         ['supportRows'].forEach(function (id) {
@@ -1645,6 +1785,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
         if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);
       } else {
+        if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
         if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
         if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
@@ -1665,9 +1806,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var full = origin + path;
       updateBenchmarkPanel(fields.usecase.value);
       updateFilterVisibility(fields.usecase.value);
-      if (textBenchmarkModels) {
-        renderTextBenchmarks(textBenchmarkModels);
-        renderFaq(textBenchmarkModels);
+      var currentModels = currentTextBenchmarkModels();
+      if (currentModels) {
+        renderTextBenchmarks(currentModels);
+        renderFaq(currentModels);
       }
       redrawBenchmarkTables();
       fields.url.textContent = full;
@@ -1747,6 +1889,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     fields.outputcostany.addEventListener('click', function () { resetDualRange(outputCostRange); });
     fields.contextany.addEventListener('click', function () { resetDualRange(contextRange); });
     fields.runcostany.addEventListener('click', function () { resetDualRange(runCostRange); });
+    [inputCostRange, outputCostRange, contextRange, runCostRange].forEach(installDualRangePointer);
 
     fields.copy.addEventListener('click', function () {
       navigator.clipboard.writeText(fields.code.textContent).then(function () {

@@ -19,17 +19,12 @@ const DEFAULT_FX_RATE_URL =
   "https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD";
 const DEFAULT_ARTIFICIAL_ANALYSIS_LLM_URL =
   "https://artificialanalysis.ai/api/v2/data/llms/models";
-const DEFAULT_ALLOWED_IPS = "203.12.1.95";
 
 export interface Env {
   MODEL_CACHE?: KVNamespace;
-  MODEL_REGISTRY_API_KEY?: string;
-  MODEL_REGISTRY_API_KEYS?: string;
-  ALLOWED_IPS?: string;
   FX_RATE_URL?: string;
   ARTIFICIAL_ANALYSIS_API_KEY?: string;
   ARTIFICIAL_ANALYSIS_LLM_URL?: string;
-  LOCAL_DEV_AUTH_BYPASS?: string;
 }
 
 export default {
@@ -56,16 +51,6 @@ export async function handleRequest(
   ctx?: Pick<ExecutionContext, "waitUntil">,
 ): Promise<Response> {
   if (request.method === "OPTIONS") return optionsResponse();
-
-  if (!isAuthorized(request, env)) {
-    return jsonResponse(
-      {
-        error: "unauthorized",
-        message: "Send a valid bearer token or request from an allowlisted IP.",
-      },
-      401,
-    );
-  }
 
   if (request.method !== "GET") {
     return jsonResponse({ error: "method_not_allowed" }, 405, {
@@ -107,34 +92,6 @@ export async function refreshCatalog(env: Env): Promise<Catalog> {
   const catalog = await fetchCatalog(env);
   await writeCachedCatalog(env, catalog);
   return catalog;
-}
-
-export function isAuthorized(request: Request, env: Env): boolean {
-  if (env.LOCAL_DEV_AUTH_BYPASS === "true") return true;
-  if (isLocalhostRequest(request)) return true;
-
-  const allowedIps = splitList(env.ALLOWED_IPS || DEFAULT_ALLOWED_IPS);
-  const connectingIp = request.headers.get("CF-Connecting-IP");
-  if (connectingIp && allowedIps.includes(connectingIp)) return true;
-
-  const token = bearerToken(request) || request.headers.get("x-api-key") || "";
-  const keys = splitList(
-    [env.MODEL_REGISTRY_API_KEY, env.MODEL_REGISTRY_API_KEYS]
-      .filter(Boolean)
-      .join(","),
-  );
-
-  return keys.some((key) => constantTimeEqual(key, token));
-}
-
-function isLocalhostRequest(request: Request): boolean {
-  const hostname = new URL(request.url).hostname;
-  const host = request.headers.get("Host")?.split(":")[0] ?? "";
-  return isLocalhost(hostname) || isLocalhost(host);
-}
-
-function isLocalhost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
 }
 
 async function routeApi(
@@ -344,34 +301,12 @@ function isFresh(catalog: Catalog): boolean {
   return Date.now() - generatedAt < CACHE_TTL_MS;
 }
 
-function bearerToken(request: Request): string | undefined {
-  const header = request.headers.get("Authorization");
-  const match = header?.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim();
-}
-
-function splitList(value: string): string[] {
-  return value
-    .split(/[,\s]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function constantTimeEqual(left: string, right: string): boolean {
-  if (!left || !right || left.length !== right.length) return false;
-  let diff = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-  return diff === 0;
-}
-
 function htmlResponse(html: string): Response {
   return new Response(html, {
     headers: {
       ...commonHeaders(),
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "private, max-age=300",
+      "cache-control": "public, max-age=300",
     },
   });
 }
@@ -386,7 +321,7 @@ function jsonResponse(
     headers: {
       ...commonHeaders(),
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "private, max-age=300",
+      "cache-control": "public, max-age=300",
       ...headers,
     },
   });
@@ -398,7 +333,7 @@ function optionsResponse(): Response {
     headers: {
       ...commonHeaders(),
       "access-control-allow-methods": "GET, OPTIONS",
-      "access-control-allow-headers": "authorization, content-type, x-api-key",
+      "access-control-allow-headers": "content-type",
       "access-control-max-age": "86400",
     },
   });

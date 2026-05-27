@@ -629,8 +629,21 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           </label>
         </div>
         <div class="b-field" data-filter-scope="voice">
-          <label for="b-maxaudioinputcost">Max input audio AUD/hr</label>
-          <input type="number" id="b-maxaudioinputcost" min="0" step="0.1" placeholder="voice only">
+          <label for="b-audio-input-max-range">Max input audio AUD/hr</label>
+          <input type="hidden" id="b-maxaudioinputcost">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-audioinputcost-label">Any input audio AUD/hr</strong>
+              <button type="button" id="b-audioinputcost-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-audio-input-max-range" min="0" max="20" step="0.1" value="20" aria-label="Maximum input audio AUD per hour">
+            </div>
+            <div class="price-filter-scale">
+              <span>$0</span>
+              <span>$20+</span>
+            </div>
+          </div>
         </div>
         <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudiooutputcost">Max output audio AUD/hr</label>
@@ -937,6 +950,9 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       runcostlabel: document.getElementById('b-runcost-label'),
       runcostany: document.getElementById('b-runcost-any'),
       maxaudioinputcost: document.getElementById('b-maxaudioinputcost'),
+      audioinputmaxrange: document.getElementById('b-audio-input-max-range'),
+      audioinputcostlabel: document.getElementById('b-audioinputcost-label'),
+      audioinputcostany: document.getElementById('b-audioinputcost-any'),
       maxaudiooutputcost: document.getElementById('b-maxaudiooutputcost'),
       minctx: document.getElementById('b-minctx'),
       maxctx: document.getElementById('b-maxctx'),
@@ -1320,6 +1336,33 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       refreshBuilder();
     }
 
+    function syncMaxRange(config) {
+      var max = Number(config.maxRange.value);
+      if (!Number.isFinite(max)) max = config.max;
+      max = Math.min(config.max, Math.max(config.min, max));
+      config.maxRange.value = String(max);
+      config.hiddenMax.value = max < config.max ? String(max) : '';
+      config.label.textContent = max >= config.max
+        ? config.anyLabel
+        : 'Up to ' + config.format(max, true, config.max);
+      updateMaxRangeFill(config, max);
+    }
+
+    function updateMaxRangeFill(config, max) {
+      var stack = config.maxRange.parentElement;
+      if (!stack) return;
+      var span = config.max - config.min;
+      var end = span > 0 ? ((max - config.min) / span) * 100 : 100;
+      stack.style.setProperty('--range-start', '0%');
+      stack.style.setProperty('--range-end', Math.min(Math.max(end, 0), 100) + '%');
+    }
+
+    function resetMaxRange(config) {
+      config.maxRange.value = String(config.max);
+      syncMaxRange(config);
+      refreshBuilder();
+    }
+
     function decimalPlaces(value) {
       var text = String(value);
       var exponent = text.match(/e-(\d+)$/);
@@ -1356,6 +1399,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       refreshBuilder();
     }
 
+    function moveMaxRangeThumb(config, clientX) {
+      config.maxRange.focus();
+      config.maxRange.value = String(steppedRangeValue({
+        min: config.min,
+        max: config.max,
+        minRange: config.maxRange,
+        maxRange: config.maxRange
+      }, clientX));
+      syncMaxRange(config);
+      refreshBuilder();
+    }
+
     function installDualRangePointer(config) {
       var stack = config.minRange.parentElement;
       if (!stack) return;
@@ -1384,21 +1439,54 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       });
     }
 
+    function installMaxRangePointer(config) {
+      var stack = config.maxRange.parentElement;
+      if (!stack) return;
+      stack.addEventListener('pointerdown', function (event) {
+        if (event.button !== undefined && event.button !== 0) return;
+        event.preventDefault();
+        stack.setPointerCapture(event.pointerId);
+        moveMaxRangeThumb(config, event.clientX);
+
+        function onPointerMove(moveEvent) {
+          moveMaxRangeThumb(config, moveEvent.clientX);
+        }
+
+        function onPointerUp(upEvent) {
+          stack.releasePointerCapture(upEvent.pointerId);
+          stack.removeEventListener('pointermove', onPointerMove);
+          stack.removeEventListener('pointerup', onPointerUp);
+          stack.removeEventListener('pointercancel', onPointerUp);
+        }
+
+        stack.addEventListener('pointermove', onPointerMove);
+        stack.addEventListener('pointerup', onPointerUp);
+        stack.addEventListener('pointercancel', onPointerUp);
+      });
+    }
+
     function formatRunCostCap(value, isMax, max) {
       if (isMax && value >= 8000) return '$8,000+';
       return '$' + Math.round(value).toLocaleString();
+    }
+
+    function formatAudioCostCap(value, isMax, max) {
+      if (isMax && value >= max) return '$' + max.toLocaleString() + '+';
+      return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
     }
 
     var inputCostRange;
     var outputCostRange;
     var contextRange;
     var runCostRange;
+    var audioInputCostRange;
 
     function syncRunCostRange() {
       syncDualRange(inputCostRange);
       syncDualRange(outputCostRange);
       syncDualRange(contextRange);
       syncDualRange(runCostRange);
+      syncMaxRange(audioInputCostRange);
     }
 
     function runCostFloor() {
@@ -1915,11 +2003,22 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       anyLabel: 'Any Run AUD',
       format: formatRunCostCap
     };
+    audioInputCostRange = {
+      min: 0,
+      max: 20,
+      maxRange: fields.audioinputmaxrange,
+      hiddenMax: fields.maxaudioinputcost,
+      label: fields.audioinputcostlabel,
+      anyLabel: 'Any input audio AUD/hr',
+      format: formatAudioCostCap
+    };
     fields.inputcostany.addEventListener('click', function () { resetDualRange(inputCostRange); });
     fields.outputcostany.addEventListener('click', function () { resetDualRange(outputCostRange); });
     fields.contextany.addEventListener('click', function () { resetDualRange(contextRange); });
     fields.runcostany.addEventListener('click', function () { resetDualRange(runCostRange); });
+    fields.audioinputcostany.addEventListener('click', function () { resetMaxRange(audioInputCostRange); });
     [inputCostRange, outputCostRange, contextRange, runCostRange].forEach(installDualRangePointer);
+    installMaxRangePointer(audioInputCostRange);
 
     fields.copy.addEventListener('click', function () {
       navigator.clipboard.writeText(fields.code.textContent).then(function () {

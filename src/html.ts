@@ -1001,6 +1001,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     var selectedBenchmark = { tableId: '', modelId: '' };
     var textBenchmarkModels = null;
     var textBenchmarkModelsWithoutIts = null;
+    var voiceBenchmarkRows = null;
 
     function sortValue(value) {
       return value === undefined || value === null || Number.isNaN(value) ? -Infinity : value;
@@ -1478,15 +1479,38 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         : textBenchmarkModelsWithoutIts;
     }
 
+    function isBrowsingModels() {
+      return fields.endpoint.value === 'models';
+    }
+
+    function renderCurrentUseCaseBenchmarks() {
+      if (fields.usecase.value === 'voice') {
+        if (voiceBenchmarkRows) renderVoiceBenchmarks(voiceBenchmarkRows);
+        return;
+      }
+
+      var currentModels = currentTextBenchmarkModels();
+      if (currentModels) {
+        renderTextBenchmarks(currentModels);
+        renderFaq(currentModels);
+      }
+    }
+
+    function renderFilteredModelBenchmarks(models) {
+      if (fields.usecase.value === 'voice') {
+        renderVoiceBenchmarks(models || []);
+        return;
+      }
+
+      renderTextBenchmarks(models || []);
+      renderFaq(models || []);
+    }
+
     function textRows(models, useCase) {
-      var floor = useCase === 'customer-support' ? runCostFloor() : undefined;
-      var ceiling = useCase === 'customer-support' ? runCostCeiling() : undefined;
       return models
         .filter(function (model) {
           if (useCase === 'customer-support' && model.recommendable === false) return false;
           var signals = model.benchmarks && model.benchmarks.llm;
-          if (floor !== undefined && (!signals || typeof signals.intelligenceRunTotalCost !== 'number' || signals.intelligenceRunTotalCost < floor)) return false;
-          if (ceiling !== undefined && (!signals || typeof signals.intelligenceRunTotalCost !== 'number' || signals.intelligenceRunTotalCost > ceiling)) return false;
           if (
             useCase === 'customer-support' &&
             (!signals ||
@@ -1695,7 +1719,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     fetch('/v1/benchmarks?useCase=voice', { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
-      .then(function (data) { renderVoiceBenchmarks(data.benchmarks || []); })
+      .then(function (data) {
+        voiceBenchmarkRows = data.benchmarks || [];
+        if (!isBrowsingModels() && fields.usecase.value === 'voice') {
+          renderVoiceBenchmarks(voiceBenchmarkRows);
+        }
+      })
       .catch(function () {
         var rows = document.getElementById('voiceRows');
         if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Voice benchmarks unavailable.</td></tr>';
@@ -1711,9 +1740,9 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       .then(function (responses) {
         textBenchmarkModels = responses[0].benchmarks || [];
         textBenchmarkModelsWithoutIts = responses[1].benchmarks || [];
-        var currentModels = currentTextBenchmarkModels();
-        renderTextBenchmarks(currentModels);
-        renderFaq(currentModels);
+        if (!isBrowsingModels() && fields.usecase.value === 'customer-support') {
+          renderCurrentUseCaseBenchmarks();
+        }
       })
       .catch(function () {
         ['supportRows'].forEach(function (id) {
@@ -1806,11 +1835,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var full = origin + path;
       updateBenchmarkPanel(fields.usecase.value);
       updateFilterVisibility(fields.usecase.value);
-      var currentModels = currentTextBenchmarkModels();
-      if (currentModels) {
-        renderTextBenchmarks(currentModels);
-        renderFaq(currentModels);
-      }
+      if (!isBrowsingModels()) renderCurrentUseCaseBenchmarks();
       redrawBenchmarkTables();
       fields.url.textContent = full;
       fields.url.href = path;
@@ -1819,14 +1844,19 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       fields.result.textContent = 'checking...';
       clearTimeout(previewTimer);
       previewTimer = setTimeout(function () {
+        var requestedPath = path;
+        var requestedUseCase = fields.usecase.value;
+        var requestedBrowse = isBrowsingModels();
         fetch(path)
           .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
           .then(function (data) {
+            if (requestedPath !== buildPath()) return;
             if (data.recommendation) {
               fields.result.textContent = data.recommendation.id;
-              highlightBenchmark(data.recommendation.id, fields.usecase.value);
+              highlightBenchmark(data.recommendation.id, requestedUseCase);
             } else {
               fields.result.textContent = (data.modelCount || 0).toLocaleString() + ' models';
+              if (requestedBrowse) renderFilteredModelBenchmarks(data.models || []);
               highlightBenchmark('', '');
             }
           })

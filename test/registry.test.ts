@@ -7,7 +7,10 @@ import {
   type Catalog,
 } from "../src/registry";
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
-import { artificialAnalysisFixture } from "./fixtures";
+import {
+  artificialAnalysisFixture,
+  artificialAnalysisSpeechToTextFixture,
+} from "./fixtures";
 
 describe("filter parsing", () => {
   it("parses supported filters and legacy use-case aliases", () => {
@@ -38,7 +41,18 @@ describe("filter parsing", () => {
     expect(parseFilters(new URLSearchParams("useCase=billing-incident"))).toMatchObject({
       useCase: "customer-support",
     });
-    expect(parseFilters(new URLSearchParams("provider=nvidia"))).toMatchObject({
+    expect(parseFilters(new URLSearchParams("useCase=stt"))).toMatchObject({
+      useCase: "speech-to-text",
+    });
+    expect(
+      parseFilters(
+        new URLSearchParams("provider=groq&maxTranscriptionCostPer1kMinutes=5"),
+      ),
+    ).toMatchObject({
+      provider: "groq",
+      maxTranscriptionCostPer1kMinutes: 5,
+    });
+    expect(parseFilters(new URLSearchParams("provider=deepgram"))).toMatchObject({
       unsupportedProvider: true,
     });
   });
@@ -59,6 +73,9 @@ describe("Artificial Analysis catalog", () => {
       "google",
       "xai",
       "anthropic",
+      "nvidia",
+      "elevenlabs",
+      "groq",
     ]);
   });
 
@@ -373,6 +390,198 @@ describe("Artificial Analysis catalog", () => {
       },
     });
     expect(recommendation?.pricing.benchmarkInputAudioPerHour).toBeGreaterThan(0);
+  });
+
+  it("uses Artificial Analysis speech-to-text data for STT recommendations", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-06-01T00:00:00Z",
+      {
+        base: "USD",
+        quote: "AUD",
+        rate: 2,
+        source: "test",
+      },
+      [],
+      artificialAnalysisSpeechToTextFixture.data,
+    );
+    const rows = benchmarkCandidates(catalog, { useCase: "speech-to-text" });
+    const nvidia = rows.find(
+      (row) => row.id === "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+    );
+    const elevenlabs = rows.find((row) => row.provider === "elevenlabs");
+    const groq = rows.find((row) => row.provider === "groq");
+
+    expect(catalog.providers.map((provider) => provider.provider)).toEqual(
+      expect.arrayContaining(["openai", "nvidia", "elevenlabs", "groq"]),
+    );
+    expect(rows.map((row) => row.id)).not.toContain("deepgram-unsupported-stt");
+    expect(nvidia).toMatchObject({
+      id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+      provider: "nvidia",
+      recommendable: true,
+      pricing: {
+        transcriptionCostPer1kMinutes: 3,
+      },
+      benchmarks: {
+        speechToText: {
+          aaWer: 4.5,
+          speedFactor: 865.2,
+          hostingProviderName: "Together.ai",
+          hostingProviderSlug: "togetherai",
+          source: "artificialanalysis",
+          extractedAt: "2026-06-01T00:00:00Z",
+        },
+      },
+    });
+    expect(elevenlabs).toMatchObject({
+      provider: "elevenlabs",
+      recommendable: true,
+      pricing: {
+        transcriptionCostPer1kMinutes: 10,
+      },
+      benchmarks: {
+        speechToText: {
+          aaWer: 2.2,
+        },
+      },
+    });
+    expect(groq).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
+      recommendable: true,
+      pricing: {
+        transcriptionCostPer1kMinutes: 1.34,
+      },
+      benchmarks: {
+        speechToText: {
+          aaWer: 4.6,
+          hostingProviderName: "Groq",
+          hostingProviderSlug: "groq",
+        },
+      },
+    });
+  });
+
+  it("uses the checked-in speech-to-text table when beta API rows are absent", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-06-01T00:00:00Z",
+      {
+        base: "USD",
+        quote: "AUD",
+        rate: 2,
+        source: "test",
+      },
+    );
+    const nvidia = benchmarkCandidates(catalog, {
+      useCase: "speech-to-text",
+      provider: "nvidia",
+    }).find((row) => row.id === "nvidia-parakeet-tdt-0-6b-v2");
+
+    expect(
+      recommendModel(catalog, { useCase: "speech-to-text", provider: "groq" }),
+    ).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      pricing: {
+        transcriptionCostPer1kMinutes: 1.34,
+      },
+      benchmarks: {
+        speechToText: expect.objectContaining({
+          aaWer: 4.6,
+          speedFactor: 235.5,
+          extractedAt: "2026-05-31T00:00:00.000Z",
+        }),
+      },
+    });
+    expect(nvidia).toMatchObject({
+      recommendable: false,
+      pricing: {
+        transcriptionCostPer1kMinutes: 0,
+      },
+    });
+  });
+
+  it("rejects speech-to-text rows missing WER or pricing", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-06-01T00:00:00Z",
+      undefined,
+      [],
+      artificialAnalysisSpeechToTextFixture.data,
+    );
+    const missingPrice = benchmarkCandidates(catalog, {}).find(
+      (row) => row.id === "nvidia-canary-missing-price-replicate",
+    );
+    const missingWer = benchmarkCandidates(catalog, {}).find(
+      (row) => row.id === "elevenlabs-scribe-missing-wer",
+    );
+
+    expect(missingPrice).toMatchObject({
+      provider: "nvidia",
+      recommendable: false,
+    });
+    expect(missingWer).toMatchObject({
+      provider: "elevenlabs",
+      recommendable: false,
+    });
+  });
+
+  it("uses speech-to-text tier ordering and cost caps", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-06-01T00:00:00Z",
+      {
+        base: "USD",
+        quote: "AUD",
+        rate: 2,
+        source: "test",
+      },
+      [],
+      artificialAnalysisSpeechToTextFixture.data,
+    );
+
+    expect(recommendModel(catalog, { useCase: "speech-to-text" })).toMatchObject({
+      id: "elevenlabs-scribe-v2",
+      provider: "elevenlabs",
+    });
+    expect(
+      recommendModel(catalog, { useCase: "speech-to-text", tier: "best" }),
+    ).toMatchObject({
+      id: "elevenlabs-scribe-v2",
+      provider: "elevenlabs",
+    });
+    expect(
+      recommendModel(catalog, { useCase: "speech-to-text", tier: "fast" }),
+    ).toMatchObject({
+      id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+      provider: "nvidia",
+    });
+    expect(
+      recommendModel(catalog, {
+        useCase: "speech-to-text",
+        maxTranscriptionCostPer1kMinutes: 4,
+      }),
+    ).toMatchObject({
+      id: "google-gemini-2-0-flash-lite",
+      provider: "google",
+    });
+    expect(
+      recommendModel(catalog, {
+        useCase: "speech-to-text",
+        provider: "nvidia",
+        maxTranscriptionCostPer1kMinutes: 4,
+      }),
+    ).toMatchObject({
+      id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+      provider: "nvidia",
+    });
+    expect(
+      recommendModel(catalog, {
+        useCase: "speech-to-text",
+        provider: "groq",
+        maxTranscriptionCostPer1kMinutes: 4,
+      }),
+    ).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
+    });
   });
 
   it("applies cost caps before use-case scoring", () => {

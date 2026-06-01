@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { handleRequest, type Env } from "../src/worker";
-import { artificialAnalysisFixture } from "./fixtures";
+import {
+  artificialAnalysisFixture,
+  artificialAnalysisSpeechToTextFixture,
+} from "./fixtures";
 
 interface JsonObject {
   [key: string]: any;
@@ -14,12 +17,16 @@ const fxUrl =
 const artificialAnalysisUrl =
   "data:application/json," +
   encodeURIComponent(JSON.stringify(artificialAnalysisFixture));
+const artificialAnalysisSttUrl =
+  "data:application/json," +
+  encodeURIComponent(JSON.stringify(artificialAnalysisSpeechToTextFixture));
 
 function env(): Env {
   return {
     FX_RATE_URL: fxUrl,
     ARTIFICIAL_ANALYSIS_API_KEY: "aa-secret",
     ARTIFICIAL_ANALYSIS_LLM_URL: artificialAnalysisUrl,
+    ARTIFICIAL_ANALYSIS_STT_URL: artificialAnalysisSttUrl,
   };
 }
 
@@ -60,7 +67,7 @@ describe("worker routes", () => {
         quote: "AUD",
         rate: 1.5,
       },
-      providerCount: 4,
+      providerCount: 7,
     });
     expect(body.modelCount).toBeGreaterThanOrEqual(9);
     expect(body.activeModelCount).toBeGreaterThanOrEqual(8);
@@ -238,6 +245,104 @@ describe("worker routes", () => {
     });
   });
 
+  it("serves speech-to-text benchmark rows", async () => {
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text"),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarks).toContainEqual(
+      expect.objectContaining({
+        id: "elevenlabs-scribe-v2",
+        provider: "elevenlabs",
+        recommendable: true,
+        pricing: expect.objectContaining({
+          transcriptionCostPer1kMinutes: 7.5,
+        }),
+        benchmarks: {
+          speechToText: expect.objectContaining({
+            aaWer: 2.2,
+            source: "artificialanalysis",
+          }),
+        },
+      }),
+    );
+    expect(
+      body.benchmarks.some((row: { id: string }) => row.id.includes("missing")),
+    ).toBe(false);
+  });
+
+  it("serves speech-to-text browse rows", async () => {
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/models?useCase=speech-to-text"),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.models).toContainEqual(
+      expect.objectContaining({
+        id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+        provider: "nvidia",
+        benchmarks: {
+          speechToText: expect.objectContaining({
+            hostingProviderName: "Together.ai",
+          }),
+        },
+      }),
+    );
+  });
+
+  it("recommends NVIDIA, ElevenLabs, and Groq speech-to-text rows", async () => {
+    const nvidiaResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=nvidia",
+      ),
+      env(),
+      ctx,
+    );
+    const nvidiaBody = (await nvidiaResponse.json()) as JsonObject;
+    const elevenLabsResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=elevenlabs",
+      ),
+      env(),
+      ctx,
+    );
+    const elevenLabsBody = (await elevenLabsResponse.json()) as JsonObject;
+    const groqResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=groq",
+      ),
+      env(),
+      ctx,
+    );
+    const groqBody = (await groqResponse.json()) as JsonObject;
+
+    expect(nvidiaResponse.status).toBe(200);
+    expect(nvidiaBody.recommendation).toMatchObject({
+      id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+      provider: "nvidia",
+    });
+    expect(elevenLabsResponse.status).toBe(200);
+    expect(elevenLabsBody.recommendation).toMatchObject({
+      id: "elevenlabs-scribe-v2",
+      provider: "elevenlabs",
+    });
+    expect(groqResponse.status).toBe(200);
+    expect(groqBody.recommendation).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
+      pricing: expect.objectContaining({
+        transcriptionCostPer1kMinutes: 1.005,
+      }),
+    });
+  });
+
   it("mirrors unprefixed model endpoints", async () => {
     const response = await handleRequest(
       new Request("https://ai.itsolver.au/models/providers"),
@@ -252,6 +357,9 @@ describe("worker routes", () => {
       "google",
       "xai",
       "anthropic",
+      "nvidia",
+      "elevenlabs",
+      "groq",
     ]);
   });
 

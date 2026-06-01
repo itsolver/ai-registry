@@ -590,6 +590,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           <select id="b-usecase">
             <option value="customer-support" selected>customer support</option>
             <option value="voice">voice</option>
+            <option value="speech-to-text">speech to text</option>
           </select>
         </div>
         <div class="b-field">
@@ -608,6 +609,9 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             <option value="google">google</option>
             <option value="xai">xai</option>
             <option value="anthropic">anthropic</option>
+            <option value="nvidia">nvidia</option>
+            <option value="elevenlabs">elevenlabs</option>
+            <option value="groq">groq</option>
           </select>
         </div>
         <div class="b-field">
@@ -648,6 +652,23 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudiooutputcost">Max output audio AUD/hr</label>
           <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="voice only">
+        </div>
+        <div class="b-field" data-filter-scope="speech-to-text">
+          <label for="b-transcription-max-range">Max STT AUD/1k min</label>
+          <input type="hidden" id="b-maxtranscriptioncost">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-transcriptioncost-label">Any STT AUD/1k min</strong>
+              <button type="button" id="b-transcriptioncost-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-transcription-max-range" min="0" max="20" step="0.1" value="20" aria-label="Maximum speech to text AUD per 1000 minutes">
+            </div>
+            <div class="price-filter-scale">
+              <span>$0</span>
+              <span>$20+</span>
+            </div>
+          </div>
         </div>
         <div class="range-group" data-filter-scope="text">
         <div class="b-field" data-filter-scope="text">
@@ -813,6 +834,34 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         </div>
       </div>
     </div>
+    <div class="benchmark-panel" data-benchmark-panel="speech-to-text" hidden>
+      <p class="bench-note">Speech-to-text models are ranked from Artificial Analysis STT rows. Lower AA-WER is better; price is normalized to AUD per 1,000 minutes of audio.</p>
+      <div class="voice-bench">
+        <div class="voice-head">
+          <strong>Current STT candidates</strong>
+          <span id="sttSource">loading...</span>
+        </div>
+        <div class="voice-table-wrap">
+          <table class="voice-table">
+            <thead>
+              <tr>
+                <th data-table="sttRows" data-sort="model">Model</th>
+                <th data-table="sttRows" data-sort="host">Provider/Host</th>
+                <th data-table="sttRows" data-sort="wer">AA-WER</th>
+                <th data-table="sttRows" data-sort="agenttalk">AgentTalk</th>
+                <th data-table="sttRows" data-sort="voxpopuli">VoxPopuli</th>
+                <th data-table="sttRows" data-sort="earnings">Earnings22</th>
+                <th data-table="sttRows" data-sort="speed">Speed</th>
+                <th data-table="sttRows" data-sort="cost">AUD/1k min</th>
+              </tr>
+            </thead>
+            <tbody id="sttRows">
+              <tr><td class="empty" colspan="8">loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="definitions" aria-labelledby="definitionsTitle">
@@ -821,19 +870,21 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is balanced.</dd>
       <dt>fast</dt>
-      <dd>For customer support, only affects tie-breaks after false positives and accuracy. For voice, prefers lower latency and lower audio cost.</dd>
+      <dd>For customer support, only affects tie-breaks after false positives and accuracy. For voice, prefers lower latency and lower audio cost. For speech to text, prefers higher speed factor.</dd>
       <dt>balanced</dt>
-      <dd>The default. Customer support uses auto-close benchmark safety first, then accuracy, then Run AUD/token efficiency.</dd>
+      <dd>The default. Customer support uses auto-close benchmark safety first, then accuracy, then Run AUD/token efficiency. Speech to text balances lower AA-WER, lower AUD/1k min, and speed.</dd>
       <dt>best</dt>
-      <dd>Favors stronger benchmark scores only after customer-support safety and accuracy are tied.</dd>
+      <dd>Favors stronger benchmark scores only after customer-support safety and accuracy are tied. For speech to text, this prioritizes lower AA-WER.</dd>
       <dt>cost caps</dt>
       <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
       <dt>AUD/MTok</dt>
       <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
       <dt>voice AUD/hr</dt>
       <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
+      <dt>STT AUD/1k min</dt>
+      <dd>Australian dollars per 1,000 minutes of speech-to-text audio, converted from Artificial Analysis provider pricing where available.</dd>
       <dt>benchmark table</dt>
-      <dd>The live recommendation for customer support or voice must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
+      <dd>The live recommendation for customer support, voice, or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
       <dt>IT Solver auto-close benchmark</dt>
       <dd>Our reopened-ticket classifier replay. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
       <dt>false positives / accuracy</dt>
@@ -842,6 +893,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       <dd><code>ITS</code> marks IT Solver auto-close benchmark fields. <code>ITS FP</code>, <code>ITS Acc</code>, and <code>ITS Notes</code> come from our Zendesk ticket-classification replay, not Artificial Analysis.</dd>
       <dt>IFBench / Agentic / τ-Voice / TTFA</dt>
       <dd>IFBench measures instruction following, Agentic measures multi-step task performance, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
+      <dt>AA-WER / Speed</dt>
+      <dd>AA-WER is Artificial Analysis word error rate for STT, where lower is better. Speed is input audio seconds transcribed per processing second.</dd>
     </dl>
   </div>
 
@@ -906,10 +959,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
   <h2>Caveats</h2>
   <ul>
     <li>This public endpoint is maintained for IT Solver projects and shared as-is.</li>
-    <li>Only OpenAI, Google, xAI, and Anthropic are exposed.</li>
+    <li>OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq are exposed.</li>
     <li>Each model includes AUD pricing converted from USD with the current cached Frankfurter exchange rate.</li>
-    <li>Use-case recommendations require real token or audio pricing before a row can be recommended.</li>
-    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice recommendations use the relevant Artificial Analysis benchmark-backed candidate set.</li>
+    <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
+    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
     <li>Always code a local fallback in client apps.</li>
   </ul>
 
@@ -954,6 +1007,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       audioinputcostlabel: document.getElementById('b-audioinputcost-label'),
       audioinputcostany: document.getElementById('b-audioinputcost-any'),
       maxaudiooutputcost: document.getElementById('b-maxaudiooutputcost'),
+      maxtranscriptioncost: document.getElementById('b-maxtranscriptioncost'),
+      transcriptionmaxrange: document.getElementById('b-transcription-max-range'),
+      transcriptioncostlabel: document.getElementById('b-transcriptioncost-label'),
+      transcriptioncostany: document.getElementById('b-transcriptioncost-any'),
       minctx: document.getElementById('b-minctx'),
       maxctx: document.getElementById('b-maxctx'),
       contextminrange: document.getElementById('b-context-min-range'),
@@ -1018,6 +1075,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     var textBenchmarkModels = null;
     var textBenchmarkModelsWithoutIts = null;
     var voiceBenchmarkRows = null;
+    var sttBenchmarkRows = null;
+    var sttBenchmarkLoading = false;
 
     function sortValue(value) {
       return value === undefined || value === null || Number.isNaN(value) ? -Infinity : value;
@@ -1031,6 +1090,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (model.benchmarks && model.benchmarks.voice) {
         if (typeof pricing.benchmarkInputAudioPerHour !== 'number') return 'no audio pricing';
         if (typeof pricing.audioOutputPerHour !== 'number' && typeof pricing.benchmarkCostPerTask !== 'number') return 'no audio pricing';
+      }
+      if (model.benchmarks && model.benchmarks.speechToText) {
+        if (typeof model.benchmarks.speechToText.aaWer !== 'number') return 'no STT score';
+        if (typeof pricing.transcriptionCostPer1kMinutes !== 'number') return 'no STT pricing';
       }
       if (model.benchmarks && model.benchmarks.llm) {
         if (typeof pricing.inputPerMTok !== 'number' || typeof pricing.outputPerMTok !== 'number') return 'no token pricing';
@@ -1124,12 +1187,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function benchmarkTableForUseCase(useCase) {
       if (useCase === 'voice') return 'voiceRows';
+      if (useCase === 'speech-to-text') return 'sttRows';
       if (useCase === 'customer-support') return 'supportRows';
       return '';
     }
 
     function benchmarkPanelForUseCase(useCase) {
       if (useCase === 'voice') return 'voice';
+      if (useCase === 'speech-to-text') return 'speech-to-text';
       if (useCase === 'customer-support') return 'customer-support';
       return '';
     }
@@ -1139,6 +1204,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         return {
           title: 'Voice Benchmark',
           hint: 'Voice models are ranked for speech-to-speech agents using τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
+        };
+      }
+      if (useCase === 'speech-to-text') {
+        return {
+          title: 'Speech-To-Text Benchmark',
+          hint: 'Speech-to-text models are ranked using AA-WER, AUD per 1,000 minutes, and speed factor. Use highest accuracy for lower AA-WER, real-time speed for speed factor, and the AUD/1k min cap for price.'
         };
       }
       return {
@@ -1159,6 +1230,23 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       hint.textContent = copy.hint;
     }
 
+    function updateTierOptions(useCase) {
+      var labels = useCase === 'speech-to-text'
+        ? {
+          '': 'balanced trade-off',
+          fast: 'real-time speed',
+          best: 'highest accuracy'
+        }
+        : {
+          '': 'balanced',
+          fast: 'lower Run AUD',
+          best: 'highest score'
+        };
+      Array.prototype.forEach.call(fields.tier.options, function (option) {
+        option.textContent = labels[option.value] || option.textContent;
+      });
+    }
+
     function pricingContext(data) {
       if (data && data.exchangeRate) {
         var rate = Number(data.exchangeRate.rate).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
@@ -1169,10 +1257,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function updateFilterVisibility(useCase) {
-      var isVoice = useCase === 'voice';
+      var activeScope = useCase === 'voice'
+        ? 'voice'
+        : useCase === 'speech-to-text'
+          ? 'speech-to-text'
+          : 'text';
       document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
         var scope = field.getAttribute('data-filter-scope');
-        field.hidden = scope === 'voice' ? !isVoice : isVoice;
+        field.hidden = scope !== activeScope;
       });
     }
 
@@ -1241,6 +1333,62 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         { key: 'inputCost', value: voiceCost, render: function (model) { return money(voiceCost(model)); } },
         { key: 'outputCost', value: voiceOutputCost, render: function (model) { return money(voiceOutputCost(model)); } }
       ], 'agentic', 'desc');
+    }
+
+    function sttSignals(model) {
+      return ((model.benchmarks || {}).speechToText || {});
+    }
+
+    function sttCost(model) {
+      var pricing = model.pricing || {};
+      return pricing.transcriptionCostPer1kMinutes || Infinity;
+    }
+
+    function sttHost(model) {
+      var signals = sttSignals(model);
+      var host = signals.hostingProviderName || signals.hostingProviderSlug || '';
+      return host && host.toLowerCase() !== String(model.provider || '').toLowerCase()
+        ? model.provider + ' / ' + host
+        : model.provider || host || '-';
+    }
+
+    function wer(value) {
+      return typeof value === 'number' ? value.toFixed(value < 10 ? 1 : 0) + '%' : '-';
+    }
+
+    function speedFactor(value) {
+      return typeof value === 'number' ? value.toFixed(value < 100 ? 1 : 0) + 'x' : '-';
+    }
+
+    function speechToTextBenchmarkModels(models) {
+      return models.filter(function (model) {
+        return model.recommendable !== false && model.benchmarks && model.benchmarks.speechToText;
+      });
+    }
+
+    function renderSpeechToTextBenchmarks(models) {
+      var rows = speechToTextBenchmarkModels(models);
+      if (!rows.length) {
+        renderSortableTable('sttRows', [], [], 'wer', 'asc');
+        setText('sttSource', 'unavailable');
+        return;
+      }
+
+      var source = rows[0].benchmarks && rows[0].benchmarks.speechToText;
+      if (source && source.extractedAt) {
+        setText('sttSource', 'AA extract ' + formatAge(source.extractedAt));
+      }
+
+      renderSortableTable('sttRows', rows, [
+        { key: 'model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'host', value: sttHost, render: function (model) { return escapeHtml(sttHost(model)); } },
+        { key: 'wer', value: function (model) { return sttSignals(model).aaWer; }, render: function (model) { return wer(sttSignals(model).aaWer); } },
+        { key: 'agenttalk', value: function (model) { return sttSignals(model).agentTalkWer; }, render: function (model) { return wer(sttSignals(model).agentTalkWer); } },
+        { key: 'voxpopuli', value: function (model) { return sttSignals(model).voxpopuliWer; }, render: function (model) { return wer(sttSignals(model).voxpopuliWer); } },
+        { key: 'earnings', value: function (model) { return sttSignals(model).earnings22Wer; }, render: function (model) { return wer(sttSignals(model).earnings22Wer); } },
+        { key: 'speed', value: function (model) { return sttSignals(model).speedFactor; }, render: function (model) { return speedFactor(sttSignals(model).speedFactor); } },
+        { key: 'cost', value: sttCost, render: function (model) { return money(sttCost(model)); } }
+      ], 'wer', 'asc');
     }
 
     function llmSignals(row) {
@@ -1475,11 +1623,17 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
     }
 
+    function formatTranscriptionCostCap(value, isMax, max) {
+      if (isMax && value >= max) return '$' + max.toLocaleString() + '+';
+      return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
     var inputCostRange;
     var outputCostRange;
     var contextRange;
     var runCostRange;
     var audioInputCostRange;
+    var transcriptionCostRange;
 
     function syncRunCostRange() {
       syncDualRange(inputCostRange);
@@ -1487,6 +1641,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       syncDualRange(contextRange);
       syncDualRange(runCostRange);
       syncMaxRange(audioInputCostRange);
+      syncMaxRange(transcriptionCostRange);
     }
 
     function runCostFloor() {
@@ -1576,6 +1731,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (voiceBenchmarkRows) renderVoiceBenchmarks(voiceBenchmarkRows);
         return;
       }
+      if (fields.usecase.value === 'speech-to-text') {
+        if (sttBenchmarkRows) {
+          renderSpeechToTextBenchmarks(sttBenchmarkRows);
+        } else {
+          loadSpeechToTextBenchmarks();
+        }
+        return;
+      }
 
       var currentModels = currentTextBenchmarkModels();
       if (currentModels) {
@@ -1587,6 +1750,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     function renderFilteredModelBenchmarks(models) {
       if (fields.usecase.value === 'voice') {
         renderVoiceBenchmarks(models || []);
+        return;
+      }
+      if (fields.usecase.value === 'speech-to-text') {
+        renderSpeechToTextBenchmarks(models || []);
         return;
       }
 
@@ -1764,6 +1931,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             : 'No voice benchmark pricing is currently available.'
         },
         {
+          q: 'How do I choose the best speech to text model?',
+          a: 'Use the speech-to-text priority and price cap to trade off accuracy, speed, and price. Highest accuracy prioritizes lower AA-WER, real-time speed prioritizes higher speed factor, and cost-sensitive workloads should use the AUD/1k min cap and price column.'
+        },
+        {
           q: 'Which text model has the lowest output price?',
           a: cheapestOutput[0]
             ? modelName(cheapestOutput[0].model) + ' has the lowest output price among benchmarked text candidates at ' + money(outputCost(cheapestOutput[0])) + ' AUD/MTok.'
@@ -1818,6 +1989,33 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Voice benchmarks unavailable.</td></tr>';
         setText('voiceSource', 'unavailable');
       });
+
+    function loadSpeechToTextBenchmarks(attempt) {
+      if (sttBenchmarkLoading) return;
+      sttBenchmarkLoading = true;
+      setText('sttSource', 'loading...');
+      fetch('/v1/benchmarks?useCase=speech-to-text', { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
+        .then(function (data) {
+          sttBenchmarkRows = data.benchmarks || [];
+          sttBenchmarkLoading = false;
+          if (!isBrowsingModels() && fields.usecase.value === 'speech-to-text') {
+            renderSpeechToTextBenchmarks(sttBenchmarkRows);
+          }
+        })
+        .catch(function () {
+          sttBenchmarkLoading = false;
+          if ((attempt || 0) < 2) {
+            setTimeout(function () { loadSpeechToTextBenchmarks((attempt || 0) + 1); }, 1000);
+            return;
+          }
+          var rows = document.getElementById('sttRows');
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="8">STT benchmarks unavailable.</td></tr>';
+          setText('sttSource', 'unavailable');
+        });
+    }
+
+    loadSpeechToTextBenchmarks();
 
     Promise.all([
       fetch('/v1/benchmarks?useCase=customer-support', { cache: 'no-store' })
@@ -1901,6 +2099,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (fields.usecase.value === 'voice') {
         if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
         if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);
+      } else if (fields.usecase.value === 'speech-to-text') {
+        if (fields.maxtranscriptioncost.value) params.set('maxTranscriptionCostPer1kMinutes', fields.maxtranscriptioncost.value);
       } else {
         if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
@@ -1919,6 +2119,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     var previewTimer = 0;
     function refreshBuilder() {
       syncRunCostRange();
+      updateTierOptions(fields.usecase.value);
       var path = buildPath();
       var full = origin + path;
       updateBenchmarkPanel(fields.usecase.value);
@@ -1949,6 +2150,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             }
           })
           .catch(function () {
+            if (requestedPath !== buildPath()) return;
             fields.result.textContent = 'unavailable';
             highlightBenchmark('', '');
           });
@@ -2012,13 +2214,24 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       anyLabel: 'Any input audio AUD/hr',
       format: formatAudioCostCap
     };
+    transcriptionCostRange = {
+      min: 0,
+      max: 20,
+      maxRange: fields.transcriptionmaxrange,
+      hiddenMax: fields.maxtranscriptioncost,
+      label: fields.transcriptioncostlabel,
+      anyLabel: 'Any STT AUD/1k min',
+      format: formatTranscriptionCostCap
+    };
     fields.inputcostany.addEventListener('click', function () { resetDualRange(inputCostRange); });
     fields.outputcostany.addEventListener('click', function () { resetDualRange(outputCostRange); });
     fields.contextany.addEventListener('click', function () { resetDualRange(contextRange); });
     fields.runcostany.addEventListener('click', function () { resetDualRange(runCostRange); });
     fields.audioinputcostany.addEventListener('click', function () { resetMaxRange(audioInputCostRange); });
+    fields.transcriptioncostany.addEventListener('click', function () { resetMaxRange(transcriptionCostRange); });
     [inputCostRange, outputCostRange, contextRange, runCostRange].forEach(installDualRangePointer);
     installMaxRangePointer(audioInputCostRange);
+    installMaxRangePointer(transcriptionCostRange);
 
     fields.copy.addEventListener('click', function () {
       navigator.clipboard.writeText(fields.code.textContent).then(function () {

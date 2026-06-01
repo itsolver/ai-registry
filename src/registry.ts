@@ -2,6 +2,7 @@ import {
   AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
   AA_SPEECH_TO_SPEECH_MODELS,
 } from "./generated/aa-speech-to-speech";
+import { AA_SPEECH_TO_TEXT_MODELS } from "./generated/aa-speech-to-text";
 import { AA_CUSTOMER_SUPPORT_RECOMMENDATIONS } from "./generated/aa-customer-support-recommendations";
 import { AA_LLM_EFFICIENCY_MODELS } from "./generated/aa-llm-efficiency";
 import { AA_LLM_PRICING_MODELS } from "./generated/aa-llm-pricing";
@@ -12,6 +13,9 @@ export const SUPPORTED_PROVIDERS = [
   "google",
   "xai",
   "anthropic",
+  "nvidia",
+  "elevenlabs",
+  "groq",
 ] as const;
 
 export const CAPABILITIES = [
@@ -26,6 +30,7 @@ export const TIERS = ["fast", "balanced", "best"] as const;
 export const USE_CASES = [
   "customer-support",
   "voice",
+  "speech-to-text",
 ] as const;
 
 const RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES = {
@@ -33,6 +38,9 @@ const RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES = {
   google: ["gemini"],
   xai: ["grok"],
   anthropic: ["claude"],
+  nvidia: ["nvidia", "parakeet", "canary"],
+  elevenlabs: ["elevenlabs", "scribe"],
+  groq: ["groq", "whisper"],
 } as const satisfies Record<ProviderId, readonly string[]>;
 
 const NON_WORK_MODEL_PATTERNS = [
@@ -68,6 +76,7 @@ export interface ModelPricing {
   audioOutputPerHour?: number;
   benchmarkInputAudioPerHour?: number;
   benchmarkCostPerTask?: number;
+  transcriptionCostPer1kMinutes?: number;
 }
 
 export interface VoiceBenchmarks {
@@ -78,6 +87,18 @@ export interface VoiceBenchmarks {
   airlineAgenticPerformance?: number;
   conversationalDynamics?: number;
   timeToFirstAudioSeconds?: number;
+  source: "artificialanalysis";
+  extractedAt: string;
+}
+
+export interface SpeechToTextBenchmarks {
+  aaWer?: number;
+  agentTalkWer?: number;
+  voxpopuliWer?: number;
+  earnings22Wer?: number;
+  speedFactor?: number;
+  hostingProviderName?: string;
+  hostingProviderSlug?: string;
   source: "artificialanalysis";
   extractedAt: string;
 }
@@ -163,6 +184,7 @@ export interface RegistryModel {
   benchmarks?: {
     voice?: VoiceBenchmarks;
     llm?: BenchmarkSignals;
+    speechToText?: SpeechToTextBenchmarks;
   };
 }
 
@@ -191,6 +213,7 @@ export interface BenchmarkCandidate {
   benchmarks: {
     voice?: VoiceBenchmarks;
     llm?: BenchmarkSignals;
+    speechToText?: SpeechToTextBenchmarks;
   };
   pricing: ModelPricing;
   registryModelId?: string;
@@ -225,6 +248,7 @@ export interface ModelFilters {
   maxRunCostAud?: number;
   maxAudioInputCostPerHour?: number;
   maxAudioOutputCostPerHour?: number;
+  maxTranscriptionCostPer1kMinutes?: number;
   minContextWindow?: number;
   maxContextWindow?: number;
   includeDeprecated?: boolean;
@@ -255,6 +279,23 @@ export interface ArtificialAnalysisModel {
   price_1m_output_tokens?: unknown;
   input_cost_per_million_tokens?: unknown;
   output_cost_per_million_tokens?: unknown;
+}
+
+export interface ArtificialAnalysisSpeechToTextModel {
+  id?: unknown;
+  name?: unknown;
+  slug?: unknown;
+  extractedAt?: unknown;
+  model_creator?: {
+    slug?: unknown;
+    name?: unknown;
+  };
+  aa_wer_index?: unknown;
+  aa_agenttalk?: unknown;
+  voxpopuli_cleaned_aa?: unknown;
+  earnings_22_cleaned_aa?: unknown;
+  open_weights?: unknown;
+  providers?: unknown;
 }
 
 export interface BenchmarkSignals {
@@ -366,6 +407,18 @@ interface ArtificialAnalysisCustomerSupportRecommendation {
   reasoning: boolean;
 }
 
+interface ArtificialAnalysisSpeechToTextProvider {
+  id?: unknown;
+  name?: unknown;
+  slug?: unknown;
+  price_per_1k_minutes?: unknown;
+  median_speed_factor?: unknown;
+  aa_wer_index?: unknown;
+  aa_agenttalk?: unknown;
+  voxpopuli_cleaned_aa?: unknown;
+  earnings_22_cleaned_aa?: unknown;
+}
+
 interface AiAutoCloseBenchmarkModel {
   id: string;
   provider: ProviderId;
@@ -432,6 +485,9 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
   const maxAudioOutputCostPerHour = asFiniteNumber(
     params.get("maxAudioOutputCostPerHour"),
   );
+  const maxTranscriptionCostPer1kMinutes = asFiniteNumber(
+    params.get("maxTranscriptionCostPer1kMinutes"),
+  );
   const minContextWindow = asFiniteNumber(params.get("minContextWindow"));
   const maxContextWindow = asFiniteNumber(params.get("maxContextWindow"));
 
@@ -453,6 +509,9 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(maxAudioOutputCostPerHour !== undefined
       ? { maxAudioOutputCostPerHour }
       : {}),
+    ...(maxTranscriptionCostPer1kMinutes !== undefined
+      ? { maxTranscriptionCostPer1kMinutes }
+      : {}),
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     ...(maxContextWindow !== undefined ? { maxContextWindow } : {}),
     includeDeprecated: params.get("includeDeprecated") === "true",
@@ -466,12 +525,19 @@ export function normalizeArtificialAnalysisCatalog(
   generatedAt = new Date().toISOString(),
   exchangeRate?: ExchangeRate,
   artificialAnalysisModels: ArtificialAnalysisModel[] = [],
+  artificialAnalysisSpeechToTextModels: ArtificialAnalysisSpeechToTextModel[] = [],
 ): Catalog {
   const voiceModels = normalizeSpeechToSpeechModels(exchangeRate);
+  const speechToTextModels = [
+    ...(AA_SPEECH_TO_TEXT_MODELS as readonly ArtificialAnalysisSpeechToTextModel[]),
+    ...artificialAnalysisSpeechToTextModels,
+  ];
   const benchmarkCandidates = buildBenchmarkCandidates(
     voiceModels,
     artificialAnalysisModels,
+    speechToTextModels,
     exchangeRate,
+    generatedAt,
   );
   const benchmarkSignals = Object.fromEntries(
     benchmarkCandidates
@@ -505,6 +571,9 @@ export function filterModels(
     if (!filters.includeDeprecated && model.deprecated) return false;
     if (filters.provider && model.provider !== filters.provider) return false;
     if (filters.useCase === "voice" && !isVoiceModel(model)) return false;
+    if (filters.useCase === "speech-to-text" && !isSpeechToTextModel(model)) {
+      return false;
+    }
     if (filters.tier && model.tier !== filters.tier) return false;
     if (
       filters.capability &&
@@ -555,6 +624,13 @@ export function filterModels(
       return false;
     }
     if (
+      filters.maxTranscriptionCostPer1kMinutes !== undefined &&
+      (transcriptionCost(model) === undefined ||
+        transcriptionCost(model)! > filters.maxTranscriptionCostPer1kMinutes)
+    ) {
+      return false;
+    }
+    if (
       filters.minContextWindow !== undefined &&
       model.contextWindow < filters.minContextWindow
     ) {
@@ -598,7 +674,7 @@ export function benchmarkCandidates(
     .filter((candidate) => {
       if (filters.unsupportedProvider) return false;
       if (filters.provider && candidate.provider !== filters.provider) return false;
-      if (useCase && !candidate.benchmarks[useCase === "voice" ? "voice" : "llm"]) {
+      if (useCase && !candidate.benchmarks[benchmarkKeyForUseCase(useCase)]) {
         return false;
       }
       if (
@@ -703,6 +779,14 @@ function passesCostFilters(
     return false;
   }
   if (
+    filters.maxTranscriptionCostPer1kMinutes !== undefined &&
+    (candidateTranscriptionCost(candidate) === undefined ||
+      candidateTranscriptionCost(candidate)! >
+        filters.maxTranscriptionCostPer1kMinutes)
+  ) {
+    return false;
+  }
+  if (
     filters.minContextWindow !== undefined &&
     (candidate.contextWindow === null ||
       candidate.contextWindow < filters.minContextWindow)
@@ -789,6 +873,26 @@ function isVoiceModel(model: RegistryModel): boolean {
   );
 }
 
+function isSpeechToTextModel(model: RegistryModel): boolean {
+  return (
+    !model.deprecated &&
+    !model.openWeights &&
+    model.modalities.input.includes("audio") &&
+    model.modalities.output.includes("text") &&
+    isNumber(model.benchmarks?.speechToText?.aaWer) &&
+    model.pricing.transcriptionCostPer1kMinutes !== undefined &&
+    model.pricing.transcriptionCostPer1kMinutes > 0
+  );
+}
+
+function benchmarkKeyForUseCase(
+  useCase: UseCase,
+): keyof BenchmarkCandidate["benchmarks"] {
+  if (useCase === "voice") return "voice";
+  if (useCase === "speech-to-text") return "speechToText";
+  return "llm";
+}
+
 function providerFamilyAllowed(model: RegistryModel): boolean {
   const family = model.family.toLowerCase();
   return RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES[model.provider].some((prefix) =>
@@ -810,6 +914,7 @@ function asTier(value: string | null): Tier | undefined {
 
 function asUseCase(value: string | null): UseCase | undefined {
   if (value === "support") return "customer-support";
+  if (value === "stt") return "speech-to-text";
   if (
     value === "billing" ||
     value === "billing-routine" ||
@@ -921,7 +1026,9 @@ function buildBenchmarkProviderSummaries(
 function buildBenchmarkCandidates(
   models: RegistryModel[],
   artificialAnalysisModels: ArtificialAnalysisModel[],
+  artificialAnalysisSpeechToTextModels: ArtificialAnalysisSpeechToTextModel[],
   exchangeRate?: ExchangeRate,
+  generatedAt = new Date().toISOString(),
 ): BenchmarkCandidate[] {
   const candidates = new Map<string, BenchmarkCandidate>();
 
@@ -1045,7 +1152,96 @@ function buildBenchmarkCandidates(
     candidates.set(candidate.id, candidate);
   }
 
+  for (const sttModel of artificialAnalysisSpeechToTextModels) {
+    for (const candidate of benchmarkCandidatesFromSpeechToTextModel(
+      sttModel,
+      exchangeRate,
+      generatedAt,
+    )) {
+      candidates.set(candidate.id, candidate);
+    }
+  }
+
   return [...candidates.values()];
+}
+
+function benchmarkCandidatesFromSpeechToTextModel(
+  model: ArtificialAnalysisSpeechToTextModel,
+  exchangeRate: ExchangeRate | undefined,
+  generatedAt: string,
+): BenchmarkCandidate[] {
+  const creatorProvider = providerFromSpeechToTextCreator(model);
+
+  const modelName = stringValue(model.name, stringValue(model.id, ""));
+  if (!modelName) return [];
+
+  const baseSlug = slugFrom(stringValue(model.slug, modelName));
+  const extractedAt = stringValue(model.extractedAt, generatedAt);
+  const providerRows = speechToTextProviderRows(model);
+
+  return providerRows.flatMap((host) => {
+    const hostProvider = providerFromSpeechToTextHost(host);
+    const provider =
+      creatorProvider === "nvidia"
+        ? creatorProvider
+        : hostProvider ?? (host ? undefined : creatorProvider);
+    if (!provider) return [];
+
+    const hostName = stringValue(host?.name, "");
+    const hostSlug = stringValue(host?.slug, "");
+    const id = [
+      provider,
+      baseSlug,
+      hostSlug && hostSlug !== provider ? slugFrom(hostSlug) : "",
+    ]
+      .filter(Boolean)
+      .join("-");
+    const pricing: ModelPricing = {
+      ...optionalNumberPrice(
+        "transcriptionCostPer1kMinutes",
+        nonNegativeNumberOrUndefined(numberOrUndefined(host?.price_per_1k_minutes)),
+      ),
+    };
+
+    return benchmarkCandidateFromRegistry({
+      id,
+      provider,
+      name: modelName,
+      benchmarks: {
+        speechToText: {
+          ...optionalSpeechToTextBenchmark(
+            "aaWer",
+            numberOrUndefined(host?.aa_wer_index) ??
+              numberOrUndefined(model.aa_wer_index),
+          ),
+          ...optionalSpeechToTextBenchmark(
+            "agentTalkWer",
+            numberOrUndefined(host?.aa_agenttalk) ??
+              numberOrUndefined(model.aa_agenttalk),
+          ),
+          ...optionalSpeechToTextBenchmark(
+            "voxpopuliWer",
+            numberOrUndefined(host?.voxpopuli_cleaned_aa) ??
+              numberOrUndefined(model.voxpopuli_cleaned_aa),
+          ),
+          ...optionalSpeechToTextBenchmark(
+            "earnings22Wer",
+            numberOrUndefined(host?.earnings_22_cleaned_aa) ??
+              numberOrUndefined(model.earnings_22_cleaned_aa),
+          ),
+          ...optionalSpeechToTextBenchmark(
+            "speedFactor",
+            positiveNumberOrUndefined(numberOrUndefined(host?.median_speed_factor)),
+          ),
+          ...(hostName ? { hostingProviderName: hostName } : {}),
+          ...(hostSlug ? { hostingProviderSlug: hostSlug } : {}),
+          source: "artificialanalysis",
+          extractedAt,
+        },
+      },
+      pricing: exchangeRate ? convertPricing(pricing, exchangeRate) : pricing,
+    });
+  });
 }
 
 function benchmarkCandidateFromRegistry(input: {
@@ -1106,6 +1302,14 @@ function isBenchmarkCandidateRecommendable(
       pricing.benchmarkInputAudioPerHour !== undefined &&
       pricing.benchmarkInputAudioPerHour > 0 &&
       hasPositiveCandidateAudioPrice(pricing)
+    );
+  }
+
+  if (benchmarks.speechToText) {
+    return (
+      isNumber(benchmarks.speechToText.aaWer) &&
+      pricing.transcriptionCostPer1kMinutes !== undefined &&
+      pricing.transcriptionCostPer1kMinutes > 0
     );
   }
 
@@ -1437,6 +1641,47 @@ function providerFromArtificialAnalysisEfficiency(
   return undefined;
 }
 
+function providerFromSpeechToTextCreator(
+  model: ArtificialAnalysisSpeechToTextModel,
+): ProviderId | undefined {
+  const slug = stringValue(model.model_creator?.slug, "").toLowerCase();
+  const name = stringValue(model.model_creator?.name, "").toLowerCase();
+  if (slug.includes("openai") || name.includes("openai")) return "openai";
+  if (slug.includes("google") || name.includes("google")) return "google";
+  if (slug.includes("xai") || name.includes("xai")) return "xai";
+  if (slug.includes("anthropic") || name.includes("anthropic")) return "anthropic";
+  if (slug.includes("nvidia") || name.includes("nvidia")) return "nvidia";
+  if (slug.includes("groq") || name.includes("groq")) return "groq";
+  if (slug.includes("elevenlabs") || name.includes("elevenlabs")) {
+    return "elevenlabs";
+  }
+  return undefined;
+}
+
+function providerFromSpeechToTextHost(
+  host: ArtificialAnalysisSpeechToTextProvider | undefined,
+): ProviderId | undefined {
+  const slug = stringValue(host?.slug, "").toLowerCase();
+  const name = stringValue(host?.name, "").toLowerCase();
+  if (slug.includes("openai") || name.includes("openai")) return "openai";
+  if (slug.includes("google") || name.includes("google")) return "google";
+  if (slug.includes("xai") || name.includes("xai")) return "xai";
+  if (slug.includes("anthropic") || name.includes("anthropic")) return "anthropic";
+  if (slug.includes("groq") || name.includes("groq")) return "groq";
+  if (slug.includes("elevenlabs") || name.includes("elevenlabs")) {
+    return "elevenlabs";
+  }
+  return undefined;
+}
+
+function speechToTextProviderRows(
+  model: ArtificialAnalysisSpeechToTextModel,
+): Array<ArtificialAnalysisSpeechToTextProvider | undefined> {
+  return Array.isArray(model.providers) && model.providers.length
+    ? (model.providers as ArtificialAnalysisSpeechToTextProvider[])
+    : [undefined];
+}
+
 function benchmarkSignalsFromArtificialAnalysis(
   model: ArtificialAnalysisModel,
 ): BenchmarkSignals {
@@ -1762,10 +2007,57 @@ function compareBenchmarkCandidates(
     return compareCustomerSupportBenchmarkCandidates(left, right, tier);
   }
 
+  if (filters.useCase === "speech-to-text") {
+    return compareSpeechToTextBenchmarkCandidates(left, right, tier);
+  }
+
   return (
     scoreBenchmarkCandidate(right, filters, tier) -
       scoreBenchmarkCandidate(left, filters, tier) ||
     compareBenchmarkCandidateForTier(left, right, tier)
+  );
+}
+
+function compareSpeechToTextBenchmarkCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+  tier: Tier,
+): number {
+  const leftSignals = left.benchmarks.speechToText;
+  const rightSignals = right.benchmarks.speechToText;
+
+  if (tier === "fast") {
+    return (
+      compareOptionalDesc(leftSignals?.speedFactor, rightSignals?.speedFactor) ||
+      compareOptionalAsc(
+        candidateTranscriptionCost(left),
+        candidateTranscriptionCost(right),
+      ) ||
+      compareOptionalAsc(leftSignals?.aaWer, rightSignals?.aaWer) ||
+      left.id.localeCompare(right.id)
+    );
+  }
+
+  if (tier === "best") {
+    return (
+      compareOptionalAsc(leftSignals?.aaWer, rightSignals?.aaWer) ||
+      compareOptionalDesc(leftSignals?.speedFactor, rightSignals?.speedFactor) ||
+      compareOptionalAsc(
+        candidateTranscriptionCost(left),
+        candidateTranscriptionCost(right),
+      ) ||
+      left.id.localeCompare(right.id)
+    );
+  }
+
+  return (
+    compareOptionalAsc(leftSignals?.aaWer, rightSignals?.aaWer) ||
+    compareOptionalAsc(
+      candidateTranscriptionCost(left),
+      candidateTranscriptionCost(right),
+    ) ||
+    compareOptionalDesc(leftSignals?.speedFactor, rightSignals?.speedFactor) ||
+    left.id.localeCompare(right.id)
   );
 }
 
@@ -1941,6 +2233,13 @@ function benchmarkCandidateQualityScore(
     );
   }
 
+  if (useCase === "speech-to-text") {
+    const aaWer = candidate.benchmarks.speechToText?.aaWer;
+    return aaWer === undefined
+      ? 0
+      : 100 - Math.min(Math.max(aaWer, 0) / 20, 1) * 100;
+  }
+
   const signals = candidate.benchmarks.llm;
   if (useCase === "customer-support") {
     const rankScore =
@@ -1986,6 +2285,10 @@ function benchmarkCandidateLatencyScore(
     if (ttfa !== undefined) return 100 - Math.min(ttfa / 5, 1) * 100;
   }
 
+  if (useCase === "speech-to-text") {
+    return speedScore({ speed: candidate.benchmarks.speechToText?.speedFactor });
+  }
+
   const latency = candidate.benchmarks.llm?.latency;
   if (latency === undefined) return 50;
   return 100 - Math.min(latency / 20, 1) * 100;
@@ -1998,6 +2301,13 @@ function benchmarkCandidateCostScore(
 ): number {
   if (useCase === "voice") {
     const cost = candidateVoiceCost(candidate);
+    return cost === undefined
+      ? 0
+      : 100 - Math.min(Math.log1p(cost) / Math.log1p(20), 1) * 100;
+  }
+
+  if (useCase === "speech-to-text") {
+    const cost = candidateTranscriptionCost(candidate);
     return cost === undefined
       ? 0
       : 100 - Math.min(Math.log1p(cost) / Math.log1p(20), 1) * 100;
@@ -2047,6 +2357,9 @@ function scoringWeights(
     if (useCase === "voice") {
       return { quality: 0.15, latency: 0.45, speed: 0, context: 0, cost: 0.4 };
     }
+    if (useCase === "speech-to-text") {
+      return { quality: 0.2, latency: 0, speed: 0.35, context: 0, cost: 0.45 };
+    }
     return { quality: 0.2, latency: 0.04, speed: 0.04, context: 0, cost: 0.72 };
   }
 
@@ -2054,11 +2367,17 @@ function scoringWeights(
     if (useCase === "voice") {
       return { quality: 0.9, latency: 0.05, speed: 0, context: 0, cost: 0.05 };
     }
+    if (useCase === "speech-to-text") {
+      return { quality: 0.85, latency: 0, speed: 0.1, context: 0, cost: 0.05 };
+    }
     return { quality: 0.9, latency: 0.02, speed: 0.02, context: 0, cost: 0.06 };
   }
 
   if (useCase === "voice") {
     return { quality: 0.45, latency: 0.2, speed: 0, context: 0, cost: 0.35 };
+  }
+  if (useCase === "speech-to-text") {
+    return { quality: 0.65, latency: 0, speed: 0.1, context: 0, cost: 0.25 };
   }
 
   return { quality: 0.54, latency: 0.04, speed: 0.04, context: 0, cost: 0.38 };
@@ -2079,6 +2398,13 @@ function qualityScore(
         (voice?.conversationalDynamics ?? 0) * 0.05) *
       100
     );
+  }
+
+  if (useCase === "speech-to-text") {
+    const aaWer = model.benchmarks?.speechToText?.aaWer;
+    return aaWer === undefined
+      ? fallback
+      : 100 - Math.min(Math.max(aaWer, 0) / 20, 1) * 100;
   }
 
   if (!signals) return fallback;
@@ -2128,6 +2454,10 @@ function latencyScore(
     if (ttfa !== undefined) return 100 - Math.min(ttfa / 5, 1) * 100;
   }
 
+  if (useCase === "speech-to-text") {
+    return speedScore({ speed: model?.benchmarks?.speechToText?.speedFactor });
+  }
+
   if (signals?.latency === undefined) return 50;
   return 100 - Math.min(signals.latency / 20, 1) * 100;
 }
@@ -2149,6 +2479,13 @@ function costScore(
 ): number {
   if (useCase === "voice") {
     const cost = voiceCost(model);
+    return cost === undefined
+      ? 0
+      : 100 - Math.min(Math.log1p(cost) / Math.log1p(20), 1) * 100;
+  }
+
+  if (useCase === "speech-to-text") {
+    const cost = transcriptionCost(model);
     return cost === undefined
       ? 0
       : 100 - Math.min(Math.log1p(cost) / Math.log1p(20), 1) * 100;
@@ -2258,6 +2595,7 @@ function cheapestPrice(model: RegistryModel): number {
   return (
     model.pricing.inputPerMTok ??
     voiceCost(model) ??
+    transcriptionCost(model) ??
     model.pricing.outputPerMTok ??
     Number.POSITIVE_INFINITY
   );
@@ -2284,6 +2622,10 @@ function hasPositiveAudioPrice(model: RegistryModel): boolean {
   return (input !== undefined && input > 0) || (output !== undefined && output > 0);
 }
 
+function transcriptionCost(model: RegistryModel): number | undefined {
+  return model.pricing.transcriptionCostPer1kMinutes;
+}
+
 function candidateVoiceCost(candidate: BenchmarkCandidate): number | undefined {
   const input = candidate.pricing.benchmarkInputAudioPerHour;
   const output = candidateAudioOutputCost(candidate);
@@ -2306,10 +2648,17 @@ function hasPositiveCandidateAudioPrice(pricing: ModelPricing): boolean {
   return (input !== undefined && input > 0) || (output !== undefined && output > 0);
 }
 
+function candidateTranscriptionCost(
+  candidate: BenchmarkCandidate,
+): number | undefined {
+  return candidate.pricing.transcriptionCostPer1kMinutes;
+}
+
 function candidateCheapestPrice(candidate: BenchmarkCandidate): number {
   return (
     candidate.pricing.inputPerMTok ??
     candidateVoiceCost(candidate) ??
+    candidateTranscriptionCost(candidate) ??
     candidate.pricing.outputPerMTok ??
     Number.POSITIVE_INFINITY
   );
@@ -2344,6 +2693,13 @@ function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function slugFrom(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function optionalTokenPrice(
   key: "inputPerMTok" | "outputPerMTok" | "cacheReadPerMTok",
   value: number | undefined,
@@ -2356,7 +2712,8 @@ function optionalNumberPrice(
     | "audioInputPerHour"
     | "audioOutputPerHour"
     | "benchmarkInputAudioPerHour"
-    | "benchmarkCostPerTask",
+    | "benchmarkCostPerTask"
+    | "transcriptionCostPer1kMinutes",
   value: number | undefined,
 ): Partial<ModelPricing> {
   return value === undefined ? {} : { [key]: value };
@@ -2369,8 +2726,26 @@ function optionalBenchmark<K extends keyof Omit<VoiceBenchmarks, "source" | "ext
   return value === undefined ? {} : ({ [key]: value } as Pick<VoiceBenchmarks, K>);
 }
 
+function optionalSpeechToTextBenchmark<
+  K extends keyof Omit<
+    SpeechToTextBenchmarks,
+    "source" | "extractedAt" | "hostingProviderName" | "hostingProviderSlug"
+  >,
+>(
+  key: K,
+  value: number | undefined,
+): Pick<SpeechToTextBenchmarks, K> | Record<string, never> {
+  return value === undefined
+    ? {}
+    : ({ [key]: value } as Pick<SpeechToTextBenchmarks, K>);
+}
+
 function positiveNumberOrUndefined(value: number | undefined): number | undefined {
   return value === undefined || value <= 0 ? undefined : value;
+}
+
+function nonNegativeNumberOrUndefined(value: number | undefined): number | undefined {
+  return value === undefined || value < 0 ? undefined : value;
 }
 
 function hasTokenPricing(pricing: ModelPricing): boolean {
@@ -2421,6 +2796,11 @@ function convertPricing(
     ...optionalAudPrice(
       "benchmarkCostPerTask",
       pricing.benchmarkCostPerTask,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "transcriptionCostPer1kMinutes",
+      pricing.transcriptionCostPer1kMinutes,
       exchangeRate.rate,
     ),
   };

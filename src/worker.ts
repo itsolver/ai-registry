@@ -8,23 +8,27 @@ import {
   parseFilters,
   recommendModel,
   type ArtificialAnalysisModel,
+  type ArtificialAnalysisSpeechToTextModel,
   type Catalog,
   type ExchangeRate,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v8";
+const CACHE_KEY = "catalog:v10";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
 const DEFAULT_FX_RATE_URL =
   "https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD";
 const DEFAULT_ARTIFICIAL_ANALYSIS_LLM_URL =
   "https://artificialanalysis.ai/api/v2/data/llms/models";
+const DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL =
+  "https://artificialanalysis.ai/api/v2/media/speech-to-text/models";
 
 export interface Env {
   MODEL_CACHE?: KVNamespace;
   FX_RATE_URL?: string;
   ARTIFICIAL_ANALYSIS_API_KEY?: string;
   ARTIFICIAL_ANALYSIS_LLM_URL?: string;
+  ARTIFICIAL_ANALYSIS_STT_URL?: string;
 }
 
 export default {
@@ -226,15 +230,21 @@ async function writeCachedCatalog(env: Env, catalog: Catalog): Promise<void> {
 }
 
 async function fetchCatalog(env: Env): Promise<Catalog> {
-  const [exchangeRate, artificialAnalysisModels] = await Promise.all([
+  const [
+    exchangeRate,
+    artificialAnalysisModels,
+    artificialAnalysisSpeechToTextModels,
+  ] = await Promise.all([
     fetchUsdAudRate(env),
     fetchArtificialAnalysisModels(env),
+    fetchArtificialAnalysisSpeechToTextModels(env),
   ]);
 
   return normalizeArtificialAnalysisCatalog(
     new Date().toISOString(),
     exchangeRate,
     artificialAnalysisModels,
+    artificialAnalysisSpeechToTextModels,
   );
 }
 
@@ -257,6 +267,29 @@ async function fetchArtificialAnalysisModels(
 
   const data = (await response.json()) as { data?: unknown };
   return Array.isArray(data.data) ? (data.data as ArtificialAnalysisModel[]) : [];
+}
+
+async function fetchArtificialAnalysisSpeechToTextModels(
+  env: Env,
+): Promise<ArtificialAnalysisSpeechToTextModel[]> {
+  if (!env.ARTIFICIAL_ANALYSIS_API_KEY) return [];
+
+  const response = await fetch(
+    env.ARTIFICIAL_ANALYSIS_STT_URL || DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL,
+    {
+      headers: {
+        Accept: "application/json",
+        "x-api-key": env.ARTIFICIAL_ANALYSIS_API_KEY,
+      },
+    },
+  );
+
+  if (!response.ok) return [];
+
+  const data = (await response.json()) as { data?: unknown };
+  return Array.isArray(data.data)
+    ? (data.data as ArtificialAnalysisSpeechToTextModel[])
+    : [];
 }
 
 async function fetchUsdAudRate(env: Env): Promise<ExchangeRate | undefined> {

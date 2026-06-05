@@ -144,6 +144,20 @@ export const HOME_HTML = String.raw`<!doctype html>
       cursor: pointer;
     }
     .copy-btn.done { color: #8bc34a; }
+    .query-benchmark-layout {
+      display: grid;
+      gap: 1.4rem;
+      align-items: start;
+      margin: 1.5rem 0 2.2rem;
+    }
+    .query-sidebar,
+    .benchmark-column {
+      min-width: 0;
+    }
+    .query-sidebar h2,
+    .benchmark-column h2 {
+      margin-top: 0;
+    }
     .builder {
       margin: 1.5rem 0;
       overflow: hidden;
@@ -523,10 +537,71 @@ export const HOME_HTML = String.raw`<!doctype html>
       font-size: 0.75rem;
       line-height: 1.8;
     }
+    @media (min-width: 1024px) {
+      .query-benchmark-layout {
+        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+        gap: clamp(1rem, 2vw, 2rem);
+      }
+      .query-sidebar {
+        position: sticky;
+        top: 1rem;
+        max-height: calc(100vh - 2rem);
+        overflow-y: auto;
+        padding-right: 0.1rem;
+      }
+      .query-sidebar .builder {
+        margin: 0;
+      }
+      .query-sidebar .builder-form {
+        padding: 1rem;
+      }
+      .query-sidebar .builder-intro {
+        align-items: flex-start;
+        margin-bottom: 0.85rem;
+        font-size: 0.78rem;
+      }
+      .query-sidebar .builder-controls,
+      .query-sidebar .range-group {
+        grid-template-columns: 1fr;
+      }
+      .query-sidebar .range-field,
+      .query-sidebar .range-group {
+        grid-column: auto;
+      }
+      .query-sidebar .builder-url {
+        flex-wrap: wrap;
+      }
+      .query-sidebar .builder-method {
+        padding-left: 0.85rem;
+      }
+      .query-sidebar .builder-url-text {
+        width: 100%;
+        padding-left: 0.85rem;
+      }
+      .query-sidebar .builder-actions {
+        width: 100%;
+        justify-content: flex-end;
+        padding: 0 0.6rem 0.55rem;
+      }
+      .query-sidebar pre {
+        padding: 0.85rem;
+        font-size: 0.72rem;
+      }
+      .benchmark-column .benchmark-panels,
+      .benchmark-column .voice-bench {
+        margin-bottom: 0;
+      }
+    }
+    @media (max-width: 1023px) {
+      .query-sidebar .builder {
+        margin-top: 0;
+      }
+    }
     @media (max-width: 600px) {
       body { margin: 1.5rem auto; padding: 1rem; }
       h1 { font-size: 1.85rem; }
       .tagline { font-size: 1.02rem; }
+      .query-benchmark-layout { gap: 1rem; }
       .builder-controls { grid-template-columns: 1fr; }
       .range-group { grid-template-columns: 1fr; }
       .builder-url { flex-wrap: wrap; }
@@ -572,7 +647,9 @@ print(r.json()['recommendation']['id'])</code></pre></div>
   </div>
   <p>Returns a benchmark-backed fast model for customer support. Cache it locally and keep a fallback in production clients.</p>
 
-  <h2>Build Your Query</h2>
+  <div class="query-benchmark-layout">
+  <aside class="query-sidebar" aria-labelledby="builderTitle">
+  <h2 id="builderTitle">Build Your Query</h2>
   <div class="builder">
     <div class="builder-form">
       <p class="builder-intro">Tell the registry what you need. It builds the URL and previews the current answer.</p>
@@ -771,6 +848,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     </div>
   </div>
 
+  </aside>
+  <section class="benchmark-column" aria-labelledby="benchmarkTitle">
   <h2 id="benchmarkTitle">Customer Support Benchmark</h2>
   <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.</p>
   <div class="benchmark-panels">
@@ -866,6 +945,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         </div>
       </div>
     </div>
+  </div>
+  </section>
   </div>
 
   <div class="definitions" aria-labelledby="definitionsTitle">

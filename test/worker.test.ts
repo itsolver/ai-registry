@@ -45,7 +45,9 @@ describe("worker routes", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("ai<span class=\"blink\">.</span>itsolver");
+    const html = await response.text();
+    expect(html).toContain("ai<span class=\"blink\">.</span>itsolver");
+    expect(html).toContain("Bench Telecom");
   });
 
   it("serves health metadata", async () => {
@@ -217,6 +219,12 @@ describe("worker routes", () => {
           (row.benchmarks.llm?.intelligence ?? Number.NEGATIVE_INFINITY) >= 30 &&
           (row.benchmarks.llm?.intelligenceRunTotalCost ??
             Number.POSITIVE_INFINITY) <= 1300,
+      ),
+    ).toBe(true);
+    expect(
+      body.benchmarks.some(
+        (row: { benchmarks: { llm?: { tauTelecom?: number } } }) =>
+          typeof row.benchmarks.llm?.tauTelecom === "number",
       ),
     ).toBe(true);
   });

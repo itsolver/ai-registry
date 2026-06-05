@@ -798,6 +798,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
               <th data-table="supportRows" data-sort="accuracy">ITS Acc</th>
               <th data-table="supportRows" data-sort="ifbench">IFBench</th>
               <th data-table="supportRows" data-sort="agentic">Agentic</th>
+              <th data-table="supportRows" data-sort="benchTelecom">Bench Telecom</th>
               <th data-table="supportRows" data-sort="intelligence">Intel</th>
               <th data-table="supportRows" data-sort="outputCost">Output AUD/MTok</th>
               <th data-table="supportRows" data-sort="runCost">Run AUD</th>
@@ -805,7 +806,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             </tr>
           </thead>
           <tbody id="supportRows">
-            <tr><td class="empty" colspan="10">loading...</td></tr>
+            <tr><td class="empty" colspan="11">loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -895,8 +896,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       <dd>False positives are unresolved tickets predicted as resolved. Accuracy is overall classifier correctness on the auto-close replay set.</dd>
       <dt>ITS columns</dt>
       <dd><code>ITS</code> marks IT Solver auto-close benchmark fields. <code>ITS FP</code>, <code>ITS Acc</code>, and <code>ITS Notes</code> come from our Zendesk ticket-classification replay, not Artificial Analysis.</dd>
-      <dt>IFBench / Agentic / τ-Voice / TTFA</dt>
-      <dd>IFBench measures instruction following, Agentic measures multi-step task performance, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
+      <dt>IFBench / Agentic / Bench Telecom / τ-Voice / TTFA</dt>
+      <dd>IFBench measures instruction following, Agentic measures multi-step task performance, Bench Telecom is the AA τ2 telecom benchmark, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
       <dt>AA-WER / Speed</dt>
       <dd>AA-WER is Artificial Analysis word error rate for STT, where lower is better. Speed is input audio seconds transcribed per processing second.</dd>
     </dl>
@@ -1061,6 +1062,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function score(value) {
       return typeof value === 'number' ? Math.round(value) : '-';
+    }
+
+    function benchmarkScore(value) {
+      if (typeof value !== 'number') return '-';
+      return Math.round(value <= 1 ? value * 100 : value);
     }
 
     function escapeHtml(value) {
@@ -1743,7 +1749,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function supportAgenticSignal(row) {
       var signals = llmSignals(row);
-      return typeof signals.agentic === 'number' ? signals.agentic : signals.tauTelecom;
+      return signals.agentic;
     }
 
     function includeItsBenchmark() {
@@ -1836,6 +1842,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       base.push(
         { key: 'ifbench', label: 'IFBench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
         { key: 'agentic', label: 'Agentic', value: supportAgenticSignal, render: function (row) { return score(supportAgenticSignal(row)); } },
+        { key: 'benchTelecom', label: 'Bench Telecom', value: function (row) { var value = llmSignals(row).tauTelecom; return typeof value === 'number' && value <= 1 ? value * 100 : value; }, render: function (row) { return benchmarkScore(llmSignals(row).tauTelecom); } },
         { key: 'intelligence', label: 'Intel', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
       );
       base.push(
@@ -2067,7 +2074,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       .catch(function () {
         ['supportRows'].forEach(function (id) {
           var rows = document.getElementById(id);
-          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="11">Benchmark data unavailable.</td></tr>';
         });
         setText('supportSource', 'unavailable');
         var faq = document.getElementById('faqRows');

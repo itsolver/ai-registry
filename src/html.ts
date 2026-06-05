@@ -690,8 +690,8 @@ export const HOME_HTML = String.raw`<!doctype html>
         <div class="b-field">
           <label for="b-tier">Recommendation priority</label>
           <select id="b-tier">
-            <option value="" selected>balanced trade-off</option>
-            <option value="fast">fast and cheap</option>
+            <option value="">balanced trade-off</option>
+            <option value="fast" selected>fast and cheap</option>
             <option value="best">highest safety</option>
           </select>
         </div>
@@ -985,11 +985,11 @@ export const HOME_HTML = String.raw`<!doctype html>
     <h3 id="definitionsTitle">Definitions</h3>
     <dl>
       <dt>any tier</dt>
-      <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is balanced.</dd>
+      <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
       <dt>fast</dt>
       <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then safety tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>The default. Customer support picks the middle filtered candidate after highest-safety ordering. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>Customer support picks the middle filtered candidate after highest-safety ordering. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
       <dd>For customer support, highest safety prioritizes ITS false positives, then ITS accuracy. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
       <dt>cost caps</dt>

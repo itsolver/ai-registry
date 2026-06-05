@@ -208,7 +208,7 @@ describe("Artificial Analysis catalog", () => {
     });
 
     expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
-      balancedRecommendation?.id,
+      fastRecommendation?.id,
     );
     expect(
       fastRecommendation?.benchmarks?.llm?.intelligenceRunTotalCost ??
@@ -346,7 +346,7 @@ describe("Artificial Analysis catalog", () => {
     };
 
     expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
-      "middle",
+      "cheapest",
     );
     expect(
       recommendModel(catalog, { useCase: "customer-support", tier: "balanced" })?.id,
@@ -709,9 +709,7 @@ describe("Artificial Analysis catalog", () => {
       ],
     };
 
-    expect(recommendModel(catalog, { useCase: "voice" })?.id).toBe(
-      "middle-quality",
-    );
+    expect(recommendModel(catalog, { useCase: "voice" })?.id).toBe("cheapest");
     expect(
       recommendModel(catalog, { useCase: "voice", tier: "balanced" })?.id,
     ).toBe("middle-quality");
@@ -900,8 +898,8 @@ describe("Artificial Analysis catalog", () => {
     );
 
     expect(recommendModel(catalog, { useCase: "speech-to-text" })).toMatchObject({
-      id: "google-gemini-3-1-pro-preview-low",
-      provider: "google",
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
     });
     expect(
       recommendModel(catalog, { useCase: "speech-to-text", tier: "best" }),
@@ -921,8 +919,8 @@ describe("Artificial Analysis catalog", () => {
         maxTranscriptionCostPer1kMinutes: 4,
       }),
     ).toMatchObject({
-      id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
-      provider: "nvidia",
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
     });
     expect(
       recommendModel(catalog, {

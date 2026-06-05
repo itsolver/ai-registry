@@ -49,6 +49,7 @@ describe("worker routes", () => {
     expect(html).toContain("ai<span class=\"blink\">.</span>itsolver");
     expect(html).toContain("Bench Telecom");
     expect(html).toContain("highest quality");
+    expect(html).toContain('<option value="fast" selected>fast and cheap</option>');
     expect(html).toContain(
       '<div class="b-field" data-filter-scope="text">\n          <label for="b-capability">Must have</label>',
     );
@@ -412,12 +413,12 @@ describe("worker routes", () => {
   });
 
   it("uses voice priority tiers for quality, cost, and balance", async () => {
-    const balancedResponse = await handleRequest(
+    const defaultResponse = await handleRequest(
       new Request("https://ai.itsolver.au/v1/models/recommend?useCase=voice"),
       env(),
       ctx,
     );
-    const balancedBody = (await balancedResponse.json()) as JsonObject;
+    const defaultBody = (await defaultResponse.json()) as JsonObject;
     const fastResponse = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=fast",
@@ -435,15 +436,16 @@ describe("worker routes", () => {
     );
     const bestBody = (await bestResponse.json()) as JsonObject;
 
-    expect(balancedResponse.status).toBe(200);
+    expect(defaultResponse.status).toBe(200);
     expect(fastResponse.status).toBe(200);
     expect(bestResponse.status).toBe(200);
-    expect(balancedBody.recommendation).toMatchObject({
+    expect(defaultBody.recommendation).toMatchObject({
       benchmarks: { voice: expect.any(Object) },
       pricing: expect.objectContaining({
         benchmarkInputAudioPerHour: expect.any(Number),
       }),
     });
+    expect(defaultBody.recommendation.id).toBe(fastBody.recommendation.id);
     expect(fastBody.recommendation).toMatchObject({
       benchmarks: { voice: expect.any(Object) },
       pricing: expect.objectContaining({

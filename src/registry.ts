@@ -935,7 +935,7 @@ function passesCostFilters(
 
 function recommendationTier(filters: ModelFilters): Tier {
   if (filters.tier) return filters.tier;
-  return filters.useCase ? "balanced" : "fast";
+  return "fast";
 }
 
 export function latestForProvider(

@@ -708,7 +708,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="groq">groq</option>
           </select>
         </div>
-        <div class="b-field">
+        <div class="b-field" data-filter-scope="text">
           <label for="b-capability">Must have</label>
           <select id="b-capability">
             <option value="">any capability</option>
@@ -2386,8 +2386,12 @@ export const HOME_HTML = String.raw`<!doctype html>
       var params = new URLSearchParams();
       if (fields.tier.value) params.set('tier', fields.tier.value);
       if (fields.provider.value) params.set('provider', fields.provider.value);
-      if (fields.capability.value) params.set('capability', fields.capability.value);
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
+      if (
+        fields.capability.value &&
+        fields.usecase.value !== 'voice' &&
+        fields.usecase.value !== 'speech-to-text'
+      ) params.set('capability', fields.capability.value);
       if (fields.usecase.value === 'voice') {
         if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
         if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);

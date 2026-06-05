@@ -49,6 +49,9 @@ describe("worker routes", () => {
     expect(html).toContain("ai<span class=\"blink\">.</span>itsolver");
     expect(html).toContain("Bench Telecom");
     expect(html).toContain("highest quality");
+    expect(html).toContain(
+      '<div class="b-field" data-filter-scope="text">\n          <label for="b-capability">Must have</label>',
+    );
   });
 
   it("serves health metadata", async () => {

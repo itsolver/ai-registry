@@ -738,7 +738,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
               <button type="button" id="b-transcriptioncost-any">Any</button>
             </div>
             <div class="range-stack">
-              <input type="range" id="b-transcription-max-range" min="0" max="20" step="0.1" value="20" aria-label="Maximum speech to text AUD per 1000 minutes">
+              <input type="range" id="b-transcription-max-range" min="0" max="20" step="0.1" value="10" aria-label="Maximum speech to text AUD per 1000 minutes">
             </div>
             <div class="price-filter-scale">
               <span>$0</span>
@@ -755,7 +755,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
               <button type="button" id="b-aawer-any">Any</button>
             </div>
             <div class="range-stack">
-              <input type="range" id="b-aawer-max-range" min="0" max="20" step="0.1" value="20" aria-label="Maximum AA-WER">
+              <input type="range" id="b-aawer-max-range" min="0" max="20" step="0.1" value="4" aria-label="Maximum AA-WER">
             </div>
             <div class="price-filter-scale">
               <span>0%</span>

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Simplified the homepage intro into a compact header so the builder and benchmarks start in the first viewport.
 - Preserved homepage builder filters across page refreshes by syncing them into the page URL.
+- Renamed the speech-to-text fast tier to fast and cheap, made it cost-first, and made balanced recommendations distinct from highest accuracy.
 
 ## 2026-06-01
 

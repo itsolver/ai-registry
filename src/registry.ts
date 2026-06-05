@@ -748,9 +748,24 @@ function recommendBenchmarkCandidate(
       isBenchmarkCandidateRecommendedForFilters(candidate, effectiveFilters),
   );
 
+  if (effectiveFilters.useCase === "speech-to-text" && tier === "balanced") {
+    return selectBalancedSpeechToTextCandidate(matches);
+  }
+
   return [...matches].sort((left, right) =>
     compareBenchmarkCandidates(left, right, tier, effectiveFilters),
   )[0];
+}
+
+function selectBalancedSpeechToTextCandidate(
+  matches: BenchmarkCandidate[],
+): BenchmarkCandidate | undefined {
+  if (!matches.length) return undefined;
+
+  const accuracyOrdered = [...matches].sort((left, right) =>
+    compareSpeechToTextBenchmarkCandidates(left, right, "best"),
+  );
+  return accuracyOrdered[Math.floor((accuracyOrdered.length - 1) / 2)];
 }
 
 function isUseCaseRecommendationCandidate(
@@ -2230,11 +2245,11 @@ function compareSpeechToTextBenchmarkCandidates(
 
   if (tier === "fast") {
     return (
-      compareOptionalDesc(leftSignals?.speedFactor, rightSignals?.speedFactor) ||
       compareOptionalAsc(
         candidateTranscriptionCost(left),
         candidateTranscriptionCost(right),
       ) ||
+      compareOptionalDesc(leftSignals?.speedFactor, rightSignals?.speedFactor) ||
       compareOptionalAsc(leftSignals?.aaWer, rightSignals?.aaWer) ||
       left.id.localeCompare(right.id)
     );

@@ -553,6 +553,14 @@ describe("worker routes", () => {
     );
     const cappedGroqVisibleBody =
       (await cappedGroqVisibleResponse.json()) as JsonObject;
+    const fastCheapResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&tier=fast&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
+      ),
+      env(),
+      ctx,
+    );
+    const fastCheapBody = (await fastCheapResponse.json()) as JsonObject;
 
     expect(defaultCappedResponse.status).toBe(200);
     expect(defaultCappedBody.recommendation.deprecated).not.toBe(true);
@@ -561,6 +569,11 @@ describe("worker routes", () => {
     );
     expect(cappedGroqVisibleResponse.status).toBe(200);
     expect(cappedGroqVisibleBody.recommendation).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
+    });
+    expect(fastCheapResponse.status).toBe(200);
+    expect(fastCheapBody.recommendation).toMatchObject({
       id: "groq-whisper-large-v3-turbo",
       provider: "groq",
     });

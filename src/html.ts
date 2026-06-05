@@ -987,9 +987,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is balanced.</dd>
       <dt>fast</dt>
-      <dd>For customer support, only affects tie-breaks after false positives and accuracy. For voice, prefers lower latency and lower audio cost. For speech to text, prefers higher speed factor.</dd>
+      <dd>For customer support, only affects tie-breaks after false positives and accuracy. For voice, prefers lower latency and lower audio cost. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>The default. Customer support uses auto-close benchmark safety first, then accuracy, then Run AUD/token efficiency. Speech to text balances lower AA-WER, lower AUD/1k min, and speed.</dd>
+      <dd>The default. Customer support uses auto-close benchmark safety first, then accuracy, then Run AUD/token efficiency. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
       <dd>Favors stronger benchmark scores only after customer-support safety and accuracy are tied. For speech to text, this prioritizes lower AA-WER.</dd>
       <dt>cost caps</dt>
@@ -1336,7 +1336,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (useCase === 'speech-to-text') {
         return {
           title: 'Speech-To-Text Benchmark',
-          hint: 'Speech-to-text models are ranked using AA-WER, AUD per 1,000 minutes, and speed factor. Use highest accuracy for lower AA-WER, real-time speed for speed factor, and the AUD/1k min cap for price.'
+          hint: 'Speech-to-text models are ranked using AA-WER, AUD per 1,000 minutes, and speed factor. Highest accuracy sorts by lower AA-WER, fast and cheap sorts by lower AUD/1k min, and balanced selects the middle filtered accuracy candidate.'
         };
       }
       return {
@@ -1361,7 +1361,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       var labels = useCase === 'speech-to-text'
         ? {
           '': 'balanced trade-off',
-          fast: 'real-time speed',
+          fast: 'fast and cheap',
           best: 'highest accuracy'
         }
         : {
@@ -1528,7 +1528,8 @@ export const HOME_HTML = String.raw`<!doctype html>
         { key: 'cost', label: 'AUD/1k min', value: sttCost, render: function (model) { return money(sttCost(model)); } }
       );
 
-      renderSortableTable('sttRows', rows, columns, 'wer', 'asc');
+      var tier = fields.tier.value || 'balanced';
+      renderSortableTable('sttRows', rows, columns, tier === 'fast' ? 'cost' : 'wer', 'asc');
     }
 
     function llmSignals(row) {
@@ -2121,7 +2122,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         },
         {
           q: 'How do I choose the best speech to text model?',
-          a: 'Use the speech-to-text priority and price cap to trade off accuracy, speed, and price. Highest accuracy prioritizes lower AA-WER, real-time speed prioritizes higher speed factor, and cost-sensitive workloads should use the AUD/1k min cap and price column.'
+          a: 'Use the speech-to-text priority and price cap to trade off accuracy, speed, and price. Highest accuracy prioritizes lower AA-WER, fast and cheap prioritizes lower AUD/1k min, and balanced picks the middle filtered accuracy candidate.'
         },
         {
           q: 'Which text model has the lowest output price?',

@@ -715,8 +715,8 @@ describe("Artificial Analysis catalog", () => {
     );
 
     expect(recommendModel(catalog, { useCase: "speech-to-text" })).toMatchObject({
-      id: "elevenlabs-scribe-v2",
-      provider: "elevenlabs",
+      id: "google-gemini-3-1-pro-preview-low",
+      provider: "google",
     });
     expect(
       recommendModel(catalog, { useCase: "speech-to-text", tier: "best" }),
@@ -727,8 +727,8 @@ describe("Artificial Analysis catalog", () => {
     expect(
       recommendModel(catalog, { useCase: "speech-to-text", tier: "fast" }),
     ).toMatchObject({
-      id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
-      provider: "nvidia",
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
     });
     expect(
       recommendModel(catalog, {

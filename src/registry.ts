@@ -249,6 +249,7 @@ export interface ModelFilters {
   maxRunCostAud?: number;
   minRunCostUsd?: number;
   maxRunCostUsd?: number;
+  minIntelligence?: number;
   maxAudioInputCostPerHour?: number;
   maxAudioOutputCostPerHour?: number;
   maxTranscriptionCostPer1kMinutes?: number;
@@ -491,6 +492,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     asFiniteNumber(params.get("maxRunCostUsd")) ??
     asFiniteNumber(params.get("maxRunUsd")) ??
     asFiniteNumber(params.get("maxBenchmarkRunCostUsd"));
+  const minIntelligence = asFiniteNumber(params.get("minIntelligence"));
   const maxAudioInputCostPerHour =
     asFiniteNumber(params.get("maxAudioInputCostPerHour")) ??
     asFiniteNumber(params.get("maxAudioCostPerHour"));
@@ -517,6 +519,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(maxRunCostAud !== undefined ? { maxRunCostAud } : {}),
     ...(minRunCostUsd !== undefined ? { minRunCostUsd } : {}),
     ...(maxRunCostUsd !== undefined ? { maxRunCostUsd } : {}),
+    ...(minIntelligence !== undefined ? { minIntelligence } : {}),
     ...(maxAudioInputCostPerHour !== undefined
       ? { maxAudioInputCostPerHour }
       : {}),
@@ -621,6 +624,13 @@ export function filterModels(
       filters.maxOutputCostPerMTok !== undefined &&
       (model.pricing.outputPerMTok === undefined ||
         model.pricing.outputPerMTok > filters.maxOutputCostPerMTok)
+    ) {
+      return false;
+    }
+    if (
+      filters.minIntelligence !== undefined &&
+      (model.benchmarks?.llm?.intelligence === undefined ||
+        model.benchmarks.llm.intelligence < filters.minIntelligence)
     ) {
       return false;
     }
@@ -813,6 +823,13 @@ function passesCostFilters(
     filters.maxRunCostAud !== undefined &&
     (candidate.benchmarks.llm?.intelligenceRunTotalCost === undefined ||
       candidate.benchmarks.llm.intelligenceRunTotalCost > filters.maxRunCostAud)
+  ) {
+    return false;
+  }
+  if (
+    filters.minIntelligence !== undefined &&
+    (candidate.benchmarks.llm?.intelligence === undefined ||
+      candidate.benchmarks.llm.intelligence < filters.minIntelligence)
   ) {
     return false;
   }

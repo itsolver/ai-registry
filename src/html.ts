@@ -740,13 +740,17 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             </div>
             <div class="range-stack">
               <input type="range" id="b-run-min-range" min="0" max="8000" step="50" value="0" aria-label="Minimum Run AUD">
-              <input type="range" id="b-run-max-range" min="0" max="8000" step="50" value="8000" aria-label="Maximum Run AUD">
+              <input type="range" id="b-run-max-range" min="0" max="8000" step="50" value="1300" aria-label="Maximum Run AUD">
             </div>
             <div class="price-filter-scale">
               <span>$0</span>
               <span>$8,000+</span>
             </div>
           </div>
+        </div>
+        <div class="b-field" data-filter-scope="text">
+          <label for="b-minintelligence">Min intelligence</label>
+          <input type="number" id="b-minintelligence" min="0" max="100" step="1" value="30">
         </div>
       </div>
     </div>
@@ -998,6 +1002,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       outputcostany: document.getElementById('b-outputcost-any'),
       minruncost: document.getElementById('b-minruncost'),
       maxruncost: document.getElementById('b-maxruncost'),
+      minintelligence: document.getElementById('b-minintelligence'),
       runminrange: document.getElementById('b-run-min-range'),
       runmaxrange: document.getElementById('b-run-max-range'),
       runcostlabel: document.getElementById('b-runcost-label'),
@@ -1656,11 +1661,19 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return Number.isFinite(value) ? value : undefined;
     }
 
+    function intelligenceFloor() {
+      if (!fields.minintelligence.value) return undefined;
+      var value = Number(fields.minintelligence.value);
+      return Number.isFinite(value) ? value : undefined;
+    }
+
     function activeTextBenchmarkModels(models) {
       var minRunCost = runCostFloor();
       var maxRunCost = runCostCeiling();
+      var minIntelligence = intelligenceFloor();
       return (models || []).filter(function (model) {
         var cost = runCost(model);
+        var intelligence = ((model.benchmarks || {}).llm || {}).intelligence;
         if (
           minRunCost !== undefined &&
           (typeof cost !== 'number' || cost < minRunCost)
@@ -1668,6 +1681,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (
           maxRunCost !== undefined &&
           (typeof cost !== 'number' || cost > maxRunCost)
+        ) return false;
+        if (
+          minIntelligence !== undefined &&
+          (typeof intelligence !== 'number' || intelligence < minIntelligence)
         ) return false;
         return true;
       });
@@ -2126,6 +2143,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
         if (fields.minruncost.value) params.set('minRunCostAud', fields.minruncost.value);
         if (fields.maxruncost.value) params.set('maxRunCostAud', fields.maxruncost.value);
+        if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
         if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
         if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
       }

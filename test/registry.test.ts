@@ -16,7 +16,7 @@ describe("filter parsing", () => {
   it("parses supported filters and legacy use-case aliases", () => {
     const filters = parseFilters(
       new URLSearchParams(
-        "useCase=customer-support&minCostPerMTok=1&maxCostPerMTok=2&minOutputCostPerMTok=4&maxOutputCostPerMTok=8&minRunCostAud=100&maxRunCostAud=500&maxContextWindow=1000000",
+        "useCase=customer-support&minCostPerMTok=1&maxCostPerMTok=2&minOutputCostPerMTok=4&maxOutputCostPerMTok=8&minRunCostAud=100&maxRunCostAud=500&minIntelligence=30&maxContextWindow=1000000",
       ),
     );
 
@@ -28,6 +28,7 @@ describe("filter parsing", () => {
       maxOutputCostPerMTok: 8,
       minRunCostAud: 100,
       maxRunCostAud: 500,
+      minIntelligence: 30,
       maxContextWindow: 1000000,
       includeItsBenchmark: true,
     });
@@ -651,12 +652,22 @@ describe("Artificial Analysis catalog", () => {
       includeItsBenchmark: false,
       allowPreview: true,
       maxRunCostAud: 1300,
+      minIntelligence: 30,
     });
     const ids = rows.map((row) => row.id);
 
+    expect(ids).not.toContain("gpt-oss-20b-low");
     expect(ids).toContain("gemini-3-1-pro-preview");
     expect(ids).toContain("grok-4-3");
     expect(ids).not.toContain("gemini-3-5-flash");
+    expect(
+      rows.every(
+        (row) =>
+          (row.benchmarks.llm?.intelligence ?? Number.NEGATIVE_INFINITY) >= 30 &&
+          (row.benchmarks.llm?.intelligenceRunTotalCost ??
+            Number.POSITIVE_INFINITY) <= 1300,
+      ),
+    ).toBe(true);
     expect(
       recommendModel(catalog, {
         provider: "google",
@@ -665,6 +676,7 @@ describe("Artificial Analysis catalog", () => {
         includeItsBenchmark: false,
         allowPreview: true,
         maxRunCostAud: 1300,
+        minIntelligence: 30,
       }),
     ).toMatchObject({
       id: "gemini-3-1-pro-preview",
@@ -677,6 +689,7 @@ describe("Artificial Analysis catalog", () => {
         tier: "fast",
         includeItsBenchmark: false,
         maxRunCostAud: 1300,
+        minIntelligence: 30,
       }),
     ).toMatchObject({
       id: "grok-4-3",

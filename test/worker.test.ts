@@ -192,6 +192,64 @@ describe("worker routes", () => {
     ).toBe(true);
   });
 
+  it("hard-filters customer support rows by Run AUD and intelligence", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarks.length).toBeGreaterThan(0);
+    expect(
+      body.benchmarks.every(
+        (row: {
+          benchmarks: {
+            llm?: {
+              intelligence?: number;
+              intelligenceRunTotalCost?: number;
+            };
+          };
+        }) =>
+          (row.benchmarks.llm?.intelligence ?? Number.NEGATIVE_INFINITY) >= 30 &&
+          (row.benchmarks.llm?.intelligenceRunTotalCost ??
+            Number.POSITIVE_INFINITY) <= 1300,
+      ),
+    ).toBe(true);
+  });
+
+  it("applies Run AUD and intelligence filters to recommendations", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=xai&useCase=customer-support&tier=fast&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation).toMatchObject({
+      id: "grok-4-3",
+      provider: "xai",
+      benchmarks: {
+        llm: expect.objectContaining({
+          intelligence: expect.any(Number),
+          intelligenceRunTotalCost: expect.any(Number),
+        }),
+      },
+    });
+    expect(body.recommendation.benchmarks.llm.intelligence).toBeGreaterThanOrEqual(
+      30,
+    );
+    expect(
+      body.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(1300);
+  });
+
   it("supports USD run-cost caps and preview opt-in for customer-support recommendations", async () => {
     const defaultResponse = await handleRequest(
       new Request(

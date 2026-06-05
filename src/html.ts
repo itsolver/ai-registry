@@ -2307,12 +2307,80 @@ export const HOME_HTML = String.raw`<!doctype html>
       return endpoint + (qs ? '?' + qs : '');
     }
 
+    function setSelectValue(select, value) {
+      if (!select || !value) return;
+      var option = Array.prototype.find.call(select.options, function (item) {
+        return item.value === value;
+      });
+      if (option) select.value = value;
+    }
+
+    function setInputValue(input, value) {
+      if (!input || value === null || value === undefined || value === '') return;
+      input.value = String(value);
+    }
+
+    function builderStateParams(path) {
+      var apiUrl = new URL(path || buildPath(), origin);
+      var params = new URLSearchParams(apiUrl.search);
+      params.set('endpoint', fields.endpoint.value === 'models' ? 'models' : 'recommend');
+      if (fields.providerTableOnly && fields.providerTableOnly.checked) {
+        params.set('providerTableOnly', 'true');
+      }
+      return params;
+    }
+
+    function syncPageUrl(path) {
+      if (!window.history || !window.history.replaceState) return;
+      var params = builderStateParams(path);
+      var query = params.toString();
+      var next = window.location.pathname + (query ? '?' + query : '') + window.location.hash;
+      var current = window.location.pathname + window.location.search + window.location.hash;
+      if (next !== current) window.history.replaceState(null, '', next);
+    }
+
+    function restoreBuilderStateFromUrl() {
+      var params = new URLSearchParams(window.location.search);
+      if (!Array.from(params.keys()).length) return;
+
+      setSelectValue(fields.endpoint, params.get('endpoint'));
+      setSelectValue(fields.tier, params.get('tier'));
+      setSelectValue(fields.provider, params.get('provider'));
+      setSelectValue(fields.capability, params.get('capability'));
+      setSelectValue(fields.usecase, params.get('useCase'));
+      if (fields.includeits && params.get('includeItsBenchmark') === 'false') {
+        fields.includeits.checked = false;
+      }
+      if (fields.providerTableOnly) {
+        fields.providerTableOnly.checked = params.get('providerTableOnly') === 'true';
+      }
+
+      setInputValue(fields.inputminrange, params.get('minInputCostPerMTok') || params.get('minCostPerMTok'));
+      setInputValue(fields.inputmaxrange, params.get('maxInputCostPerMTok') || params.get('maxCostPerMTok'));
+      setInputValue(fields.outputminrange, params.get('minOutputCostPerMTok'));
+      setInputValue(fields.outputmaxrange, params.get('maxOutputCostPerMTok'));
+      setInputValue(fields.runminrange, params.get('minRunCostAud'));
+      setInputValue(fields.runmaxrange, params.get('maxRunCostAud'));
+      setInputValue(fields.minintelligence, params.get('minIntelligence'));
+      setInputValue(fields.audioinputmaxrange, params.get('maxAudioInputCostPerHour'));
+      setInputValue(fields.maxaudiooutputcost, params.get('maxAudioOutputCostPerHour'));
+      setInputValue(fields.transcriptionmaxrange, params.get('maxTranscriptionCostPer1kMinutes'));
+      setInputValue(fields.aawermaxrange, params.get('maxAaWer'));
+      if (params.get('minContextWindow')) {
+        setInputValue(fields.contextminrange, Number(params.get('minContextWindow')) / 1000);
+      }
+      if (params.get('maxContextWindow')) {
+        setInputValue(fields.contextmaxrange, Number(params.get('maxContextWindow')) / 1000);
+      }
+    }
+
     var previewTimer = 0;
     function refreshBuilder() {
       syncRunCostRange();
       updateTierOptions(fields.usecase.value);
       var path = buildPath();
       var full = origin + path;
+      syncPageUrl(path);
       updateBenchmarkPanel(fields.usecase.value);
       updateFilterVisibility(fields.usecase.value);
       if (!isBrowsingModels()) renderCurrentUseCaseBenchmarks();
@@ -2434,6 +2502,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     installMaxRangePointer(audioInputCostRange);
     installMaxRangePointer(transcriptionCostRange);
     installMaxRangePointer(aaWerRange);
+    restoreBuilderStateFromUrl();
 
     fields.copy.addEventListener('click', function () {
       navigator.clipboard.writeText(fields.code.textContent).then(function () {

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Simplified the homepage intro into a compact header so the builder and benchmarks start in the first viewport.
+- Preserved homepage builder filters across page refreshes by syncing them into the page URL.
 
 ## 2026-06-01
 

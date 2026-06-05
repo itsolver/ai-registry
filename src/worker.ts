@@ -3,6 +3,7 @@ import {
   asProvider,
   benchmarkCandidates,
   filterModels,
+  isBenchmarkCandidateRecommendedForFilters,
   latestForProvider,
   normalizeArtificialAnalysisCatalog,
   parseFilters,
@@ -142,7 +143,8 @@ async function routeApi(
   if (route === "/benchmarks") {
     const filters = parseFilters(params);
     const rows = benchmarkCandidates(catalog, filters).filter(
-      (row) => !filters.useCase || row.recommendable,
+      (row) =>
+        !filters.useCase || isBenchmarkCandidateRecommendedForFilters(row, filters),
     );
     return jsonResponse({
       ...catalogResponseMetadata(catalog),

@@ -45,6 +45,7 @@ maxInputCostPerMTok=2               # max input AUD per million tokens
 maxOutputCostPerMTok=10             # max output AUD per million tokens
 minRunCostAud=100                   # min AA benchmark Run AUD
 maxRunCostAud=500                   # max AA benchmark Run AUD
+maxRunCostUsd=900                   # max AA benchmark Run USD, converted with the catalog FX rate
 maxAudioInputCostPerHour=5          # max voice input/cost-to-run AUD per hour
 maxAudioOutputCostPerHour=5         # max voice output AUD per hour
 maxTranscriptionCostPer1kMinutes=5  # max speech-to-text AUD per 1,000 minutes
@@ -53,6 +54,7 @@ minContextWindow=200000
 useCase=customer-support|voice|speech-to-text  # stt is accepted as an alias
 includeDeprecated=true
 includeItsBenchmark=false              # omit IT Solver auto-close ranking for customer support
+allowPreview=true                      # allow preview models in customer-support recommendations
 ```
 
 ## Local Development

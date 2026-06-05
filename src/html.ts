@@ -1656,6 +1656,23 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return Number.isFinite(value) ? value : undefined;
     }
 
+    function activeTextBenchmarkModels(models) {
+      var minRunCost = runCostFloor();
+      var maxRunCost = runCostCeiling();
+      return (models || []).filter(function (model) {
+        var cost = runCost(model);
+        if (
+          minRunCost !== undefined &&
+          (typeof cost !== 'number' || cost < minRunCost)
+        ) return false;
+        if (
+          maxRunCost !== undefined &&
+          (typeof cost !== 'number' || cost > maxRunCost)
+        ) return false;
+        return true;
+      });
+    }
+
     function textCostScore(model, outputWeight) {
       var pricing = model.pricing || {};
       var input = typeof pricing.inputPerMTok === 'number' ? pricing.inputPerMTok : 100;
@@ -1815,7 +1832,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function renderTextBenchmarks(models) {
-      var support = textRows(models, 'customer-support');
+      var support = textRows(activeTextBenchmarkModels(models), 'customer-support');
       var includeIts = includeItsBenchmark();
 
       renderSortableTable(

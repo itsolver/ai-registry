@@ -218,6 +218,7 @@ export interface BenchmarkCandidate {
   pricing: ModelPricing;
   registryModelId?: string;
   recommendable: boolean;
+  availability?: ModelAvailabilityMetadata;
   family: string | null;
   contextWindow: number | null;
   outputLimit: number | null;
@@ -246,6 +247,8 @@ export interface ModelFilters {
   maxOutputCostPerMTok?: number;
   minRunCostAud?: number;
   maxRunCostAud?: number;
+  minRunCostUsd?: number;
+  maxRunCostUsd?: number;
   maxAudioInputCostPerHour?: number;
   maxAudioOutputCostPerHour?: number;
   maxTranscriptionCostPer1kMinutes?: number;
@@ -253,6 +256,7 @@ export interface ModelFilters {
   maxContextWindow?: number;
   includeDeprecated?: boolean;
   includeItsBenchmark?: boolean;
+  allowPreview?: boolean;
 }
 
 export interface ArtificialAnalysisModel {
@@ -479,6 +483,14 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     asFiniteNumber(params.get("maxRunCostAud")) ??
     asFiniteNumber(params.get("maxRunAud")) ??
     asFiniteNumber(params.get("maxBenchmarkRunCostAud"));
+  const minRunCostUsd =
+    asFiniteNumber(params.get("minRunCostUsd")) ??
+    asFiniteNumber(params.get("minRunUsd")) ??
+    asFiniteNumber(params.get("minBenchmarkRunCostUsd"));
+  const maxRunCostUsd =
+    asFiniteNumber(params.get("maxRunCostUsd")) ??
+    asFiniteNumber(params.get("maxRunUsd")) ??
+    asFiniteNumber(params.get("maxBenchmarkRunCostUsd"));
   const maxAudioInputCostPerHour =
     asFiniteNumber(params.get("maxAudioInputCostPerHour")) ??
     asFiniteNumber(params.get("maxAudioCostPerHour"));
@@ -503,6 +515,8 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(maxOutputCostPerMTok !== undefined ? { maxOutputCostPerMTok } : {}),
     ...(minRunCostAud !== undefined ? { minRunCostAud } : {}),
     ...(maxRunCostAud !== undefined ? { maxRunCostAud } : {}),
+    ...(minRunCostUsd !== undefined ? { minRunCostUsd } : {}),
+    ...(maxRunCostUsd !== undefined ? { maxRunCostUsd } : {}),
     ...(maxAudioInputCostPerHour !== undefined
       ? { maxAudioInputCostPerHour }
       : {}),
@@ -518,6 +532,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     includeItsBenchmark:
       params.get("includeItsBenchmark") !== "false" &&
       params.get("includeITSBenchmark") !== "false",
+    allowPreview: params.get("allowPreview") === "true",
   };
 }
 
@@ -668,12 +683,18 @@ export function benchmarkCandidates(
   catalog: Catalog,
   filters: ModelFilters,
 ): BenchmarkCandidate[] {
-  const useCase = filters.useCase;
+  const effectiveFilters = filtersWithUsdRunCost(catalog, filters);
+  const useCase = effectiveFilters.useCase;
 
   return (catalog.benchmarkCandidates ?? [])
     .filter((candidate) => {
-      if (filters.unsupportedProvider) return false;
-      if (filters.provider && candidate.provider !== filters.provider) return false;
+      if (effectiveFilters.unsupportedProvider) return false;
+      if (
+        effectiveFilters.provider &&
+        candidate.provider !== effectiveFilters.provider
+      ) {
+        return false;
+      }
       if (useCase && !candidate.benchmarks[benchmarkKeyForUseCase(useCase)]) {
         return false;
       }
@@ -683,22 +704,33 @@ export function benchmarkCandidates(
       ) {
         return false;
       }
-      return passesCostFilters(candidate, filters);
+      return passesCostFilters(candidate, effectiveFilters);
     });
+}
+
+export function isBenchmarkCandidateRecommendedForFilters(
+  candidate: BenchmarkCandidate,
+  filters: ModelFilters,
+): boolean {
+  return (
+    hasRecommendableBenchmarkBasics(candidate) &&
+    isUseCaseRecommendationCandidate(candidate, filters)
+  );
 }
 
 function recommendBenchmarkCandidate(
   catalog: Catalog,
   filters: ModelFilters,
 ): BenchmarkCandidate | undefined {
+  const effectiveFilters = filtersWithUsdRunCost(catalog, filters);
   const tier = recommendationTier(filters);
-  const matches = benchmarkCandidates(catalog, filters).filter(
+  const matches = benchmarkCandidates(catalog, effectiveFilters).filter(
     (candidate) =>
-      candidate.recommendable && isUseCaseRecommendationCandidate(candidate, filters),
+      isBenchmarkCandidateRecommendedForFilters(candidate, effectiveFilters),
   );
 
   return [...matches].sort((left, right) =>
-    compareBenchmarkCandidates(left, right, tier, filters),
+    compareBenchmarkCandidates(left, right, tier, effectiveFilters),
   )[0];
 }
 
@@ -713,8 +745,29 @@ function isUseCaseRecommendationCandidate(
   if (filters.includeItsBenchmark !== false && !signals?.autoClose) return false;
 
   return isProductionAvailabilityAllowed(
-    productionAvailabilityForTextModel(candidate.id, candidate.name, signals),
+    candidate.availability ??
+      productionAvailabilityForTextModel(candidate.id, candidate.name, signals),
+    filters,
   );
+}
+
+function filtersWithUsdRunCost(
+  catalog: Catalog,
+  filters: ModelFilters,
+): ModelFilters {
+  const rate = catalog.exchangeRate?.rate ?? 1;
+  const minRunCostUsdAud =
+    filters.minRunCostUsd === undefined ? undefined : filters.minRunCostUsd * rate;
+  const maxRunCostUsdAud =
+    filters.maxRunCostUsd === undefined ? undefined : filters.maxRunCostUsd * rate;
+  const minRunCostAud = maxDefined(filters.minRunCostAud, minRunCostUsdAud);
+  const maxRunCostAud = minDefined(filters.maxRunCostAud, maxRunCostUsdAud);
+
+  return {
+    ...filters,
+    ...(minRunCostAud !== undefined ? { minRunCostAud } : {}),
+    ...(maxRunCostAud !== undefined ? { maxRunCostAud } : {}),
+  };
 }
 
 function passesCostFilters(
@@ -1112,14 +1165,14 @@ function buildBenchmarkCandidates(
     if (!SUPPORTED_PROVIDERS.includes(provider)) continue;
 
     const existing = candidates.get(recommendationModel.slug);
-    const signals = {
-      ...(existing?.benchmarks.llm ?? {}),
-      ...benchmarkSignalsFromCustomerSupportRecommendation(
+    const signals = mergeBenchmarkSignals(
+      benchmarkSignalsFromCustomerSupportRecommendation(
         recommendationModel,
         exchangeRate,
       ),
-      ...autoCloseSignalsForSlug(recommendationModel.slug, exchangeRate),
-    };
+      existing?.benchmarks.llm,
+      autoCloseSignalsForSlug(recommendationModel.slug, exchangeRate),
+    );
     const generatedPricing = pricingFromCustomerSupportRecommendation(
       recommendationModel,
       exchangeRate,
@@ -1254,6 +1307,9 @@ function benchmarkCandidateFromRegistry(input: {
   contextWindow?: number | null;
 }): BenchmarkCandidate {
   const model = input.registryModel;
+  const availability = input.benchmarks.llm
+    ? productionAvailabilityForTextModel(input.id, input.name, input.benchmarks.llm)
+    : undefined;
   const recommendable = isBenchmarkCandidateRecommendable(
     input.provider,
     input.id,
@@ -1272,6 +1328,7 @@ function benchmarkCandidateFromRegistry(input: {
     pricing: input.pricing,
     ...(model ? { registryModelId: model.id } : {}),
     recommendable,
+    ...(availability ? { availability } : {}),
     family: model?.family ?? null,
     contextWindow: model?.contextWindow ?? input.contextWindow ?? null,
     outputLimit: model?.outputLimit ?? null,
@@ -1314,12 +1371,44 @@ function isBenchmarkCandidateRecommendable(
   }
 
   return (
-    benchmarks.llm !== undefined &&
-    hasAnyTextQualitySignal(benchmarks.llm) &&
-    hasTokenPricing(pricing) &&
+    hasRecommendableTextBenchmarkBasics(benchmarks, pricing) &&
     isProductionAvailabilityAllowed(
       productionAvailabilityForTextModel(id, name, benchmarks.llm),
     )
+  );
+}
+
+function hasRecommendableBenchmarkBasics(candidate: BenchmarkCandidate): boolean {
+  if (candidate.benchmarks.voice) {
+    return (
+      candidate.pricing.benchmarkInputAudioPerHour !== undefined &&
+      candidate.pricing.benchmarkInputAudioPerHour > 0 &&
+      hasPositiveCandidateAudioPrice(candidate.pricing)
+    );
+  }
+
+  if (candidate.benchmarks.speechToText) {
+    return (
+      isNumber(candidate.benchmarks.speechToText.aaWer) &&
+      candidate.pricing.transcriptionCostPer1kMinutes !== undefined &&
+      candidate.pricing.transcriptionCostPer1kMinutes > 0
+    );
+  }
+
+  return hasRecommendableTextBenchmarkBasics(
+    candidate.benchmarks,
+    candidate.pricing,
+  );
+}
+
+function hasRecommendableTextBenchmarkBasics(
+  benchmarks: BenchmarkCandidate["benchmarks"],
+  pricing: ModelPricing,
+): boolean {
+  return (
+    benchmarks.llm !== undefined &&
+    hasAnyTextQualitySignal(benchmarks.llm) &&
+    hasTokenPricing(pricing)
   );
 }
 
@@ -1340,7 +1429,9 @@ function productionAvailabilityForTextModel(
 
 function isProductionAvailabilityAllowed(
   availability: ModelAvailabilityMetadata,
+  filters?: ModelFilters,
 ): boolean {
+  if (filters?.allowPreview && availability.status === "preview") return true;
   return availability.status === "production" || availability.acceptedRisk;
 }
 
@@ -1820,6 +1911,17 @@ function benchmarkSignalsFromCustomerSupportRecommendation(
   };
 }
 
+function mergeBenchmarkSignals(
+  ...layers: Array<
+    | BenchmarkSignals
+    | Pick<BenchmarkSignals, "autoClose">
+    | Record<string, never>
+    | undefined
+  >
+): BenchmarkSignals {
+  return Object.assign({}, ...layers);
+}
+
 function autoCloseSignalsFromBenchmark(
   model: AiAutoCloseBenchmarkModel | undefined,
   exchangeRate?: ExchangeRate,
@@ -1907,6 +2009,24 @@ function optionalSignal<K extends keyof BenchmarkSignals>(
   value: number | undefined,
 ): Pick<BenchmarkSignals, K> | Record<string, never> {
   return value === undefined ? {} : ({ [key]: value } as Pick<BenchmarkSignals, K>);
+}
+
+function maxDefined(
+  left: number | undefined,
+  right: number | undefined,
+): number | undefined {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  return Math.max(left, right);
+}
+
+function minDefined(
+  left: number | undefined,
+  right: number | undefined,
+): number | undefined {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  return Math.min(left, right);
 }
 
 function artificialAnalysisKeys(model: ArtificialAnalysisModel): Set<string> {
@@ -2005,6 +2125,30 @@ function compareBenchmarkCandidates(
 ): number {
   if (filters.useCase === "customer-support" && filters.includeItsBenchmark !== false) {
     return compareCustomerSupportBenchmarkCandidates(left, right, tier);
+  }
+
+  if (filters.useCase === "customer-support" && tier === "best") {
+    return (
+      compareOptionalDesc(
+        left.benchmarks.llm?.intelligence,
+        right.benchmarks.llm?.intelligence,
+      ) ||
+      scoreBenchmarkCandidate(right, filters, tier) -
+        scoreBenchmarkCandidate(left, filters, tier) ||
+      compareBenchmarkCandidateForTier(left, right, tier)
+    );
+  }
+
+  if (filters.useCase === "customer-support" && tier === "fast") {
+    return (
+      compareOptionalAsc(
+        left.benchmarks.llm?.customerSupportRank,
+        right.benchmarks.llm?.customerSupportRank,
+      ) ||
+      compareOptionalDesc(left.benchmarks.llm?.speed, right.benchmarks.llm?.speed) ||
+      compareCustomerSupportRunCost(left, right) ||
+      compareBenchmarkCandidateForTier(left, right, tier)
+    );
   }
 
   if (filters.useCase === "speech-to-text") {

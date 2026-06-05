@@ -172,7 +172,7 @@ describe("worker routes", () => {
   it("hard-filters customer support rows by Run AUD range", async () => {
     const response = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&minRunCostAud=100&maxRunCostAud=500",
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false&minRunCostAud=100&maxRunCostAud=1500",
       ),
       env(),
       ctx,
@@ -187,9 +187,80 @@ describe("worker routes", () => {
           (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.NEGATIVE_INFINITY) >=
             100 &&
           (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.POSITIVE_INFINITY) <=
-            500,
+            1500,
       ),
     ).toBe(true);
+  });
+
+  it("supports USD run-cost caps and preview opt-in for customer-support recommendations", async () => {
+    const defaultResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=google&useCase=customer-support&tier=best&includeItsBenchmark=false&maxRunCostUsd=900",
+      ),
+      env(),
+      ctx,
+    );
+
+    const defaultBody = (await defaultResponse.json()) as JsonObject;
+
+    expect(defaultResponse.status).toBe(200);
+    expect(defaultBody.recommendation).toMatchObject({
+      provider: "google",
+      availability: expect.objectContaining({
+        status: "production",
+      }),
+    });
+
+    const previewResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=google&useCase=customer-support&tier=best&includeItsBenchmark=false&allowPreview=true&maxRunCostUsd=900",
+      ),
+      env(),
+      ctx,
+    );
+    const previewBody = (await previewResponse.json()) as JsonObject;
+
+    expect(previewResponse.status).toBe(200);
+    expect(previewBody.recommendation).toMatchObject({
+      id: "gemini-3-1-pro-preview",
+      provider: "google",
+      availability: expect.objectContaining({
+        status: "preview",
+      }),
+    });
+    expect(
+      previewBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(1350);
+
+    const cappedRowsResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false&allowPreview=true&maxRunCostUsd=900",
+      ),
+      env(),
+      ctx,
+    );
+    const cappedRowsBody = (await cappedRowsResponse.json()) as JsonObject;
+    const ids = cappedRowsBody.benchmarks.map((row: { id: string }) => row.id);
+
+    expect(cappedRowsResponse.status).toBe(200);
+    expect(ids).toContain("gemini-3-1-pro-preview");
+    expect(ids).toContain("grok-4-3");
+    expect(ids).not.toContain("gemini-3-5-flash");
+
+    const xaiResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=xai&useCase=customer-support&tier=fast&includeItsBenchmark=false&maxRunCostUsd=900",
+      ),
+      env(),
+      ctx,
+    );
+    const xaiBody = (await xaiResponse.json()) as JsonObject;
+
+    expect(xaiResponse.status).toBe(200);
+    expect(xaiBody.recommendation).toMatchObject({
+      id: "grok-4-3",
+      provider: "xai",
+    });
   });
 
   it("uses customer-support priority tiers for OpenAI recommendations", async () => {
@@ -204,17 +275,17 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation).toMatchObject({
-      id: "gpt-5-4-low",
+      id: "gpt-5-5-low",
       provider: "openai",
       pricing: expect.objectContaining({
-        inputPerMTok: 3.75,
-        outputPerMTok: 22.5,
+        inputPerMTok: 7.5,
+        outputPerMTok: 45,
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 6,
+          customerSupportRank: 10,
           autoClose: expect.objectContaining({
-            falsePositiveCount: 6,
+            falsePositiveCount: 8,
             verifiedOn: "2026-05-21",
           }),
         }),
@@ -232,13 +303,13 @@ describe("worker routes", () => {
 
     expect(bestResponse.status).toBe(200);
     expect(bestBody.recommendation).toMatchObject({
-      id: "gpt-5-4-low",
+      id: "gpt-5-5-low",
       provider: "openai",
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 6,
+          customerSupportRank: 10,
           autoClose: expect.objectContaining({
-            falsePositiveCount: 6,
+            falsePositiveCount: 8,
           }),
         }),
       },

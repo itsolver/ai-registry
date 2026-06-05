@@ -217,8 +217,17 @@ describe("Artificial Analysis catalog", () => {
       bestRecommendation?.benchmarks?.llm?.intelligenceRunTotalCost ??
         Number.POSITIVE_INFINITY,
     );
-    expect(bestRecommendation?.benchmarks?.llm?.intelligence ?? 0).toBeGreaterThanOrEqual(
-      fastRecommendation?.benchmarks?.llm?.intelligence ?? 0,
+    const falsePositiveRate = (
+      candidate:
+        | { benchmarks?: { llm?: { autoClose?: { total: number; falsePositiveCount: number } } } }
+        | undefined,
+    ) => {
+      const autoClose = candidate?.benchmarks?.llm?.autoClose;
+      if (!autoClose || autoClose.total <= 0) return Number.POSITIVE_INFINITY;
+      return autoClose.falsePositiveCount / autoClose.total;
+    };
+    expect(falsePositiveRate(bestRecommendation)).toBeLessThanOrEqual(
+      falsePositiveRate(fastRecommendation),
     );
     expect(openaiRecommendation).toMatchObject({
       id: "gpt-5-5-low",
@@ -254,6 +263,107 @@ describe("Artificial Analysis catalog", () => {
       },
     });
     expect(googlePreviewRecommendation).toBeUndefined();
+  });
+
+  it("uses customer-support recommendation priorities for cost, safety, and balance", () => {
+    const autoClose = (
+      falsePositiveCount: number,
+      accuracy: number,
+    ) => ({
+      source: "itsolver-autoclose" as const,
+      modelKey: "test:model",
+      apiModel: "test-model",
+      displayName: "Test Model",
+      benchmarkReport: "test.md",
+      resultsFile: "test.json",
+      generatedAt: "2026-05-22T00:00:00Z",
+      benchmarkCodeSha: "test",
+      total: 100,
+      correctCount: Math.round(accuracy * 100),
+      accuracy,
+      falsePositiveCount,
+      falseNegativeCount: 100 - Math.round(accuracy * 100),
+      invalidCount: 0,
+      errorCount: 0,
+      parseSuccessRate: 1,
+      avgLatencyMs: 1000,
+      p95LatencyMs: 1200,
+      avgInputTokens: 1000,
+      avgOutputTokens: 100,
+      weightedScore: accuracy * 100,
+      sourceUrl: "https://example.test/autoclose",
+      verifiedOn: "2026-05-22",
+      availability: {
+        status: "production" as const,
+        acceptedRisk: false,
+        reason: "test",
+      },
+    });
+    const candidate = (
+      id: string,
+      falsePositiveCount: number,
+      accuracy: number,
+      runCost: number,
+      outputPerMTok: number,
+    ): BenchmarkCandidate => ({
+      id,
+      provider: "openai",
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          instructionFollowing: 80,
+          intelligence: 80,
+          intelligenceRunTotalCost: runCost,
+          autoClose: autoClose(falsePositiveCount, accuracy),
+        },
+      },
+      pricing: { inputPerMTok: 1, outputPerMTok },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-05-22T00:00:00Z",
+      modelCount: 5,
+      activeModelCount: 5,
+      providers: [{ provider: "openai", total: 5, active: 5 }],
+      models: [],
+      benchmarkCandidates: [
+        candidate("safest", 0, 0.91, 500, 20),
+        candidate("safe", 1, 0.92, 400, 20),
+        candidate("middle", 2, 0.93, 300, 20),
+        candidate("risky", 3, 0.99, 200, 20),
+        candidate("cheapest", 4, 0.99, 50, 1),
+      ],
+    };
+
+    expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
+      "middle",
+    );
+    expect(
+      recommendModel(catalog, { useCase: "customer-support", tier: "balanced" })?.id,
+    ).toBe("middle");
+    expect(
+      recommendModel(catalog, { useCase: "customer-support", tier: "fast" })?.id,
+    ).toBe("cheapest");
+    expect(
+      recommendModel(catalog, { useCase: "customer-support", tier: "best" })?.id,
+    ).toBe("safest");
+    expect(
+      recommendModel(catalog, {
+        useCase: "customer-support",
+        tier: "fast",
+        maxRunCostAud: 250,
+      })?.id,
+    ).toBe("cheapest");
   });
 
   it("does not recommend deprecated or retired customer-support models by default", () => {
@@ -885,19 +995,18 @@ describe("Artificial Analysis catalog", () => {
       id: "gemini-3-1-pro-preview",
       provider: "google",
     });
-    expect(
-      recommendModel(catalog, {
-        provider: "xai",
-        useCase: "customer-support",
-        tier: "fast",
-        includeItsBenchmark: false,
-        maxRunCostAud: 1300,
-        minIntelligence: 30,
-      }),
-    ).toMatchObject({
-      id: "grok-4-3",
+    const xaiFast = recommendModel(catalog, {
       provider: "xai",
+      useCase: "customer-support",
+      tier: "fast",
+      includeItsBenchmark: false,
+      maxRunCostAud: 1300,
+      minIntelligence: 30,
     });
+    expect(xaiFast).toMatchObject({ provider: "xai" });
+    expect(xaiFast?.benchmarks?.llm?.intelligenceRunTotalCost).toBeLessThanOrEqual(
+      1300,
+    );
   });
 
   it("excludes preview customer-support recommendations unless explicitly allowed", () => {
@@ -1021,15 +1130,14 @@ describe("Artificial Analysis catalog", () => {
         useCase: "customer-support",
       }),
     ).toBeUndefined();
-    expect(
-      recommendModel(catalog, {
-        provider: "anthropic",
-        useCase: "customer-support",
-        includeItsBenchmark: false,
-      }),
-    ).toMatchObject({
-      id: "claude-4-5-haiku",
+    const recommendation = recommendModel(catalog, {
+      provider: "anthropic",
+      useCase: "customer-support",
+      includeItsBenchmark: false,
+    });
+    expect(recommendation).toMatchObject({
       provider: "anthropic",
     });
+    expect(recommendation?.pricing.outputPerMTok).toBeGreaterThan(0);
   });
 });

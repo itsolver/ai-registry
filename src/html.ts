@@ -690,9 +690,9 @@ export const HOME_HTML = String.raw`<!doctype html>
         <div class="b-field">
           <label for="b-tier">Recommendation priority</label>
           <select id="b-tier">
-            <option value="" selected>balanced</option>
-            <option value="fast">lower Run AUD</option>
-            <option value="best">highest score</option>
+            <option value="" selected>balanced trade-off</option>
+            <option value="fast">fast and cheap</option>
+            <option value="best">highest safety</option>
           </select>
         </div>
         <div class="b-field">
@@ -987,11 +987,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is balanced.</dd>
       <dt>fast</dt>
-      <dd>For customer support, only affects tie-breaks after false positives and accuracy. For voice, prefers lower latency and lower audio cost. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then safety tie-breaks. For voice, prefers lower latency and lower audio cost. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>The default. Customer support uses auto-close benchmark safety first, then accuracy, then Run AUD/token efficiency. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>The default. Customer support picks the middle filtered candidate after highest-safety ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>Favors stronger benchmark scores only after customer-support safety and accuracy are tied. For speech to text, this prioritizes lower AA-WER.</dd>
+      <dd>For customer support, highest safety prioritizes ITS false positives, then ITS accuracy. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
       <dt>cost caps</dt>
       <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
       <dt>AUD/MTok</dt>
@@ -1245,12 +1245,13 @@ export const HOME_HTML = String.raw`<!doctype html>
       return item.provider || '';
     }
 
-    function renderSortableTable(tableId, rows, columns, defaultSortKey, defaultDirection) {
+    function renderSortableTable(tableId, rows, columns, defaultSortKey, defaultDirection, defaultCompare) {
       benchmarkTables[tableId] = {
         rows: rows,
         columns: columns,
         sortKey: defaultSortKey,
         direction: defaultDirection || 'desc',
+        defaultCompare: defaultCompare,
         selectedId: selectedBenchmark.tableId === tableId ? selectedBenchmark.modelId : ''
       };
       renderSortableHeader(tableId, columns);
@@ -1290,6 +1291,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
 
       var sorted = visibleRows.slice().sort(function (left, right) {
+        if (state.defaultCompare) return state.defaultCompare(left, right);
         var a = sortValue(column.value(left));
         var b = sortValue(column.value(right));
         if (typeof a === 'string' || typeof b === 'string') {
@@ -1341,7 +1343,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
       return {
         title: 'Customer Support Benchmark',
-        hint: 'Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.'
+        hint: 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, highest safety sorts by ITS false positives then accuracy, and balanced highlights the middle filtered safety row.'
       };
     }
 
@@ -1364,6 +1366,12 @@ export const HOME_HTML = String.raw`<!doctype html>
           fast: 'fast and cheap',
           best: 'highest accuracy'
         }
+        : useCase === 'customer-support'
+          ? {
+            '': 'balanced trade-off',
+            fast: 'fast and cheap',
+            best: 'highest safety'
+          }
         : {
           '': 'balanced',
           fast: 'lower Run AUD',
@@ -1552,6 +1560,53 @@ export const HOME_HTML = String.raw`<!doctype html>
       var signals = autoCloseSignals(row);
       if (typeof signals.falsePositiveCount !== 'number' || typeof signals.total !== 'number' || signals.total <= 0) return undefined;
       return signals.falsePositiveCount / signals.total;
+    }
+
+    function compareNumberAsc(left, right) {
+      var a = typeof left === 'number' && Number.isFinite(left) ? left : undefined;
+      var b = typeof right === 'number' && Number.isFinite(right) ? right : undefined;
+      if (a === undefined && b === undefined) return 0;
+      if (a === undefined) return 1;
+      if (b === undefined) return -1;
+      return a - b;
+    }
+
+    function compareNumberDesc(left, right) {
+      return compareNumberAsc(right, left);
+    }
+
+    function customerSupportSafetyRowCompare(left, right) {
+      var leftAutoClose = autoCloseSignals(left);
+      var rightAutoClose = autoCloseSignals(right);
+      return (
+        compareNumberAsc(falsePositiveRate(left), falsePositiveRate(right)) ||
+        compareNumberDesc(leftAutoClose.accuracy, rightAutoClose.accuracy) ||
+        compareNumberAsc(runCost(left), runCost(right)) ||
+        compareNumberAsc(leftAutoClose.invalidCount, rightAutoClose.invalidCount) ||
+        compareNumberAsc(leftAutoClose.falseNegativeCount, rightAutoClose.falseNegativeCount) ||
+        compareNumberDesc(leftAutoClose.weightedScore, rightAutoClose.weightedScore) ||
+        compareNumberDesc(llmSignals(left).intelligence, llmSignals(right).intelligence) ||
+        String((left.model || {}).name || '').localeCompare(String((right.model || {}).name || ''))
+      );
+    }
+
+    function customerSupportFastRowCompare(left, right) {
+      return (
+        compareNumberAsc(runCost(left), runCost(right)) ||
+        compareNumberAsc(outputCost(left), outputCost(right)) ||
+        customerSupportSafetyRowCompare(left, right)
+      );
+    }
+
+    function customerSupportTableSort(includeIts) {
+      var tier = fields.tier.value || 'balanced';
+      if (tier === 'fast') {
+        return { key: 'runCost', direction: 'asc', compare: customerSupportFastRowCompare };
+      }
+      if (includeIts) {
+        return { key: 'falsePositives', direction: 'desc', compare: customerSupportSafetyRowCompare };
+      }
+      return { key: 'score', direction: 'desc' };
     }
 
     function falsePositiveLabel(row) {
@@ -2007,13 +2062,15 @@ export const HOME_HTML = String.raw`<!doctype html>
     function renderTextBenchmarks(models) {
       var support = textRows(activeTextBenchmarkModels(models), 'customer-support');
       var includeIts = includeItsBenchmark();
+      var supportSort = customerSupportTableSort(includeIts);
 
       renderSortableTable(
         'supportRows',
         support,
         commonTextColumns('customer-support', includeIts),
-        includeIts ? 'runCost' : 'score',
-        includeIts ? 'asc' : 'desc'
+        supportSort.key,
+        supportSort.direction,
+        supportSort.compare
       );
 
       var label = support.length ? 'AA LLM extract' : 'unavailable';
@@ -2054,9 +2111,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           var signals = autoCloseSignals(row);
           return signals.source && row.model.recommendable !== false;
         })
-        .sort(function (left, right) {
-          return autoCloseRankValue(left) - autoCloseRankValue(right);
-        });
+        .sort(customerSupportSafetyRowCompare);
     }
 
     function autoCloseSummary(row) {
@@ -2095,7 +2150,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'Which model should customer support use?',
           a: includeIts && autoCloseSupport[0]
-            ? modelName(autoCloseSupport[0].model) + ' is the current safety-first recommendation from the IT Solver auto-close benchmark: ' + autoCloseSummary(autoCloseSupport[0]) + '.'
+            ? modelName(autoCloseSupport[0].model) + ' is the current highest-safety recommendation from the IT Solver auto-close benchmark: ' + autoCloseSummary(autoCloseSupport[0]) + '.'
             : support[0]
               ? modelName(support[0].model) + ' is the current recommendation using Artificial Analysis customer-support signals without ITS auto-close ranking.'
               : 'No customer support benchmark data is currently available.'
@@ -2243,6 +2298,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         state.sortKey = sortKey;
         state.direction = sortKey === 'model' ? 'asc' : 'desc';
       }
+      state.defaultCompare = null;
       drawSortableTable(tableId);
     });
 

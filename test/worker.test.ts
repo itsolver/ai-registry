@@ -241,7 +241,6 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation).toMatchObject({
-      id: "grok-4-3",
       provider: "xai",
       benchmarks: {
         llm: expect.objectContaining({
@@ -324,9 +323,11 @@ describe("worker routes", () => {
 
     expect(xaiResponse.status).toBe(200);
     expect(xaiBody.recommendation).toMatchObject({
-      id: "grok-4-3",
       provider: "xai",
     });
+    expect(
+      xaiBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(1350);
   });
 
   it("uses customer-support priority tiers for OpenAI recommendations", async () => {
@@ -380,6 +381,30 @@ describe("worker routes", () => {
         }),
       },
     });
+
+    const fastResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=openai&useCase=customer-support&tier=fast",
+      ),
+      env(),
+      ctx,
+    );
+    const fastBody = (await fastResponse.json()) as JsonObject;
+
+    expect(fastResponse.status).toBe(200);
+    expect(fastBody.recommendation).toMatchObject({
+      provider: "openai",
+      benchmarks: {
+        llm: expect.objectContaining({
+          intelligenceRunTotalCost: expect.any(Number),
+        }),
+      },
+    });
+    expect(
+      fastBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(
+      body.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    );
   });
 
   it("serves speech-to-text benchmark rows", async () => {

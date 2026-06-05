@@ -752,6 +752,10 @@ function recommendBenchmarkCandidate(
     return selectBalancedSpeechToTextCandidate(matches);
   }
 
+  if (effectiveFilters.useCase === "customer-support" && tier === "balanced") {
+    return selectBalancedCustomerSupportCandidate(matches, effectiveFilters);
+  }
+
   return [...matches].sort((left, right) =>
     compareBenchmarkCandidates(left, right, tier, effectiveFilters),
   )[0];
@@ -766,6 +770,18 @@ function selectBalancedSpeechToTextCandidate(
     compareSpeechToTextBenchmarkCandidates(left, right, "best"),
   );
   return accuracyOrdered[Math.floor((accuracyOrdered.length - 1) / 2)];
+}
+
+function selectBalancedCustomerSupportCandidate(
+  matches: BenchmarkCandidate[],
+  filters: ModelFilters,
+): BenchmarkCandidate | undefined {
+  if (!matches.length) return undefined;
+
+  const safetyOrdered = [...matches].sort((left, right) =>
+    compareCustomerSupportSafetyOrder(left, right, filters),
+  );
+  return safetyOrdered[Math.floor((safetyOrdered.length - 1) / 2)];
 }
 
 function isUseCaseRecommendationCandidate(
@@ -2214,12 +2230,13 @@ function compareBenchmarkCandidates(
 
   if (filters.useCase === "customer-support" && tier === "fast") {
     return (
+      compareCustomerSupportRunCost(left, right) ||
+      compareOptionalAsc(left.pricing.outputPerMTok, right.pricing.outputPerMTok) ||
+      compareOptionalDesc(left.benchmarks.llm?.speed, right.benchmarks.llm?.speed) ||
       compareOptionalAsc(
         left.benchmarks.llm?.customerSupportRank,
         right.benchmarks.llm?.customerSupportRank,
       ) ||
-      compareOptionalDesc(left.benchmarks.llm?.speed, right.benchmarks.llm?.speed) ||
-      compareCustomerSupportRunCost(left, right) ||
       compareBenchmarkCandidateForTier(left, right, tier)
     );
   }
@@ -2283,6 +2300,24 @@ function compareCustomerSupportBenchmarkCandidates(
   right: BenchmarkCandidate,
   tier: Tier,
 ): number {
+  if (tier === "fast") {
+    return (
+      compareCustomerSupportRunCost(left, right) ||
+      compareOptionalAsc(left.pricing.outputPerMTok, right.pricing.outputPerMTok) ||
+      compareCustomerSupportSafetyOrder(left, right, { useCase: "customer-support" })
+    );
+  }
+
+  return compareCustomerSupportSafetyOrder(left, right, {
+    useCase: "customer-support",
+  });
+}
+
+function compareCustomerSupportSafetyOrder(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+  filters: ModelFilters,
+): number {
   const leftSignals = left.benchmarks.llm;
   const rightSignals = right.benchmarks.llm;
   const leftAutoClose = leftSignals?.autoClose;
@@ -2298,7 +2333,7 @@ function compareCustomerSupportBenchmarkCandidates(
       compareCustomerSupportRunCost(left, right) ||
       compareOptionalAsc(leftAutoClose.invalidCount, rightAutoClose.invalidCount) ||
       compareOptionalAsc(leftAutoClose.falseNegativeCount, rightAutoClose.falseNegativeCount) ||
-      compareCustomerSupportTierTieBreak(left, right, tier) ||
+      compareCustomerSupportTierTieBreak(left, right, "best") ||
       left.id.localeCompare(right.id)
     );
   }
@@ -2306,9 +2341,9 @@ function compareCustomerSupportBenchmarkCandidates(
   if (leftAutoClose || rightAutoClose) return leftAutoClose ? -1 : 1;
 
   return (
-    scoreBenchmarkCandidate(right, { useCase: "customer-support" }, tier) -
-      scoreBenchmarkCandidate(left, { useCase: "customer-support" }, tier) ||
-    compareBenchmarkCandidateForTier(left, right, tier)
+    scoreBenchmarkCandidate(right, filters, "best") -
+      scoreBenchmarkCandidate(left, filters, "best") ||
+    compareBenchmarkCandidateForTier(left, right, "best")
   );
 }
 

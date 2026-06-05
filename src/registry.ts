@@ -714,6 +714,12 @@ export function benchmarkCandidates(
       ) {
         return false;
       }
+      if (
+        effectiveFilters.capability &&
+        candidate.capabilities?.[effectiveFilters.capability] !== true
+      ) {
+        return false;
+      }
       if (useCase && !candidate.benchmarks[benchmarkKeyForUseCase(useCase)]) {
         return false;
       }
@@ -1264,6 +1270,7 @@ function buildBenchmarkCandidates(
       name: existing?.name ?? recommendationModel.label,
       benchmarks: { llm: signals },
       pricing,
+      capabilities: capabilitiesFromCustomerSupportRecommendation(recommendationModel),
       contextWindow: existing?.contextWindow ?? recommendationModel.contextWindow,
     });
     candidates.set(candidate.id, candidate);
@@ -1384,6 +1391,7 @@ function benchmarkCandidateFromRegistry(input: {
   pricing: ModelPricing;
   registryModel?: RegistryModel;
   contextWindow?: number | null;
+  capabilities?: Record<Capability, boolean> | null;
   deprecated?: boolean | null;
 }): BenchmarkCandidate {
   const model = input.registryModel;
@@ -1414,7 +1422,10 @@ function benchmarkCandidateFromRegistry(input: {
     family: model?.family ?? null,
     contextWindow: model?.contextWindow ?? input.contextWindow ?? null,
     outputLimit: model?.outputLimit ?? null,
-    capabilities: model?.capabilities ?? null,
+    capabilities:
+      model?.capabilities ??
+      input.capabilities ??
+      null,
     modalities: model?.modalities ?? null,
     ...(model?.releaseDate ? { releaseDate: model.releaseDate } : {}),
     ...(model?.knowledgeCutoff ? { knowledgeCutoff: model.knowledgeCutoff } : {}),
@@ -1422,6 +1433,18 @@ function benchmarkCandidateFromRegistry(input: {
     tier: model?.tier ?? null,
     deprecated,
     updatedAt: model?.updatedAt ?? null,
+  };
+}
+
+function capabilitiesFromCustomerSupportRecommendation(
+  model: ArtificialAnalysisCustomerSupportRecommendation,
+): Record<Capability, boolean> {
+  return {
+    vision: model.imageInput,
+    reasoning: model.reasoning,
+    pdf: false,
+    toolCalling: false,
+    structuredOutput: false,
   };
 }
 

@@ -1201,6 +1201,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     var selectedBenchmark = { tableId: '', modelId: '' };
     var textBenchmarkModels = null;
     var textBenchmarkModelsWithoutIts = null;
+    var textBenchmarkRequest = 0;
     var voiceBenchmarkRows = null;
     var sttBenchmarkRows = null;
     var sttBenchmarkLoading = false;
@@ -1927,9 +1928,14 @@ export const HOME_HTML = String.raw`<!doctype html>
       var minRunCost = runCostFloor();
       var maxRunCost = runCostCeiling();
       var minIntelligence = intelligenceFloor();
+      var capability = fields.capability.value;
       return (models || []).filter(function (model) {
         var cost = runCost(model);
         var intelligence = ((model.benchmarks || {}).llm || {}).intelligence;
+        if (
+          capability &&
+          (!model.capabilities || model.capabilities[capability] !== true)
+        ) return false;
         if (
           minRunCost !== undefined &&
           (typeof cost !== 'number' || cost < minRunCost)
@@ -2031,10 +2037,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
 
       var currentModels = currentTextBenchmarkModels();
-      if (currentModels) {
-        renderTextBenchmarks(currentModels);
-        renderFaq(currentModels);
+      if (!isBrowsingModels()) {
+        loadCurrentTextBenchmarks();
+        return;
       }
+      if (currentModels) renderTextBenchmarks(currentModels);
     }
 
     function renderFilteredModelBenchmarks(models) {
@@ -2121,6 +2128,44 @@ export const HOME_HTML = String.raw`<!doctype html>
 
       var label = support.length ? 'AA LLM extract' : 'unavailable';
       setText('supportSource', label);
+    }
+
+    function customerSupportBenchmarkPath() {
+      var params = new URLSearchParams();
+      params.set('useCase', 'customer-support');
+      if (fields.provider.value) params.set('provider', fields.provider.value);
+      if (fields.capability.value) params.set('capability', fields.capability.value);
+      if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
+      if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
+      if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+      if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
+      if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+      if (fields.minruncost.value) params.set('minRunCostAud', fields.minruncost.value);
+      if (fields.maxruncost.value) params.set('maxRunCostAud', fields.maxruncost.value);
+      if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
+      if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+      if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
+      return '/v1/benchmarks?' + params.toString();
+    }
+
+    function loadCurrentTextBenchmarks() {
+      if (fields.usecase.value !== 'customer-support') return;
+      var requestId = ++textBenchmarkRequest;
+      fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
+        .then(function (data) {
+          if (requestId !== textBenchmarkRequest) return;
+          if (fields.usecase.value !== 'customer-support' || isBrowsingModels()) return;
+          var rows = data.benchmarks || [];
+          renderTextBenchmarks(rows);
+          renderFaq(rows);
+        })
+        .catch(function () {
+          if (requestId !== textBenchmarkRequest) return;
+          var rows = document.getElementById('supportRows');
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="11">Benchmark data unavailable.</td></tr>';
+          setText('supportSource', 'unavailable');
+        });
     }
 
     function topBy(items, valueFn, direction) {

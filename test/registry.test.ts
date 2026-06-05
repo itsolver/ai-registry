@@ -1082,6 +1082,35 @@ describe("Artificial Analysis catalog", () => {
     );
   });
 
+  it("applies capability filters to customer-support benchmark candidates", () => {
+    const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 1.4,
+      source: "test",
+    });
+    const reasoningRows = benchmarkCandidates(catalog, {
+      useCase: "customer-support",
+      capability: "reasoning",
+      includeItsBenchmark: false,
+      maxRunCostAud: 1300,
+      minIntelligence: 30,
+    });
+    const pdfRows = benchmarkCandidates(catalog, {
+      useCase: "customer-support",
+      capability: "pdf",
+      includeItsBenchmark: false,
+      maxRunCostAud: 1300,
+      minIntelligence: 30,
+    });
+
+    expect(reasoningRows.length).toBeGreaterThan(0);
+    expect(
+      reasoningRows.every((row) => row.capabilities?.reasoning === true),
+    ).toBe(true);
+    expect(pdfRows).toEqual([]);
+  });
+
   it("excludes preview customer-support recommendations unless explicitly allowed", () => {
     const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z", {
       base: "USD",

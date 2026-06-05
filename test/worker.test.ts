@@ -53,6 +53,9 @@ describe("worker routes", () => {
     expect(html).toContain(
       '<div class="b-field" data-filter-scope="text">\n          <label for="b-capability">Must have</label>',
     );
+    expect(html).toContain("model.capabilities[capability] !== true");
+    expect(html).toContain("function customerSupportBenchmarkPath()");
+    expect(html).toContain("fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })");
   });
 
   it("serves health metadata", async () => {
@@ -232,6 +235,44 @@ describe("worker routes", () => {
           typeof row.benchmarks.llm?.tauTelecom === "number",
       ),
     ).toBe(true);
+  });
+
+  it("hard-filters customer support rows by capability", async () => {
+    const reasoningResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&capability=reasoning&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const reasoningBody = (await reasoningResponse.json()) as JsonObject;
+    const pdfResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&capability=pdf&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const pdfBody = (await pdfResponse.json()) as JsonObject;
+    const recommendationResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&capability=pdf&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+
+    expect(reasoningResponse.status).toBe(200);
+    expect(reasoningBody.benchmarks.length).toBeGreaterThan(0);
+    expect(
+      reasoningBody.benchmarks.every(
+        (row: { capabilities?: { reasoning?: boolean } }) =>
+          row.capabilities?.reasoning === true,
+      ),
+    ).toBe(true);
+    expect(pdfResponse.status).toBe(200);
+    expect(pdfBody.benchmarks).toEqual([]);
+    expect(recommendationResponse.status).toBe(404);
   });
 
   it("applies Run AUD and intelligence filters to recommendations", async () => {

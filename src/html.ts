@@ -19,9 +19,8 @@ export const HOME_HTML = String.raw`<!doctype html>
     * { box-sizing: border-box; }
     body {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      max-width: 912px;
-      margin: 3rem auto;
-      padding: 1.5rem;
+      margin: 2rem auto;
+      padding: 1.5rem clamp(1rem, 2vw, 3rem);
       line-height: 1.65;
       color: var(--ink);
       background: var(--paper);

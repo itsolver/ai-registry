@@ -10,7 +10,7 @@ https://ai.itsolver.au
 
 The Worker uses Artificial Analysis data for OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq benchmark candidates, then exposes a small `/v1/...` API with recommendation tiers.
 
-Recommendations are tuned for IT Solver customer support, voice-agent API work, and speech-to-text transcription. For customer support, recommendations require real token pricing, a local auto-close benchmark result, and default-production availability. Ranking is safety-first: false positives sort first, accuracy second, and expected Run AUD/token efficiency third. Deprecated, retired, preview-only, experimental, latest-alias, and near-retirement text models are not default production recommendations. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
+Recommendations are tuned for IT Solver customer support, voice-agent API work, and speech-to-text transcription. For customer support, recommendations require real token pricing, a local auto-close benchmark result, and default-production availability. Ranking is safety-first: false positives sort first, accuracy second, and expected Run AUD/token efficiency third. Deprecated and retired models are excluded from public model, benchmark, and recommendation results. Preview-only, experimental, latest-alias, and near-retirement text models are not default production recommendations. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
 
 Model pricing from Artificial Analysis is converted to AUD using the daily USD to AUD rate from Frankfurter. The API only returns AUD pricing.
 
@@ -49,12 +49,11 @@ maxRunCostUsd=900                   # max AA benchmark Run USD, converted with t
 minIntelligence=30                  # min AA Intelligence Index for benchmark-backed text rows
 maxAudioInputCostPerHour=5          # max voice input/cost-to-run AUD per hour
 maxAudioOutputCostPerHour=5         # max voice output AUD per hour
-maxTranscriptionCostPer1kMinutes=5  # max speech-to-text AUD per 1,000 minutes
-maxAaWer=3                          # max speech-to-text AA-WER error rate
+maxTranscriptionCostPer1kMinutes=10 # max speech-to-text AUD per 1,000 minutes
+maxAaWer=4.6                        # max speech-to-text AA-WER error rate
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
 useCase=customer-support|voice|speech-to-text  # stt is accepted as an alias
-includeDeprecated=true
 includeItsBenchmark=false              # omit IT Solver auto-close ranking for customer support
 allowPreview=true                      # allow preview models in customer-support recommendations
 ```

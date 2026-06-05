@@ -410,6 +410,12 @@ describe("worker routes", () => {
     expect(
       body.benchmarks.some((row: { id: string }) => row.id.includes("missing")),
     ).toBe(false);
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
+      "google-gemini-2-0-flash-lite",
+    );
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
+      "google-gemini-2-0-flash",
+    );
   });
 
   it("hard-filters speech-to-text rows by AA-WER", async () => {
@@ -434,6 +440,29 @@ describe("worker routes", () => {
     );
   });
 
+  it("keeps Groq Whisper and excludes deprecated Gemini STT rows under default ceilings", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+    const ids = body.benchmarks.map((row: { id: string }) => row.id);
+
+    expect(response.status).toBe(200);
+    expect(ids).toContain("groq-whisper-large-v3-turbo");
+    expect(ids).not.toContain("google-gemini-2-0-flash-lite");
+    expect(ids).not.toContain("google-gemini-2-0-flash");
+    expect(
+      body.benchmarks.every(
+        (row: { benchmarks: { speechToText?: { aaWer?: number } } }) =>
+          (row.benchmarks.speechToText?.aaWer ?? Number.POSITIVE_INFINITY) <= 4.6,
+      ),
+    ).toBe(true);
+  });
+
   it("serves speech-to-text browse rows", async () => {
     const response = await handleRequest(
       new Request("https://ai.itsolver.au/v1/models?useCase=speech-to-text"),
@@ -453,6 +482,12 @@ describe("worker routes", () => {
           }),
         },
       }),
+    );
+    expect(body.models.map((row: { id: string }) => row.id)).not.toContain(
+      "google-gemini-2-0-flash-lite",
+    );
+    expect(body.models.map((row: { id: string }) => row.id)).not.toContain(
+      "google-gemini-2-0-flash",
     );
   });
 
@@ -499,6 +534,35 @@ describe("worker routes", () => {
       pricing: expect.objectContaining({
         transcriptionCostPer1kMinutes: 1.005,
       }),
+    });
+
+    const defaultCappedResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
+      ),
+      env(),
+      ctx,
+    );
+    const defaultCappedBody = (await defaultCappedResponse.json()) as JsonObject;
+    const cappedGroqVisibleResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=groq&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
+      ),
+      env(),
+      ctx,
+    );
+    const cappedGroqVisibleBody =
+      (await cappedGroqVisibleResponse.json()) as JsonObject;
+
+    expect(defaultCappedResponse.status).toBe(200);
+    expect(defaultCappedBody.recommendation.deprecated).not.toBe(true);
+    expect(defaultCappedBody.recommendation.id).not.toBe(
+      "google-gemini-2-0-flash-lite",
+    );
+    expect(cappedGroqVisibleResponse.status).toBe(200);
+    expect(cappedGroqVisibleBody.recommendation).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
     });
 
     const cappedGroqResponse = await handleRequest(

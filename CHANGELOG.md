@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Removed secondary speech-to-text dataset columns from the homepage table so it focuses on AA-WER, speed, and price.
-- Defaulted the speech-to-text homepage builder to capped AA-WER and AUD/1k minute filters.
+- Defaulted the speech-to-text homepage builder to a 4.6% AA-WER cap and $10 AUD/1k minute filter.
+- Excluded locally retired speech-to-text models from public benchmark, model, and recommendation results.
 
 ## 2026-05-22
 

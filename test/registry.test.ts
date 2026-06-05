@@ -109,15 +109,9 @@ describe("Artificial Analysis catalog", () => {
     expect(ids).not.toContain("grok-4.20-multi-agent-0309");
     expect(ids).not.toContain("gemini-2.0-flash-lite");
     expect(ids).not.toContain("unsupported-model");
-    const geminiLite = benchmarkCandidates(catalog, {}).find(
-      (row) => row.id === "gemini-2.0-flash-lite",
-    );
-    expect(geminiLite).toMatchObject({
-      provider: "google",
-      recommendable: false,
-      contextWindow: null,
-    });
-    expect(geminiLite?.registryModelId).toBeUndefined();
+    expect(
+      benchmarkCandidates(catalog, {}).map((row) => row.id),
+    ).not.toContain("gemini-2.0-flash-lite");
   });
 
   it("displays AA-only rows without pricing but does not recommend them", () => {
@@ -407,11 +401,35 @@ describe("Artificial Analysis catalog", () => {
     );
     const elevenlabs = rows.find((row) => row.provider === "elevenlabs");
     const groq = rows.find((row) => row.provider === "groq");
+    const rawGeminiLite = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "google-gemini-2-0-flash-lite",
+    );
 
     expect(catalog.providers.map((provider) => provider.provider)).toEqual(
       expect.arrayContaining(["openai", "nvidia", "elevenlabs", "groq"]),
     );
     expect(rows.map((row) => row.id)).not.toContain("deepgram-unsupported-stt");
+    expect(rows.map((row) => row.id)).not.toContain(
+      "google-gemini-2-0-flash-lite",
+    );
+    expect(rawGeminiLite).toMatchObject({
+      deprecated: true,
+      recommendable: false,
+    });
+    const staleCachedCatalog: Catalog = {
+      ...catalog,
+      benchmarkCandidates: catalog.benchmarkCandidates?.map((row) =>
+        row.id === "google-gemini-2-0-flash-lite"
+          ? { ...row, deprecated: null, recommendable: true }
+          : row,
+      ),
+    };
+    expect(
+      benchmarkCandidates(staleCachedCatalog, {
+        useCase: "speech-to-text",
+        maxAaWer: 4.6,
+      }).map((row) => row.id),
+    ).not.toContain("google-gemini-2-0-flash-lite");
     expect(nvidia).toMatchObject({
       id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
       provider: "nvidia",
@@ -556,8 +574,8 @@ describe("Artificial Analysis catalog", () => {
         maxTranscriptionCostPer1kMinutes: 4,
       }),
     ).toMatchObject({
-      id: "google-gemini-2-0-flash-lite",
-      provider: "google",
+      id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+      provider: "nvidia",
     });
     expect(
       recommendModel(catalog, {

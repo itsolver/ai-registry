@@ -755,7 +755,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
               <button type="button" id="b-aawer-any">Any</button>
             </div>
             <div class="range-stack">
-              <input type="range" id="b-aawer-max-range" min="0" max="20" step="0.1" value="4" aria-label="Maximum AA-WER">
+              <input type="range" id="b-aawer-max-range" min="0" max="20" step="0.1" value="4.6" aria-label="Maximum AA-WER">
             </div>
             <div class="price-filter-scale">
               <span>0%</span>

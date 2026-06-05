@@ -256,7 +256,6 @@ export interface ModelFilters {
   maxAaWer?: number;
   minContextWindow?: number;
   maxContextWindow?: number;
-  includeDeprecated?: boolean;
   includeItsBenchmark?: boolean;
   allowPreview?: boolean;
 }
@@ -534,7 +533,6 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(maxAaWer !== undefined ? { maxAaWer } : {}),
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     ...(maxContextWindow !== undefined ? { maxContextWindow } : {}),
-    includeDeprecated: params.get("includeDeprecated") === "true",
     includeItsBenchmark:
       params.get("includeItsBenchmark") !== "false" &&
       params.get("includeITSBenchmark") !== "false",
@@ -589,7 +587,7 @@ export function filterModels(
 ): RegistryModel[] {
   return models.filter((model) => {
     if (filters.unsupportedProvider) return false;
-    if (!filters.includeDeprecated && model.deprecated) return false;
+    if (model.deprecated) return false;
     if (filters.provider && model.provider !== filters.provider) return false;
     if (filters.useCase === "voice" && !isVoiceModel(model)) return false;
     if (filters.useCase === "speech-to-text" && !isSpeechToTextModel(model)) {
@@ -709,6 +707,7 @@ export function benchmarkCandidates(
   return (catalog.benchmarkCandidates ?? [])
     .filter((candidate) => {
       if (effectiveFilters.unsupportedProvider) return false;
+      if (isDeprecatedBenchmarkCandidate(candidate)) return false;
       if (
         effectiveFilters.provider &&
         candidate.provider !== effectiveFilters.provider
@@ -759,7 +758,7 @@ function isUseCaseRecommendationCandidate(
   filters: ModelFilters,
 ): boolean {
   if (filters.useCase !== "customer-support") return true;
-  if (candidate.deprecated === true) return false;
+  if (isDeprecatedBenchmarkCandidate(candidate)) return false;
 
   const signals = candidate.benchmarks.llm;
   if (filters.includeItsBenchmark !== false && !signals?.autoClose) return false;
@@ -1263,6 +1262,7 @@ function benchmarkCandidatesFromSpeechToTextModel(
   if (!modelName) return [];
 
   const baseSlug = slugFrom(stringValue(model.slug, modelName));
+  const deprecated = isKnownDeprecatedModel(baseSlug, modelName);
   const extractedAt = stringValue(model.extractedAt, generatedAt);
   const providerRows = speechToTextProviderRows(model);
 
@@ -1327,6 +1327,7 @@ function benchmarkCandidatesFromSpeechToTextModel(
         },
       },
       pricing: exchangeRate ? convertPricing(pricing, exchangeRate) : pricing,
+      deprecated,
     });
   });
 }
@@ -1339,8 +1340,10 @@ function benchmarkCandidateFromRegistry(input: {
   pricing: ModelPricing;
   registryModel?: RegistryModel;
   contextWindow?: number | null;
+  deprecated?: boolean | null;
 }): BenchmarkCandidate {
   const model = input.registryModel;
+  const deprecated = model?.deprecated ?? input.deprecated ?? null;
   const availability = input.benchmarks.llm
     ? productionAvailabilityForTextModel(input.id, input.name, input.benchmarks.llm)
     : undefined;
@@ -1351,6 +1354,7 @@ function benchmarkCandidateFromRegistry(input: {
     input.benchmarks,
     input.pricing,
     model,
+    deprecated,
   );
 
   return {
@@ -1372,7 +1376,7 @@ function benchmarkCandidateFromRegistry(input: {
     ...(model?.knowledgeCutoff ? { knowledgeCutoff: model.knowledgeCutoff } : {}),
     openWeights: model?.openWeights ?? null,
     tier: model?.tier ?? null,
-    deprecated: model?.deprecated ?? null,
+    deprecated,
     updatedAt: model?.updatedAt ?? null,
   };
 }
@@ -1384,9 +1388,10 @@ function isBenchmarkCandidateRecommendable(
   benchmarks: BenchmarkCandidate["benchmarks"],
   pricing: ModelPricing,
   registryModel?: RegistryModel,
+  deprecated?: boolean | null,
 ): boolean {
   if (!SUPPORTED_PROVIDERS.includes(provider)) return false;
-  if (registryModel?.deprecated) return false;
+  if (registryModel?.deprecated || deprecated === true) return false;
 
   if (benchmarks.voice) {
     return (
@@ -1529,6 +1534,25 @@ function heuristicAvailabilityForTextModel(
 
 function retirementDateForModel(id: string): string | undefined {
   return MODEL_RETIREMENT_DATES[id as keyof typeof MODEL_RETIREMENT_DATES];
+}
+
+function isKnownDeprecatedModel(id: string, name: string): boolean {
+  const searchable = `${id} ${name}`.toLowerCase();
+  if (searchable.includes("deprecated") || searchable.includes("retired")) {
+    return true;
+  }
+
+  return [slugFrom(id), slugFrom(name)].some((slug) => {
+    const retirementDate = retirementDateForModel(slug);
+    return retirementDate !== undefined && isNearRetirement(retirementDate);
+  });
+}
+
+function isDeprecatedBenchmarkCandidate(candidate: BenchmarkCandidate): boolean {
+  return (
+    candidate.deprecated === true ||
+    isKnownDeprecatedModel(candidate.id, candidate.name)
+  );
 }
 
 function isNearRetirement(retirementDate: string): boolean {

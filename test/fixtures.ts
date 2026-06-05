@@ -188,6 +188,23 @@ export const artificialAnalysisSpeechToTextFixture = {
       ],
     },
     {
+      id: "stt-gemini-2-flash-lite",
+      name: "Gemini 2.0 Flash Lite",
+      slug: "gemini-2.0-flash-lite",
+      model_creator: { name: "Google", slug: "google" },
+      aa_wer_index: 3.8,
+      providers: [
+        {
+          id: "provider-google",
+          name: "Google",
+          slug: "google",
+          price_per_1k_minutes: 0.19,
+          median_speed_factor: 56.2,
+          aa_wer_index: 3.8,
+        },
+      ],
+    },
+    {
       id: "stt-nvidia-parakeet",
       name: "Parakeet TDT 0.6B V3",
       slug: "parakeet-tdt-0-6b-v3",

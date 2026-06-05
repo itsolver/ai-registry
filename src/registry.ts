@@ -752,6 +752,10 @@ function recommendBenchmarkCandidate(
     return selectBalancedSpeechToTextCandidate(matches);
   }
 
+  if (effectiveFilters.useCase === "voice" && tier === "balanced") {
+    return selectBalancedVoiceCandidate(matches);
+  }
+
   if (effectiveFilters.useCase === "customer-support" && tier === "balanced") {
     return selectBalancedCustomerSupportCandidate(matches, effectiveFilters);
   }
@@ -770,6 +774,15 @@ function selectBalancedSpeechToTextCandidate(
     compareSpeechToTextBenchmarkCandidates(left, right, "best"),
   );
   return accuracyOrdered[Math.floor((accuracyOrdered.length - 1) / 2)];
+}
+
+function selectBalancedVoiceCandidate(
+  matches: BenchmarkCandidate[],
+): BenchmarkCandidate | undefined {
+  if (!matches.length) return undefined;
+
+  const qualityOrdered = [...matches].sort(compareVoiceQualityOrder);
+  return qualityOrdered[Math.floor((qualityOrdered.length - 1) / 2)];
 }
 
 function selectBalancedCustomerSupportCandidate(
@@ -2245,6 +2258,10 @@ function compareBenchmarkCandidates(
     return compareSpeechToTextBenchmarkCandidates(left, right, tier);
   }
 
+  if (filters.useCase === "voice") {
+    return compareVoiceBenchmarkCandidates(left, right, tier);
+  }
+
   return (
     scoreBenchmarkCandidate(right, filters, tier) -
       scoreBenchmarkCandidate(left, filters, tier) ||
@@ -2291,6 +2308,60 @@ function compareSpeechToTextBenchmarkCandidates(
       candidateTranscriptionCost(right),
     ) ||
     compareOptionalDesc(leftSignals?.speedFactor, rightSignals?.speedFactor) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function compareVoiceBenchmarkCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+  tier: Tier,
+): number {
+  if (tier === "fast") {
+    return (
+      compareOptionalAsc(
+        left.pricing.benchmarkInputAudioPerHour,
+        right.pricing.benchmarkInputAudioPerHour,
+      ) ||
+      compareOptionalAsc(candidateAudioOutputCost(left), candidateAudioOutputCost(right)) ||
+      compareOptionalAsc(
+        left.benchmarks.voice?.timeToFirstAudioSeconds,
+        right.benchmarks.voice?.timeToFirstAudioSeconds,
+      ) ||
+      compareVoiceQualityOrder(left, right)
+    );
+  }
+
+  return compareVoiceQualityOrder(left, right);
+}
+
+function compareVoiceQualityOrder(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+): number {
+  const leftVoice = left.benchmarks.voice;
+  const rightVoice = right.benchmarks.voice;
+
+  return (
+    compareOptionalDesc(leftVoice?.agenticPerformance, rightVoice?.agenticPerformance) ||
+    compareOptionalDesc(leftVoice?.speechReasoning, rightVoice?.speechReasoning) ||
+    compareOptionalDesc(
+      leftVoice?.telecomAgenticPerformance,
+      rightVoice?.telecomAgenticPerformance,
+    ) ||
+    compareOptionalDesc(
+      leftVoice?.conversationalDynamics,
+      rightVoice?.conversationalDynamics,
+    ) ||
+    compareOptionalAsc(
+      leftVoice?.timeToFirstAudioSeconds,
+      rightVoice?.timeToFirstAudioSeconds,
+    ) ||
+    compareOptionalAsc(
+      left.pricing.benchmarkInputAudioPerHour,
+      right.pricing.benchmarkInputAudioPerHour,
+    ) ||
+    compareOptionalAsc(candidateAudioOutputCost(left), candidateAudioOutputCost(right)) ||
     left.id.localeCompare(right.id)
   );
 }

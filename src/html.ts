@@ -987,11 +987,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is balanced.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then safety tie-breaks. For voice, prefers lower latency and lower audio cost. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then safety tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>The default. Customer support picks the middle filtered candidate after highest-safety ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>The default. Customer support picks the middle filtered candidate after highest-safety ordering. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, highest safety prioritizes ITS false positives, then ITS accuracy. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dd>For customer support, highest safety prioritizes ITS false positives, then ITS accuracy. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
       <dt>cost caps</dt>
       <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
       <dt>AUD/MTok</dt>
@@ -1332,7 +1332,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (useCase === 'voice') {
         return {
           title: 'Voice Benchmark',
-          hint: 'Voice models are ranked for speech-to-speech agents using τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
+          hint: 'Voice priorities are explicit: fast and cheap sorts by input AUD/hr, output AUD/hr, then TTFA; highest quality sorts by τ-Voice, speech reasoning, and telecom score; balanced highlights the middle filtered quality row.'
         };
       }
       if (useCase === 'speech-to-text') {
@@ -1366,6 +1366,12 @@ export const HOME_HTML = String.raw`<!doctype html>
           fast: 'fast and cheap',
           best: 'highest accuracy'
         }
+        : useCase === 'voice'
+          ? {
+            '': 'balanced trade-off',
+            fast: 'fast and cheap',
+            best: 'highest quality'
+          }
         : useCase === 'customer-support'
           ? {
             '': 'balanced trade-off',
@@ -1440,6 +1446,44 @@ export const HOME_HTML = String.raw`<!doctype html>
       return agentic * 0.45 + speech * 0.25 + telecom * 0.1 + ttfa * 0.08 + costScore * 0.12;
     }
 
+    function voiceSignals(model) {
+      return ((model.benchmarks || {}).voice || {});
+    }
+
+    function voiceTtfa(model) {
+      return voiceSignals(model).timeToFirstAudioSeconds;
+    }
+
+    function voiceQualityRowCompare(left, right) {
+      var leftVoice = voiceSignals(left);
+      var rightVoice = voiceSignals(right);
+      return (
+        compareNumberDesc(leftVoice.agenticPerformance, rightVoice.agenticPerformance) ||
+        compareNumberDesc(leftVoice.speechReasoning, rightVoice.speechReasoning) ||
+        compareNumberDesc(leftVoice.telecomAgenticPerformance, rightVoice.telecomAgenticPerformance) ||
+        compareNumberDesc(leftVoice.conversationalDynamics, rightVoice.conversationalDynamics) ||
+        compareNumberAsc(voiceTtfa(left), voiceTtfa(right)) ||
+        compareNumberAsc(voiceCost(left), voiceCost(right)) ||
+        compareNumberAsc(voiceOutputCost(left), voiceOutputCost(right)) ||
+        String(left.name || '').localeCompare(String(right.name || ''))
+      );
+    }
+
+    function voiceFastRowCompare(left, right) {
+      return (
+        compareNumberAsc(voiceCost(left), voiceCost(right)) ||
+        compareNumberAsc(voiceOutputCost(left), voiceOutputCost(right)) ||
+        compareNumberAsc(voiceTtfa(left), voiceTtfa(right)) ||
+        voiceQualityRowCompare(left, right)
+      );
+    }
+
+    function voiceTableSort() {
+      var tier = fields.tier.value || 'balanced';
+      if (tier === 'fast') return { key: 'inputCost', direction: 'asc', compare: voiceFastRowCompare };
+      return { key: 'agentic', direction: 'desc', compare: voiceQualityRowCompare };
+    }
+
     function voiceBenchmarkModels(models) {
       return models.filter(function (model) {
         return model.recommendable !== false && model.benchmarks && model.benchmarks.voice;
@@ -1459,15 +1503,17 @@ export const HOME_HTML = String.raw`<!doctype html>
         setText('voiceSource', 'AA extract ' + formatAge(source.extractedAt));
       }
 
+      var voiceSort = voiceTableSort();
+
       renderSortableTable('voiceRows', rows, [
         { key: 'model', value: function (model) { return model.name; }, render: renderModelCell },
-        { key: 'agentic', value: function (model) { return ((model.benchmarks || {}).voice || {}).agenticPerformance; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).agenticPerformance); } },
-        { key: 'speech', value: function (model) { return ((model.benchmarks || {}).voice || {}).speechReasoning; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).speechReasoning); } },
-        { key: 'telecom', value: function (model) { return ((model.benchmarks || {}).voice || {}).telecomAgenticPerformance; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).telecomAgenticPerformance); } },
-        { key: 'ttfa', value: function (model) { return -(((model.benchmarks || {}).voice || {}).timeToFirstAudioSeconds || Infinity); }, render: function (model) { return seconds(((model.benchmarks || {}).voice || {}).timeToFirstAudioSeconds); } },
+        { key: 'agentic', value: function (model) { return voiceSignals(model).agenticPerformance; }, render: function (model) { return pct(voiceSignals(model).agenticPerformance); } },
+        { key: 'speech', value: function (model) { return voiceSignals(model).speechReasoning; }, render: function (model) { return pct(voiceSignals(model).speechReasoning); } },
+        { key: 'telecom', value: function (model) { return voiceSignals(model).telecomAgenticPerformance; }, render: function (model) { return pct(voiceSignals(model).telecomAgenticPerformance); } },
+        { key: 'ttfa', value: function (model) { return -(voiceTtfa(model) || Infinity); }, render: function (model) { return seconds(voiceTtfa(model)); } },
         { key: 'inputCost', value: voiceCost, render: function (model) { return money(voiceCost(model)); } },
         { key: 'outputCost', value: voiceOutputCost, render: function (model) { return money(voiceOutputCost(model)); } }
-      ], 'agentic', 'desc');
+      ], voiceSort.key, voiceSort.direction, voiceSort.compare);
     }
 
     function sttSignals(model) {

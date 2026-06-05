@@ -655,6 +655,81 @@ describe("Artificial Analysis catalog", () => {
     expect(recommendation?.pricing.benchmarkInputAudioPerHour).toBeGreaterThan(0);
   });
 
+  it("uses voice recommendation priorities for cost, quality, and balance", () => {
+    const candidate = (
+      id: string,
+      agenticPerformance: number,
+      speechReasoning: number,
+      telecomAgenticPerformance: number,
+      timeToFirstAudioSeconds: number,
+      inputCost: number,
+      outputCost: number,
+    ): BenchmarkCandidate => ({
+      id,
+      provider: "xai",
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        voice: {
+          source: "artificialanalysis",
+          extractedAt: "2026-05-22T00:00:00Z",
+          agenticPerformance,
+          speechReasoning,
+          telecomAgenticPerformance,
+          timeToFirstAudioSeconds,
+        },
+      },
+      pricing: {
+        benchmarkInputAudioPerHour: inputCost,
+        audioOutputPerHour: outputCost,
+      },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-05-22T00:00:00Z",
+      modelCount: 5,
+      activeModelCount: 5,
+      providers: [{ provider: "xai", total: 5, active: 5 }],
+      models: [],
+      benchmarkCandidates: [
+        candidate("highest-quality", 0.99, 0.8, 0.8, 2.5, 8, 8),
+        candidate("quality-2", 0.9, 0.8, 0.8, 2, 7, 7),
+        candidate("middle-quality", 0.8, 0.8, 0.8, 1.5, 6, 6),
+        candidate("quality-4", 0.7, 0.8, 0.8, 1, 5, 5),
+        candidate("cheapest", 0.6, 0.8, 0.8, 0.5, 1, 1),
+      ],
+    };
+
+    expect(recommendModel(catalog, { useCase: "voice" })?.id).toBe(
+      "middle-quality",
+    );
+    expect(
+      recommendModel(catalog, { useCase: "voice", tier: "balanced" })?.id,
+    ).toBe("middle-quality");
+    expect(recommendModel(catalog, { useCase: "voice", tier: "fast" })?.id).toBe(
+      "cheapest",
+    );
+    expect(recommendModel(catalog, { useCase: "voice", tier: "best" })?.id).toBe(
+      "highest-quality",
+    );
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "fast",
+        maxAudioInputCostPerHour: 2,
+      })?.id,
+    ).toBe("cheapest");
+  });
+
   it("uses Artificial Analysis speech-to-text data for STT recommendations", () => {
     const catalog = normalizeArtificialAnalysisCatalog(
       "2026-06-01T00:00:00Z",

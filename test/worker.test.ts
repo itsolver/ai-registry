@@ -48,6 +48,7 @@ describe("worker routes", () => {
     const html = await response.text();
     expect(html).toContain("ai<span class=\"blink\">.</span>itsolver");
     expect(html).toContain("Bench Telecom");
+    expect(html).toContain("highest quality");
   });
 
   it("serves health metadata", async () => {
@@ -405,6 +406,91 @@ describe("worker routes", () => {
     ).toBeLessThanOrEqual(
       body.recommendation.benchmarks.llm.intelligenceRunTotalCost,
     );
+  });
+
+  it("uses voice priority tiers for quality, cost, and balance", async () => {
+    const balancedResponse = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/models/recommend?useCase=voice"),
+      env(),
+      ctx,
+    );
+    const balancedBody = (await balancedResponse.json()) as JsonObject;
+    const fastResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=fast",
+      ),
+      env(),
+      ctx,
+    );
+    const fastBody = (await fastResponse.json()) as JsonObject;
+    const bestResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=best",
+      ),
+      env(),
+      ctx,
+    );
+    const bestBody = (await bestResponse.json()) as JsonObject;
+
+    expect(balancedResponse.status).toBe(200);
+    expect(fastResponse.status).toBe(200);
+    expect(bestResponse.status).toBe(200);
+    expect(balancedBody.recommendation).toMatchObject({
+      benchmarks: { voice: expect.any(Object) },
+      pricing: expect.objectContaining({
+        benchmarkInputAudioPerHour: expect.any(Number),
+      }),
+    });
+    expect(fastBody.recommendation).toMatchObject({
+      benchmarks: { voice: expect.any(Object) },
+      pricing: expect.objectContaining({
+        benchmarkInputAudioPerHour: expect.any(Number),
+      }),
+    });
+    expect(bestBody.recommendation).toMatchObject({
+      benchmarks: { voice: expect.any(Object) },
+      pricing: expect.objectContaining({
+        benchmarkInputAudioPerHour: expect.any(Number),
+      }),
+    });
+    expect(
+      fastBody.recommendation.pricing.benchmarkInputAudioPerHour,
+    ).toBeLessThanOrEqual(
+      bestBody.recommendation.pricing.benchmarkInputAudioPerHour,
+    );
+    const voiceQuality = (voice: {
+      agenticPerformance?: number;
+      speechReasoning?: number;
+      telecomAgenticPerformance?: number;
+      conversationalDynamics?: number;
+    }) =>
+      (voice.agenticPerformance ?? 0) * 0.45 +
+      (voice.speechReasoning ?? 0) * 0.35 +
+      (voice.telecomAgenticPerformance ?? 0) * 0.15 +
+      (voice.conversationalDynamics ?? 0) * 0.05;
+    expect(voiceQuality(bestBody.recommendation.benchmarks.voice)).toBeGreaterThanOrEqual(
+      voiceQuality(fastBody.recommendation.benchmarks.voice),
+    );
+  });
+
+  it("hard-filters voice rows by input audio cost", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=voice&maxAudioInputCostPerHour=3",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarks.length).toBeGreaterThan(0);
+    expect(
+      body.benchmarks.every(
+        (row: { pricing: { benchmarkInputAudioPerHour?: number } }) =>
+          (row.pricing.benchmarkInputAudioPerHour ?? Number.POSITIVE_INFINITY) <= 3,
+      ),
+    ).toBe(true);
   });
 
   it("serves speech-to-text benchmark rows", async () => {

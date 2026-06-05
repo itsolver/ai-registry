@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Groq as a speech-to-text provider candidate.
 - Added a checked-in Artificial Analysis speech-to-text table extract and refresh command.
 
+### Changed
+
+- Removed secondary speech-to-text dataset columns from the homepage table so it focuses on AA-WER, speed, and price.
+
 ## 2026-05-22
 
 ### Added

@@ -948,15 +948,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
                 <th data-table="sttRows" data-sort="model">Model</th>
                 <th data-table="sttRows" data-sort="host">Provider/Host</th>
                 <th data-table="sttRows" data-sort="wer">AA-WER</th>
-                <th data-table="sttRows" data-sort="agenttalk">AgentTalk</th>
-                <th data-table="sttRows" data-sort="voxpopuli">VoxPopuli</th>
-                <th data-table="sttRows" data-sort="earnings">Earnings22</th>
                 <th data-table="sttRows" data-sort="speed">Speed</th>
                 <th data-table="sttRows" data-sort="cost">AUD/1k min</th>
               </tr>
             </thead>
             <tbody id="sttRows">
-              <tr><td class="empty" colspan="8">loading...</td></tr>
+              <tr><td class="empty" colspan="5">loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1503,16 +1500,17 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         setText('sttSource', 'AA extract ' + formatAge(source.extractedAt));
       }
 
-      renderSortableTable('sttRows', rows, [
-        { key: 'model', value: function (model) { return model.name; }, render: renderModelCell },
-        { key: 'host', value: sttHost, render: function (model) { return escapeHtml(sttHost(model)); } },
-        { key: 'wer', value: function (model) { return sttSignals(model).aaWer; }, render: function (model) { return wer(sttSignals(model).aaWer); } },
-        { key: 'agenttalk', value: function (model) { return sttSignals(model).agentTalkWer; }, render: function (model) { return wer(sttSignals(model).agentTalkWer); } },
-        { key: 'voxpopuli', value: function (model) { return sttSignals(model).voxpopuliWer; }, render: function (model) { return wer(sttSignals(model).voxpopuliWer); } },
-        { key: 'earnings', value: function (model) { return sttSignals(model).earnings22Wer; }, render: function (model) { return wer(sttSignals(model).earnings22Wer); } },
-        { key: 'speed', value: function (model) { return sttSignals(model).speedFactor; }, render: function (model) { return speedFactor(sttSignals(model).speedFactor); } },
-        { key: 'cost', value: sttCost, render: function (model) { return money(sttCost(model)); } }
-      ], 'wer', 'asc');
+      var columns = [
+        { key: 'model', label: 'Model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'host', label: 'Provider/Host', value: sttHost, render: function (model) { return escapeHtml(sttHost(model)); } },
+        { key: 'wer', label: 'AA-WER', value: function (model) { return sttSignals(model).aaWer; }, render: function (model) { return wer(sttSignals(model).aaWer); } }
+      ];
+      columns.push(
+        { key: 'speed', label: 'Speed', value: function (model) { return sttSignals(model).speedFactor; }, render: function (model) { return speedFactor(sttSignals(model).speedFactor); } },
+        { key: 'cost', label: 'AUD/1k min', value: sttCost, render: function (model) { return money(sttCost(model)); } }
+      );
+
+      renderSortableTable('sttRows', rows, columns, 'wer', 'asc');
     }
 
     function llmSignals(row) {

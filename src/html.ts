@@ -505,10 +505,10 @@ export const HOME_HTML = String.raw`<!doctype html>
     .bench-note {
       color: var(--muted);
       font-size: 0.78rem;
-      margin-top: -0.7rem;
+      margin: 0.85rem 0 0;
     }
     .benchmark-panels {
-      margin-bottom: 2.2rem;
+      margin: 1.5rem 0 0;
     }
     .benchmark-panel[hidden] {
       display: none;
@@ -886,10 +886,8 @@ export const HOME_HTML = String.raw`<!doctype html>
   </aside>
   <section class="benchmark-column" aria-labelledby="benchmarkTitle">
   <h2 id="benchmarkTitle">Customer Support Benchmark</h2>
-  <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.</p>
   <div class="benchmark-panels">
     <div class="benchmark-panel" data-benchmark-panel="customer-support" hidden>
-      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Run AUD/token efficiency.</p>
       <div class="voice-bench">
       <div class="voice-head">
         <strong>Customer support</strong>
@@ -924,9 +922,9 @@ export const HOME_HTML = String.raw`<!doctype html>
         </table>
       </div>
     </div>
+      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Run AUD/token efficiency.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
-      <p class="bench-note">Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
       <div class="voice-bench">
         <div class="voice-head">
           <strong>Current voice candidates</strong>
@@ -951,9 +949,9 @@ export const HOME_HTML = String.raw`<!doctype html>
           </table>
         </div>
       </div>
+      <p class="bench-note">Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="speech-to-text" hidden>
-      <p class="bench-note">Speech-to-text models are ranked from Artificial Analysis STT rows. Lower AA-WER is better; price is normalized to AUD per 1,000 minutes of audio.</p>
       <div class="voice-bench">
         <div class="voice-head">
           <strong>Current STT candidates</strong>
@@ -976,8 +974,10 @@ export const HOME_HTML = String.raw`<!doctype html>
           </table>
         </div>
       </div>
+      <p class="bench-note">Speech-to-text models are ranked from Artificial Analysis STT rows. Lower AA-WER is better; price is normalized to AUD per 1,000 minutes of audio.</p>
     </div>
   </div>
+  <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.</p>
   </section>
   </div>
 

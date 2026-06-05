@@ -4,6 +4,7 @@ import {
   normalizeArtificialAnalysisCatalog,
   parseFilters,
   recommendModel,
+  type BenchmarkCandidate,
   type Catalog,
 } from "../src/registry";
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
@@ -354,6 +355,167 @@ describe("Artificial Analysis catalog", () => {
 
     expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
       "safe-model",
+    );
+  });
+
+  it("excludes retired benchmark candidates for every use case", () => {
+    const commonCandidate = {
+      provider: "google",
+      name: "Safe Gemini",
+      source: "artificialanalysis",
+      pricing: {},
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    } satisfies Omit<BenchmarkCandidate, "id" | "benchmarks">;
+    const autoClose = {
+      source: "itsolver-autoclose",
+      modelKey: "google:safe",
+      apiModel: "safe",
+      displayName: "Safe Gemini",
+      benchmarkReport: "safe.md",
+      resultsFile: "safe.json",
+      generatedAt: "2026-05-22T00:00:00Z",
+      benchmarkCodeSha: "test",
+      total: 100,
+      correctCount: 90,
+      accuracy: 0.9,
+      falsePositiveCount: 1,
+      falseNegativeCount: 9,
+      invalidCount: 0,
+      errorCount: 0,
+      parseSuccessRate: 1,
+      avgLatencyMs: 1000,
+      p95LatencyMs: 1200,
+      avgInputTokens: 1000,
+      avgOutputTokens: 100,
+      weightedScore: 55,
+      sourceUrl: "https://example.test/safe",
+      verifiedOn: "2026-05-22",
+      availability: {
+        status: "production",
+        acceptedRisk: false,
+        reason: "test",
+      },
+    } as const;
+    const candidates: BenchmarkCandidate[] = [
+      {
+        ...commonCandidate,
+        id: "customer-safe",
+        pricing: { inputPerMTok: 1, outputPerMTok: 1 },
+        benchmarks: {
+          llm: {
+            instructionFollowing: 80,
+            intelligenceRunTotalCost: 100,
+            autoClose,
+          },
+        },
+      },
+      {
+        ...commonCandidate,
+        id: "google-gemini-2-0-flash-lite",
+        name: "Gemini 2.0 Flash Lite",
+        pricing: { inputPerMTok: 1, outputPerMTok: 1 },
+        benchmarks: {
+          llm: {
+            instructionFollowing: 100,
+            intelligenceRunTotalCost: 1,
+            autoClose,
+          },
+        },
+      },
+      {
+        ...commonCandidate,
+        id: "voice-safe",
+        pricing: { benchmarkInputAudioPerHour: 1, audioOutputPerHour: 1 },
+        benchmarks: {
+          voice: {
+            speechReasoning: 0.8,
+            agenticPerformance: 0.8,
+            timeToFirstAudioSeconds: 1,
+            source: "artificialanalysis",
+            extractedAt: "2026-05-22T00:00:00Z",
+          },
+        },
+      },
+      {
+        ...commonCandidate,
+        id: "google-gemini-2-0-flash",
+        name: "Gemini 2.0 Flash",
+        pricing: { benchmarkInputAudioPerHour: 1, audioOutputPerHour: 1 },
+        benchmarks: {
+          voice: {
+            speechReasoning: 1,
+            agenticPerformance: 1,
+            timeToFirstAudioSeconds: 0.1,
+            source: "artificialanalysis",
+            extractedAt: "2026-05-22T00:00:00Z",
+          },
+        },
+      },
+      {
+        ...commonCandidate,
+        id: "stt-safe",
+        pricing: { transcriptionCostPer1kMinutes: 1 },
+        benchmarks: {
+          speechToText: {
+            aaWer: 4,
+            source: "artificialanalysis",
+            extractedAt: "2026-05-22T00:00:00Z",
+          },
+        },
+      },
+      {
+        ...commonCandidate,
+        id: "google-gemini-2-0-flash-lite-stt",
+        name: "Gemini 2.0 Flash Lite",
+        pricing: { transcriptionCostPer1kMinutes: 0.1 },
+        benchmarks: {
+          speechToText: {
+            aaWer: 3,
+            source: "artificialanalysis",
+            extractedAt: "2026-05-22T00:00:00Z",
+          },
+        },
+      },
+    ];
+    const catalog: Catalog = {
+      generatedAt: "2026-05-22T00:00:00Z",
+      modelCount: candidates.length,
+      activeModelCount: candidates.length,
+      providers: [{ provider: "google", total: candidates.length, active: candidates.length }],
+      models: [],
+      benchmarkCandidates: candidates,
+    };
+
+    expect(
+      benchmarkCandidates(catalog, { useCase: "customer-support" }).map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(["customer-safe"]);
+    expect(
+      benchmarkCandidates(catalog, { useCase: "voice" }).map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(["voice-safe"]);
+    expect(
+      benchmarkCandidates(catalog, { useCase: "speech-to-text" }).map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(["stt-safe"]);
+    expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
+      "customer-safe",
+    );
+    expect(recommendModel(catalog, { useCase: "voice" })?.id).toBe("voice-safe");
+    expect(recommendModel(catalog, { useCase: "speech-to-text" })?.id).toBe(
+      "stt-safe",
     );
   });
 

@@ -746,6 +746,23 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             </div>
           </div>
         </div>
+        <div class="b-field" data-filter-scope="speech-to-text">
+          <label for="b-aawer-max-range">Max AA-WER</label>
+          <input type="hidden" id="b-maxaawer">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-aawer-label">Any AA-WER</strong>
+              <button type="button" id="b-aawer-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-aawer-max-range" min="0" max="20" step="0.1" value="20" aria-label="Maximum AA-WER">
+            </div>
+            <div class="price-filter-scale">
+              <span>0%</span>
+              <span>20%+</span>
+            </div>
+          </div>
+        </div>
         <div class="range-group" data-filter-scope="text">
         <div class="b-field" data-filter-scope="text">
           <label for="b-input-min-range">Input AUD/MTok range</label>
@@ -1097,6 +1114,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       transcriptionmaxrange: document.getElementById('b-transcription-max-range'),
       transcriptioncostlabel: document.getElementById('b-transcriptioncost-label'),
       transcriptioncostany: document.getElementById('b-transcriptioncost-any'),
+      maxaawer: document.getElementById('b-maxaawer'),
+      aawermaxrange: document.getElementById('b-aawer-max-range'),
+      aawerlabel: document.getElementById('b-aawer-label'),
+      aawerany: document.getElementById('b-aawer-any'),
       minctx: document.getElementById('b-minctx'),
       maxctx: document.getElementById('b-maxctx'),
       contextminrange: document.getElementById('b-context-min-range'),
@@ -1452,8 +1473,20 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function speechToTextBenchmarkModels(models) {
+      var maxTranscriptionCost = transcriptionCostCeiling();
+      var maxAaWer = aaWerCeiling();
       return models.filter(function (model) {
-        return model.recommendable !== false && model.benchmarks && model.benchmarks.speechToText;
+        var signals = model.benchmarks && model.benchmarks.speechToText;
+        if (model.recommendable === false || !signals) return false;
+        if (
+          maxTranscriptionCost !== undefined &&
+          (typeof sttCost(model) !== 'number' || sttCost(model) > maxTranscriptionCost)
+        ) return false;
+        if (
+          maxAaWer !== undefined &&
+          (typeof signals.aaWer !== 'number' || signals.aaWer > maxAaWer)
+        ) return false;
+        return true;
       });
     }
 
@@ -1719,12 +1752,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
     }
 
+    function formatAaWerCap(value, isMax, max) {
+      if (isMax && value >= max) return max.toLocaleString() + '%+';
+      return Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%';
+    }
+
     var inputCostRange;
     var outputCostRange;
     var contextRange;
     var runCostRange;
     var audioInputCostRange;
     var transcriptionCostRange;
+    var aaWerRange;
 
     function syncRunCostRange() {
       syncDualRange(inputCostRange);
@@ -1733,6 +1772,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       syncDualRange(runCostRange);
       syncMaxRange(audioInputCostRange);
       syncMaxRange(transcriptionCostRange);
+      syncMaxRange(aaWerRange);
     }
 
     function runCostFloor() {
@@ -1750,6 +1790,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     function intelligenceFloor() {
       if (!fields.minintelligence.value) return undefined;
       var value = Number(fields.minintelligence.value);
+      return Number.isFinite(value) ? value : undefined;
+    }
+
+    function transcriptionCostCeiling() {
+      if (!fields.maxtranscriptioncost.value) return undefined;
+      var value = Number(fields.maxtranscriptioncost.value);
+      return Number.isFinite(value) ? value : undefined;
+    }
+
+    function aaWerCeiling() {
+      if (!fields.maxaawer.value) return undefined;
+      var value = Number(fields.maxaawer.value);
       return Number.isFinite(value) ? value : undefined;
     }
 
@@ -2222,6 +2274,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);
       } else if (fields.usecase.value === 'speech-to-text') {
         if (fields.maxtranscriptioncost.value) params.set('maxTranscriptionCostPer1kMinutes', fields.maxtranscriptioncost.value);
+        if (fields.maxaawer.value) params.set('maxAaWer', fields.maxaawer.value);
       } else {
         if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
@@ -2345,15 +2398,26 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       anyLabel: 'Any STT AUD/1k min',
       format: formatTranscriptionCostCap
     };
+    aaWerRange = {
+      min: 0,
+      max: 20,
+      maxRange: fields.aawermaxrange,
+      hiddenMax: fields.maxaawer,
+      label: fields.aawerlabel,
+      anyLabel: 'Any AA-WER',
+      format: formatAaWerCap
+    };
     fields.inputcostany.addEventListener('click', function () { resetDualRange(inputCostRange); });
     fields.outputcostany.addEventListener('click', function () { resetDualRange(outputCostRange); });
     fields.contextany.addEventListener('click', function () { resetDualRange(contextRange); });
     fields.runcostany.addEventListener('click', function () { resetDualRange(runCostRange); });
     fields.audioinputcostany.addEventListener('click', function () { resetMaxRange(audioInputCostRange); });
     fields.transcriptioncostany.addEventListener('click', function () { resetMaxRange(transcriptionCostRange); });
+    fields.aawerany.addEventListener('click', function () { resetMaxRange(aaWerRange); });
     [inputCostRange, outputCostRange, contextRange, runCostRange].forEach(installDualRangePointer);
     installMaxRangePointer(audioInputCostRange);
     installMaxRangePointer(transcriptionCostRange);
+    installMaxRangePointer(aaWerRange);
 
     fields.copy.addEventListener('click', function () {
       navigator.clipboard.writeText(fields.code.textContent).then(function () {

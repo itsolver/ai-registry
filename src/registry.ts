@@ -253,6 +253,7 @@ export interface ModelFilters {
   maxAudioInputCostPerHour?: number;
   maxAudioOutputCostPerHour?: number;
   maxTranscriptionCostPer1kMinutes?: number;
+  maxAaWer?: number;
   minContextWindow?: number;
   maxContextWindow?: number;
   includeDeprecated?: boolean;
@@ -502,6 +503,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
   const maxTranscriptionCostPer1kMinutes = asFiniteNumber(
     params.get("maxTranscriptionCostPer1kMinutes"),
   );
+  const maxAaWer = asFiniteNumber(params.get("maxAaWer"));
   const minContextWindow = asFiniteNumber(params.get("minContextWindow"));
   const maxContextWindow = asFiniteNumber(params.get("maxContextWindow"));
 
@@ -529,6 +531,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(maxTranscriptionCostPer1kMinutes !== undefined
       ? { maxTranscriptionCostPer1kMinutes }
       : {}),
+    ...(maxAaWer !== undefined ? { maxAaWer } : {}),
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     ...(maxContextWindow !== undefined ? { maxContextWindow } : {}),
     includeDeprecated: params.get("includeDeprecated") === "true",
@@ -652,6 +655,13 @@ export function filterModels(
       filters.maxTranscriptionCostPer1kMinutes !== undefined &&
       (transcriptionCost(model) === undefined ||
         transcriptionCost(model)! > filters.maxTranscriptionCostPer1kMinutes)
+    ) {
+      return false;
+    }
+    if (
+      filters.maxAaWer !== undefined &&
+      (model.benchmarks?.speechToText?.aaWer === undefined ||
+        model.benchmarks.speechToText.aaWer > filters.maxAaWer)
     ) {
       return false;
     }
@@ -853,6 +863,13 @@ function passesCostFilters(
     (candidateTranscriptionCost(candidate) === undefined ||
       candidateTranscriptionCost(candidate)! >
         filters.maxTranscriptionCostPer1kMinutes)
+  ) {
+    return false;
+  }
+  if (
+    filters.maxAaWer !== undefined &&
+    (candidate.benchmarks.speechToText?.aaWer === undefined ||
+      candidate.benchmarks.speechToText.aaWer > filters.maxAaWer)
   ) {
     return false;
   }

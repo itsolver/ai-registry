@@ -412,6 +412,28 @@ describe("worker routes", () => {
     ).toBe(false);
   });
 
+  it("hard-filters speech-to-text rows by AA-WER", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text&maxAaWer=3",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(
+      body.benchmarks.every(
+        (row: { benchmarks: { speechToText?: { aaWer?: number } } }) =>
+          (row.benchmarks.speechToText?.aaWer ?? Number.POSITIVE_INFINITY) <= 3,
+      ),
+    ).toBe(true);
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
+      "groq-whisper-large-v3-turbo",
+    );
+  });
+
   it("serves speech-to-text browse rows", async () => {
     const response = await handleRequest(
       new Request("https://ai.itsolver.au/v1/models?useCase=speech-to-text"),
@@ -478,6 +500,18 @@ describe("worker routes", () => {
         transcriptionCostPer1kMinutes: 1.005,
       }),
     });
+
+    const cappedGroqResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=groq&maxAaWer=3",
+      ),
+      env(),
+      ctx,
+    );
+    const cappedGroqBody = (await cappedGroqResponse.json()) as JsonObject;
+
+    expect(cappedGroqResponse.status).toBe(404);
+    expect(cappedGroqBody.error).toBe("not_found");
   });
 
   it("mirrors unprefixed model endpoints", async () => {

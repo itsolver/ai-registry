@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `maxAaWer` filtering and a homepage AA-WER ceiling slider for speech-to-text models.
 - Added Artificial Analysis-backed speech-to-text recommendations, filtering, and homepage benchmark table.
 - Added Groq as a speech-to-text provider candidate.
 - Added a checked-in Artificial Analysis speech-to-text table extract and refresh command.

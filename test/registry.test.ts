@@ -58,11 +58,14 @@ describe("filter parsing", () => {
     });
     expect(
       parseFilters(
-        new URLSearchParams("provider=groq&maxTranscriptionCostPer1kMinutes=5"),
+        new URLSearchParams(
+          "provider=groq&maxTranscriptionCostPer1kMinutes=5&maxAaWer=3",
+        ),
       ),
     ).toMatchObject({
       provider: "groq",
       maxTranscriptionCostPer1kMinutes: 5,
+      maxAaWer: 3,
     });
     expect(parseFilters(new URLSearchParams("provider=deepgram"))).toMatchObject({
       unsupportedProvider: true,
@@ -576,6 +579,26 @@ describe("Artificial Analysis catalog", () => {
       id: "groq-whisper-large-v3-turbo",
       provider: "groq",
     });
+    const cappedRows = benchmarkCandidates(catalog, {
+      useCase: "speech-to-text",
+      maxAaWer: 3,
+    });
+    expect(
+      cappedRows.every(
+        (row) =>
+          (row.benchmarks.speechToText?.aaWer ?? Number.POSITIVE_INFINITY) <= 3,
+      ),
+    ).toBe(true);
+    expect(cappedRows.map((row) => row.id)).not.toContain(
+      "groq-whisper-large-v3-turbo",
+    );
+    expect(
+      recommendModel(catalog, {
+        useCase: "speech-to-text",
+        provider: "groq",
+        maxAaWer: 3,
+      }),
+    ).toBeUndefined();
   });
 
   it("applies cost caps before use-case scoring", () => {

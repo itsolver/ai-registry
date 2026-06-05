@@ -50,6 +50,7 @@ minIntelligence=30                  # min AA Intelligence Index for benchmark-ba
 maxAudioInputCostPerHour=5          # max voice input/cost-to-run AUD per hour
 maxAudioOutputCostPerHour=5         # max voice output AUD per hour
 maxTranscriptionCostPer1kMinutes=5  # max speech-to-text AUD per 1,000 minutes
+maxAaWer=3                          # max speech-to-text AA-WER error rate
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
 useCase=customer-support|voice|speech-to-text  # stt is accepted as an alias

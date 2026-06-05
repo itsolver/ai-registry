@@ -19,17 +19,31 @@ export const HOME_HTML = String.raw`<!doctype html>
     * { box-sizing: border-box; }
     body {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      margin: 2rem auto;
-      padding: 1.5rem clamp(1rem, 2vw, 3rem);
+      margin: 0 auto;
+      padding: 0.75rem clamp(1rem, 2vw, 3rem) 1.5rem;
       line-height: 1.65;
       color: var(--ink);
       background: var(--paper);
     }
+    .site-header {
+      display: flex;
+      max-height: 100px;
+      min-height: 64px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+      padding: 0.25rem 0 0.55rem;
+    }
+    .brandline {
+      min-width: 0;
+    }
     h1 {
-      font-size: 2.35rem;
+      font-size: 1.8rem;
       line-height: 1.1;
-      letter-spacing: -0.01em;
-      margin: 0 0 0.5rem;
+      letter-spacing: 0;
+      margin: 0;
     }
     h1 .blink { color: var(--accent); }
     h2 {
@@ -65,34 +79,36 @@ export const HOME_HTML = String.raw`<!doctype html>
       font: inherit;
     }
     .tagline {
-      font-size: 1.12rem;
+      max-width: min(72vw, 950px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.82rem;
       color: var(--muted);
-      margin: 0 0 2rem;
+      margin: 0.15rem 0 0;
     }
-    .stats {
+    .header-stats {
       display: flex;
-      gap: 1rem;
-      flex-wrap: wrap;
-      margin: 1.2rem 0 2rem;
+      flex-shrink: 0;
+      gap: 0.5rem;
     }
     .stat {
-      flex: 1;
-      min-width: 130px;
+      min-width: 92px;
       background: var(--soft);
-      padding: 0.7rem 1rem;
-      border-radius: 8px;
+      padding: 0.4rem 0.6rem;
+      border-radius: 6px;
       border: 1px solid transparent;
     }
     .stat strong {
       display: block;
-      font-size: 1.45rem;
+      font-size: 1.05rem;
       line-height: 1.2;
       color: var(--accent);
       font-variant-numeric: tabular-nums;
     }
     .stat span {
       display: block;
-      font-size: 0.72rem;
+      font-size: 0.55rem;
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -148,7 +164,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       display: grid;
       gap: 1.4rem;
       align-items: start;
-      margin: 1.5rem 0 2.2rem;
+      margin: 0.9rem 0 2.2rem;
     }
     .query-sidebar,
     .benchmark-column {
@@ -587,6 +603,12 @@ export const HOME_HTML = String.raw`<!doctype html>
         padding: 0.85rem;
         font-size: 0.72rem;
       }
+      .header-stats {
+        gap: 0.35rem;
+      }
+      .stat {
+        min-width: 78px;
+      }
       .benchmark-column .benchmark-panels,
       .benchmark-column .voice-bench {
         margin-bottom: 0;
@@ -598,10 +620,28 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
     }
     @media (max-width: 600px) {
-      body { margin: 1.5rem auto; padding: 1rem; }
-      h1 { font-size: 1.85rem; }
-      .tagline { font-size: 1.02rem; }
-      .query-benchmark-layout { gap: 1rem; }
+      body { padding: 0.4rem 1rem 1rem; }
+      .site-header {
+        min-height: 72px;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.35rem;
+        padding-bottom: 0.55rem;
+      }
+      h1 { font-size: 1.45rem; }
+      .tagline { display: none; }
+      .header-stats {
+        display: grid;
+        width: 100%;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .stat {
+        min-width: 0;
+        padding: 0.25rem 0.45rem;
+      }
+      .stat strong { font-size: 0.95rem; }
+      .stat span { font-size: 0.48rem; }
+      .query-benchmark-layout { gap: 1rem; margin-top: 0.4rem; }
       .builder-controls { grid-template-columns: 1fr; }
       .range-group { grid-template-columns: 1fr; }
       .builder-url { flex-wrap: wrap; }
@@ -613,39 +653,17 @@ export const HOME_HTML = String.raw`<!doctype html>
   </style>
 </head>
 <body>
-  <h1>ai<span class="blink">.</span>itsolver<span class="blink">.</span>au</h1>
-  <p class="tagline">A public API that tells IT Solver projects which AI model to actually use, so model names stop getting hardcoded across repos.</p>
-
-  <h2>The Problem</h2>
-  <p>OpenAI ships a new model. Google ships a new model. Anthropic ships a new model. Your <code>config.ts</code> goes stale by lunchtime. You update it in fourteen places. You miss two.</p>
-  <p>This API is the public source of truth.</p>
-
-  <div class="stats">
-    <div class="stat"><strong id="modelCount">-</strong><span>models tracked</span></div>
-    <div class="stat"><strong id="activeCount">-</strong><span>active right now</span></div>
-    <div class="stat"><strong id="providerCount">-</strong><span>providers</span></div>
-  </div>
-
-  <h2>Quick Start</h2>
-  <div class="code-tabs" data-tabs>
-    <div class="tab-bar">
-      <button class="tab active" type="button" data-tab="curl">curl</button>
-      <button class="tab" type="button" data-tab="js">javascript</button>
-      <button class="tab" type="button" data-tab="python">python</button>
+  <header class="site-header">
+    <div class="brandline">
+      <h1>ai<span class="blink">.</span>itsolver<span class="blink">.</span>au</h1>
+      <p class="tagline">Current model recommendations with live pricing, availability, and benchmark filters.</p>
     </div>
-    <div class="tab-panel pre-wrap" data-panel="curl"><pre><code>curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"</code></pre></div>
-    <div class="tab-panel pre-wrap" data-panel="js" hidden><pre><code>const res = await fetch('https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast');
-const { recommendation } = await res.json();
-console.log(recommendation.id);</code></pre></div>
-    <div class="tab-panel pre-wrap" data-panel="python" hidden><pre><code>import requests
-
-r = requests.get(
-    'https://ai.itsolver.au/v1/models/recommend',
-    params={'useCase': 'customer-support', 'tier': 'fast'}
-)
-print(r.json()['recommendation']['id'])</code></pre></div>
-  </div>
-  <p>Returns a benchmark-backed fast model for customer support. Cache it locally and keep a fallback in production clients.</p>
+    <div class="header-stats" aria-label="Registry summary">
+      <div class="stat"><strong id="modelCount">-</strong><span>models</span></div>
+      <div class="stat"><strong id="activeCount">-</strong><span>active</span></div>
+      <div class="stat"><strong id="providerCount">-</strong><span>providers</span></div>
+    </div>
+  </header>
 
   <div class="query-benchmark-layout">
   <aside class="query-sidebar" aria-labelledby="builderTitle">

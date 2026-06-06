@@ -19,18 +19,31 @@ export const HOME_HTML = String.raw`<!doctype html>
     * { box-sizing: border-box; }
     body {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      max-width: 912px;
-      margin: 3rem auto;
-      padding: 1.5rem;
+      margin: 0 auto;
+      padding: 0.75rem clamp(1rem, 2vw, 3rem) 1.5rem;
       line-height: 1.65;
       color: var(--ink);
       background: var(--paper);
     }
+    .site-header {
+      display: flex;
+      max-height: 100px;
+      min-height: 64px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+      padding: 0.25rem 0 0.55rem;
+    }
+    .brandline {
+      min-width: 0;
+    }
     h1 {
-      font-size: 2.35rem;
+      font-size: 1.8rem;
       line-height: 1.1;
-      letter-spacing: -0.01em;
-      margin: 0 0 0.5rem;
+      letter-spacing: 0;
+      margin: 0;
     }
     h1 .blink { color: var(--accent); }
     h2 {
@@ -66,34 +79,36 @@ export const HOME_HTML = String.raw`<!doctype html>
       font: inherit;
     }
     .tagline {
-      font-size: 1.12rem;
+      max-width: min(72vw, 950px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.82rem;
       color: var(--muted);
-      margin: 0 0 2rem;
+      margin: 0.15rem 0 0;
     }
-    .stats {
+    .header-stats {
       display: flex;
-      gap: 1rem;
-      flex-wrap: wrap;
-      margin: 1.2rem 0 2rem;
+      flex-shrink: 0;
+      gap: 0.5rem;
     }
     .stat {
-      flex: 1;
-      min-width: 130px;
+      min-width: 92px;
       background: var(--soft);
-      padding: 0.7rem 1rem;
-      border-radius: 8px;
+      padding: 0.4rem 0.6rem;
+      border-radius: 6px;
       border: 1px solid transparent;
     }
     .stat strong {
       display: block;
-      font-size: 1.45rem;
+      font-size: 1.05rem;
       line-height: 1.2;
       color: var(--accent);
       font-variant-numeric: tabular-nums;
     }
     .stat span {
       display: block;
-      font-size: 0.72rem;
+      font-size: 0.55rem;
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -145,6 +160,20 @@ export const HOME_HTML = String.raw`<!doctype html>
       cursor: pointer;
     }
     .copy-btn.done { color: #8bc34a; }
+    .query-benchmark-layout {
+      display: grid;
+      gap: 1.4rem;
+      align-items: start;
+      margin: 0.9rem 0 2.2rem;
+    }
+    .query-sidebar,
+    .benchmark-column {
+      min-width: 0;
+    }
+    .query-sidebar h2,
+    .benchmark-column h2 {
+      margin-top: 0;
+    }
     .builder {
       margin: 1.5rem 0;
       overflow: hidden;
@@ -156,15 +185,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       padding: 1.2rem 1.3rem 1.25rem;
       background: linear-gradient(180deg, #f7f4ec 0%, #f3eee4 100%);
     }
-    .builder-intro {
-      display: flex;
-      gap: 0.45rem;
-      align-items: center;
-      margin: 0 0 1.05rem;
-      color: var(--muted);
-      font-size: 0.84rem;
-    }
-    .builder-intro::before { content: '*'; color: var(--accent); font-weight: 700; }
     .builder-controls {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -476,10 +496,10 @@ export const HOME_HTML = String.raw`<!doctype html>
     .bench-note {
       color: var(--muted);
       font-size: 0.78rem;
-      margin-top: -0.7rem;
+      margin: 0.85rem 0 0;
     }
     .benchmark-panels {
-      margin-bottom: 2.2rem;
+      margin: 1.5rem 0 0;
     }
     .benchmark-panel[hidden] {
       display: none;
@@ -524,10 +544,176 @@ export const HOME_HTML = String.raw`<!doctype html>
       font-size: 0.75rem;
       line-height: 1.8;
     }
+    @media (min-width: 1024px) {
+      .query-benchmark-layout {
+        grid-template-columns: minmax(420px, 460px) minmax(0, 1fr);
+        gap: clamp(0.9rem, 1.6vw, 1.6rem);
+      }
+      .query-sidebar {
+        position: sticky;
+        top: 0.65rem;
+        max-height: calc(100vh - 1.3rem);
+        overflow-y: auto;
+        padding-right: 0.1rem;
+      }
+      .query-sidebar h2,
+      .benchmark-column h2 {
+        margin-bottom: 0.55rem;
+        font-size: 1rem;
+        line-height: 1.1;
+      }
+      .query-sidebar .builder {
+        margin: 0;
+      }
+      .query-sidebar .builder-form {
+        padding: 0.7rem;
+      }
+      .query-sidebar .builder-controls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.48rem 0.55rem;
+      }
+      .query-sidebar .range-group {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.48rem 0.55rem;
+      }
+      .query-sidebar .range-group {
+        grid-column: 1 / -1;
+      }
+      .query-sidebar .range-group .b-field:last-child,
+      .query-sidebar .range-field {
+        grid-column: 1 / -1;
+      }
+      .query-sidebar .b-field {
+        gap: 0.16rem;
+      }
+      .query-sidebar .b-field label {
+        font-size: 0.54rem;
+        line-height: 1.1;
+      }
+      .query-sidebar .b-field select,
+      .query-sidebar .b-field input {
+        min-height: 30px;
+        padding: 0.32rem 0.45rem;
+        font-size: 0.76rem;
+      }
+      .query-sidebar .check-row {
+        min-height: 30px;
+        gap: 0.35rem;
+        font-size: 0.7rem;
+      }
+      .query-sidebar .check-row input {
+        width: 14px;
+        min-height: 14px;
+      }
+      .query-sidebar .price-filter-card,
+      .query-sidebar .compact-filter {
+        padding: 0.38rem 0.45rem 0.32rem;
+        border-radius: 6px;
+      }
+      .query-sidebar .price-filter-top,
+      .query-sidebar .price-filter-scale {
+        gap: 0.4rem;
+      }
+      .query-sidebar .price-filter-top strong,
+      .query-sidebar .compact-filter .price-filter-top strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.68rem;
+      }
+      .query-sidebar .price-filter-top button {
+        flex-shrink: 0;
+        padding: 0.08rem 0.38rem;
+        font-size: 0.62rem;
+      }
+      .query-sidebar .range-stack {
+        min-height: 20px;
+        margin: 0.22rem 0 0.12rem;
+        background-size: 100% 3px;
+      }
+      .query-sidebar .price-filter-card input[type="range"] {
+        min-height: 20px;
+      }
+      .query-sidebar .price-filter-scale {
+        font-size: 0.56rem;
+        line-height: 1.2;
+      }
+      .query-sidebar .builder-url {
+        flex-wrap: wrap;
+      }
+      .query-sidebar .builder-method {
+        padding: 0.42rem 0 0.36rem 0.65rem;
+        font-size: 0.68rem;
+      }
+      .query-sidebar .builder-url-text {
+        width: 100%;
+        padding: 0.38rem 0.55rem 0.4rem 0.65rem;
+      }
+      .query-sidebar .builder-url-text a {
+        font-size: 0.64rem;
+      }
+      .query-sidebar .builder-actions {
+        width: 100%;
+        justify-content: flex-end;
+        padding: 0 0.45rem 0.38rem;
+      }
+      .query-sidebar .builder-action {
+        min-height: 24px;
+        padding: 0.2rem 0.48rem;
+        font-size: 0.62rem;
+      }
+      .query-sidebar pre {
+        padding: 0.52rem 0.65rem;
+        font-size: 0.6rem;
+        line-height: 1.35;
+      }
+      .query-sidebar .pre-wrap .copy-btn {
+        display: none;
+      }
+      .query-sidebar .builder-result {
+        gap: 0.35rem;
+        padding: 0.42rem 0.65rem;
+        font-size: 0.66rem;
+      }
+      .header-stats {
+        gap: 0.35rem;
+      }
+      .stat {
+        min-width: 78px;
+      }
+      .benchmark-column .benchmark-panels,
+      .benchmark-column .voice-bench {
+        margin-bottom: 0;
+      }
+    }
+    @media (max-width: 1023px) {
+      .query-sidebar .builder {
+        margin-top: 0;
+      }
+    }
     @media (max-width: 600px) {
-      body { margin: 1.5rem auto; padding: 1rem; }
-      h1 { font-size: 1.85rem; }
-      .tagline { font-size: 1.02rem; }
+      body { padding: 0.4rem 1rem 1rem; }
+      .site-header {
+        min-height: 72px;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.35rem;
+        padding-bottom: 0.55rem;
+      }
+      h1 { font-size: 1.45rem; }
+      .tagline { display: none; }
+      .header-stats {
+        display: grid;
+        width: 100%;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .stat {
+        min-width: 0;
+        padding: 0.25rem 0.45rem;
+      }
+      .stat strong { font-size: 0.95rem; }
+      .stat span { font-size: 0.48rem; }
+      .query-benchmark-layout { gap: 1rem; margin-top: 0.4rem; }
       .builder-controls { grid-template-columns: 1fr; }
       .range-group { grid-template-columns: 1fr; }
       .builder-url { flex-wrap: wrap; }
@@ -539,44 +725,23 @@ export const HOME_HTML = String.raw`<!doctype html>
   </style>
 </head>
 <body>
-  <h1>ai<span class="blink">.</span>itsolver<span class="blink">.</span>au</h1>
-  <p class="tagline">A public API that tells IT Solver projects which AI model to actually use, so model names stop getting hardcoded across repos.</p>
-
-  <h2>The Problem</h2>
-  <p>OpenAI ships a new model. Google ships a new model. Anthropic ships a new model. Your <code>config.ts</code> goes stale by lunchtime. You update it in fourteen places. You miss two.</p>
-  <p>This API is the public source of truth.</p>
-
-  <div class="stats">
-    <div class="stat"><strong id="modelCount">-</strong><span>models tracked</span></div>
-    <div class="stat"><strong id="activeCount">-</strong><span>active right now</span></div>
-    <div class="stat"><strong id="providerCount">-</strong><span>providers</span></div>
-  </div>
-
-  <h2>Quick Start</h2>
-  <div class="code-tabs" data-tabs>
-    <div class="tab-bar">
-      <button class="tab active" type="button" data-tab="curl">curl</button>
-      <button class="tab" type="button" data-tab="js">javascript</button>
-      <button class="tab" type="button" data-tab="python">python</button>
+  <header class="site-header">
+    <div class="brandline">
+      <h1>ai<span class="blink">.</span>itsolver<span class="blink">.</span>au</h1>
+      <p class="tagline">Current model recommendations with live pricing, availability, and benchmark filters.</p>
     </div>
-    <div class="tab-panel pre-wrap" data-panel="curl"><pre><code>curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"</code></pre></div>
-    <div class="tab-panel pre-wrap" data-panel="js" hidden><pre><code>const res = await fetch('https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast');
-const { recommendation } = await res.json();
-console.log(recommendation.id);</code></pre></div>
-    <div class="tab-panel pre-wrap" data-panel="python" hidden><pre><code>import requests
+    <div class="header-stats" aria-label="Registry summary">
+      <div class="stat"><strong id="modelCount">-</strong><span>models</span></div>
+      <div class="stat"><strong id="activeCount">-</strong><span>active</span></div>
+      <div class="stat"><strong id="providerCount">-</strong><span>providers</span></div>
+    </div>
+  </header>
 
-r = requests.get(
-    'https://ai.itsolver.au/v1/models/recommend',
-    params={'useCase': 'customer-support', 'tier': 'fast'}
-)
-print(r.json()['recommendation']['id'])</code></pre></div>
-  </div>
-  <p>Returns a benchmark-backed fast model for customer support. Cache it locally and keep a fallback in production clients.</p>
-
-  <h2>Build Your Query</h2>
+  <div class="query-benchmark-layout">
+  <aside class="query-sidebar" aria-labelledby="builderTitle">
+  <h2 id="builderTitle">Build Your Query</h2>
   <div class="builder">
     <div class="builder-form">
-      <p class="builder-intro">Tell the registry what you need. It builds the URL and previews the current answer.</p>
       <div class="builder-controls">
         <div class="b-field">
           <label for="b-endpoint">I want to</label>
@@ -590,14 +755,15 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           <select id="b-usecase">
             <option value="customer-support" selected>customer support</option>
             <option value="voice">voice</option>
+            <option value="speech-to-text">speech to text</option>
           </select>
         </div>
         <div class="b-field">
           <label for="b-tier">Recommendation priority</label>
           <select id="b-tier">
-            <option value="" selected>balanced</option>
-            <option value="fast">lower Run AUD</option>
-            <option value="best">highest score</option>
+            <option value="">balanced trade-off</option>
+            <option value="fast" selected>fast and cheap</option>
+            <option value="best">highest safety</option>
           </select>
         </div>
         <div class="b-field">
@@ -608,9 +774,12 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             <option value="google">google</option>
             <option value="xai">xai</option>
             <option value="anthropic">anthropic</option>
+            <option value="nvidia">nvidia</option>
+            <option value="elevenlabs">elevenlabs</option>
+            <option value="groq">groq</option>
           </select>
         </div>
-        <div class="b-field">
+        <div class="b-field" data-filter-scope="text">
           <label for="b-capability">Must have</label>
           <select id="b-capability">
             <option value="">any capability</option>
@@ -648,6 +817,40 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudiooutputcost">Max output audio AUD/hr</label>
           <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="voice only">
+        </div>
+        <div class="b-field" data-filter-scope="speech-to-text">
+          <label for="b-transcription-max-range">Max STT AUD/1k min</label>
+          <input type="hidden" id="b-maxtranscriptioncost">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-transcriptioncost-label">Any STT AUD/1k min</strong>
+              <button type="button" id="b-transcriptioncost-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-transcription-max-range" min="0" max="20" step="0.1" value="10" aria-label="Maximum speech to text AUD per 1000 minutes">
+            </div>
+            <div class="price-filter-scale">
+              <span>$0</span>
+              <span>$20+</span>
+            </div>
+          </div>
+        </div>
+        <div class="b-field" data-filter-scope="speech-to-text">
+          <label for="b-aawer-max-range">Max AA-WER</label>
+          <input type="hidden" id="b-maxaawer">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-aawer-label">Any AA-WER</strong>
+              <button type="button" id="b-aawer-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-aawer-max-range" min="0" max="20" step="0.1" value="4.6" aria-label="Maximum AA-WER">
+            </div>
+            <div class="price-filter-scale">
+              <span>0%</span>
+              <span>20%+</span>
+            </div>
+          </div>
         </div>
         <div class="range-group" data-filter-scope="text">
         <div class="b-field" data-filter-scope="text">
@@ -719,13 +922,17 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             </div>
             <div class="range-stack">
               <input type="range" id="b-run-min-range" min="0" max="8000" step="50" value="0" aria-label="Minimum Run AUD">
-              <input type="range" id="b-run-max-range" min="0" max="8000" step="50" value="8000" aria-label="Maximum Run AUD">
+              <input type="range" id="b-run-max-range" min="0" max="8000" step="50" value="1300" aria-label="Maximum Run AUD">
             </div>
             <div class="price-filter-scale">
               <span>$0</span>
               <span>$8,000+</span>
             </div>
           </div>
+        </div>
+        <div class="b-field" data-filter-scope="text">
+          <label for="b-minintelligence">Min intelligence</label>
+          <input type="number" id="b-minintelligence" min="0" max="100" step="1" value="30">
         </div>
       </div>
     </div>
@@ -747,11 +954,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     </div>
   </div>
 
+  </aside>
+  <section class="benchmark-column" aria-labelledby="benchmarkTitle">
   <h2 id="benchmarkTitle">Customer Support Benchmark</h2>
-  <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.</p>
   <div class="benchmark-panels">
     <div class="benchmark-panel" data-benchmark-panel="customer-support" hidden>
-      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Run AUD/token efficiency.</p>
       <div class="voice-bench">
       <div class="voice-head">
         <strong>Customer support</strong>
@@ -773,6 +980,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
               <th data-table="supportRows" data-sort="accuracy">ITS Acc</th>
               <th data-table="supportRows" data-sort="ifbench">IFBench</th>
               <th data-table="supportRows" data-sort="agentic">Agentic</th>
+              <th data-table="supportRows" data-sort="benchTelecom">Bench Telecom</th>
               <th data-table="supportRows" data-sort="intelligence">Intel</th>
               <th data-table="supportRows" data-sort="outputCost">Output AUD/MTok</th>
               <th data-table="supportRows" data-sort="runCost">Run AUD</th>
@@ -780,14 +988,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             </tr>
           </thead>
           <tbody id="supportRows">
-            <tr><td class="empty" colspan="10">loading...</td></tr>
+            <tr><td class="empty" colspan="11">loading...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
+      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Run AUD/token efficiency.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
-      <p class="bench-note">Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
       <div class="voice-bench">
         <div class="voice-head">
           <strong>Current voice candidates</strong>
@@ -812,36 +1020,69 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           </table>
         </div>
       </div>
+      <p class="bench-note">Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
     </div>
+    <div class="benchmark-panel" data-benchmark-panel="speech-to-text" hidden>
+      <div class="voice-bench">
+        <div class="voice-head">
+          <strong>Current STT candidates</strong>
+          <span id="sttSource">loading...</span>
+        </div>
+        <div class="voice-table-wrap">
+          <table class="voice-table">
+            <thead>
+              <tr>
+                <th data-table="sttRows" data-sort="model">Model</th>
+                <th data-table="sttRows" data-sort="host">Provider/Host</th>
+                <th data-table="sttRows" data-sort="wer">AA-WER</th>
+                <th data-table="sttRows" data-sort="speed">Speed</th>
+                <th data-table="sttRows" data-sort="cost">AUD/1k min</th>
+              </tr>
+            </thead>
+            <tbody id="sttRows">
+              <tr><td class="empty" colspan="5">loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="bench-note">Speech-to-text models are ranked from Artificial Analysis STT rows. Lower AA-WER is better; price is normalized to AUD per 1,000 minutes of audio.</p>
+    </div>
+  </div>
+  <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.</p>
+  </section>
   </div>
 
   <div class="definitions" aria-labelledby="definitionsTitle">
     <h3 id="definitionsTitle">Definitions</h3>
     <dl>
       <dt>any tier</dt>
-      <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is balanced.</dd>
+      <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, only affects tie-breaks after false positives and accuracy. For voice, prefers lower latency and lower audio cost.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then safety tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>The default. Customer support uses auto-close benchmark safety first, then accuracy, then Run AUD/token efficiency.</dd>
+      <dd>Customer support picks the middle filtered candidate after highest-safety ordering. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>Favors stronger benchmark scores only after customer-support safety and accuracy are tied.</dd>
+      <dd>For customer support, highest safety prioritizes ITS false positives, then ITS accuracy. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
       <dt>cost caps</dt>
       <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
       <dt>AUD/MTok</dt>
       <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
       <dt>voice AUD/hr</dt>
       <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
+      <dt>STT AUD/1k min</dt>
+      <dd>Australian dollars per 1,000 minutes of speech-to-text audio, converted from Artificial Analysis provider pricing where available.</dd>
       <dt>benchmark table</dt>
-      <dd>The live recommendation for customer support or voice must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
+      <dd>The live recommendation for customer support, voice, or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
       <dt>IT Solver auto-close benchmark</dt>
       <dd>Our reopened-ticket classifier replay. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
       <dt>false positives / accuracy</dt>
       <dd>False positives are unresolved tickets predicted as resolved. Accuracy is overall classifier correctness on the auto-close replay set.</dd>
       <dt>ITS columns</dt>
       <dd><code>ITS</code> marks IT Solver auto-close benchmark fields. <code>ITS FP</code>, <code>ITS Acc</code>, and <code>ITS Notes</code> come from our Zendesk ticket-classification replay, not Artificial Analysis.</dd>
-      <dt>IFBench / Agentic / τ-Voice / TTFA</dt>
-      <dd>IFBench measures instruction following, Agentic measures multi-step task performance, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
+      <dt>IFBench / Agentic / Bench Telecom / τ-Voice / TTFA</dt>
+      <dd>IFBench measures instruction following, Agentic measures multi-step task performance, Bench Telecom is the AA τ2 telecom benchmark, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
+      <dt>AA-WER / Speed</dt>
+      <dd>AA-WER is Artificial Analysis word error rate for STT, where lower is better. Speed is input audio seconds transcribed per processing second.</dd>
     </dl>
   </div>
 
@@ -863,7 +1104,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
-    <p>The opinionated endpoint. Apply filters and get one customer support or voice-appropriate model back.</p>
+    <p>The opinionated endpoint. Apply filters and get one primary model plus benchmarked customer-support failovers when available.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/providers</code>
@@ -894,6 +1135,19 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       "outputPerMTok": 21.0405
     },
     "recommendable": true
+  },
+  "failovers": [
+    {
+      "id": "grok-4-3",
+      "provider": "xai",
+      "name": "Grok 4.3 (high)",
+      "recommendable": true
+    }
+  ],
+  "failoverStatus": {
+    "requested": 2,
+    "returned": 1,
+    "reason": "insufficient_its_autoclose_benchmarks"
   }
 }</code></pre></div>
 
@@ -906,11 +1160,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
   <h2>Caveats</h2>
   <ul>
     <li>This public endpoint is maintained for IT Solver projects and shared as-is.</li>
-    <li>Only OpenAI, Google, xAI, and Anthropic are exposed.</li>
+    <li>OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq are exposed.</li>
     <li>Each model includes AUD pricing converted from USD with the current cached Frankfurter exchange rate.</li>
-    <li>Use-case recommendations require real token or audio pricing before a row can be recommended.</li>
-    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice recommendations use the relevant Artificial Analysis benchmark-backed candidate set.</li>
-    <li>Always code a local fallback in client apps.</li>
+    <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
+    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
+    <li>For customer support, try <code>recommendation</code> first, then <code>failovers[0]</code>, then <code>failovers[1]</code> when a provider or model is overloaded.</li>
   </ul>
 
   <p class="footnote">Last data refresh: <span id="generatedAt">checking...</span><br>Pricing shown as: <span id="pricingContext">checking...</span></p>
@@ -945,6 +1199,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       outputcostany: document.getElementById('b-outputcost-any'),
       minruncost: document.getElementById('b-minruncost'),
       maxruncost: document.getElementById('b-maxruncost'),
+      minintelligence: document.getElementById('b-minintelligence'),
       runminrange: document.getElementById('b-run-min-range'),
       runmaxrange: document.getElementById('b-run-max-range'),
       runcostlabel: document.getElementById('b-runcost-label'),
@@ -954,6 +1209,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       audioinputcostlabel: document.getElementById('b-audioinputcost-label'),
       audioinputcostany: document.getElementById('b-audioinputcost-any'),
       maxaudiooutputcost: document.getElementById('b-maxaudiooutputcost'),
+      maxtranscriptioncost: document.getElementById('b-maxtranscriptioncost'),
+      transcriptionmaxrange: document.getElementById('b-transcription-max-range'),
+      transcriptioncostlabel: document.getElementById('b-transcriptioncost-label'),
+      transcriptioncostany: document.getElementById('b-transcriptioncost-any'),
+      maxaawer: document.getElementById('b-maxaawer'),
+      aawermaxrange: document.getElementById('b-aawer-max-range'),
+      aawerlabel: document.getElementById('b-aawer-label'),
+      aawerany: document.getElementById('b-aawer-any'),
       minctx: document.getElementById('b-minctx'),
       maxctx: document.getElementById('b-maxctx'),
       contextminrange: document.getElementById('b-context-min-range'),
@@ -1001,6 +1264,11 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return typeof value === 'number' ? Math.round(value) : '-';
     }
 
+    function benchmarkScore(value) {
+      if (typeof value !== 'number') return '-';
+      return Math.round(value <= 1 ? value * 100 : value);
+    }
+
     function escapeHtml(value) {
       return String(value || '').replace(/[&<>"']/g, function (char) {
         return {
@@ -1017,7 +1285,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     var selectedBenchmark = { tableId: '', modelId: '' };
     var textBenchmarkModels = null;
     var textBenchmarkModelsWithoutIts = null;
+    var textBenchmarkRequest = 0;
     var voiceBenchmarkRows = null;
+    var sttBenchmarkRows = null;
+    var sttBenchmarkLoading = false;
 
     function sortValue(value) {
       return value === undefined || value === null || Number.isNaN(value) ? -Infinity : value;
@@ -1031,6 +1302,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (model.benchmarks && model.benchmarks.voice) {
         if (typeof pricing.benchmarkInputAudioPerHour !== 'number') return 'no audio pricing';
         if (typeof pricing.audioOutputPerHour !== 'number' && typeof pricing.benchmarkCostPerTask !== 'number') return 'no audio pricing';
+      }
+      if (model.benchmarks && model.benchmarks.speechToText) {
+        if (typeof model.benchmarks.speechToText.aaWer !== 'number') return 'no STT score';
+        if (typeof pricing.transcriptionCostPer1kMinutes !== 'number') return 'no STT pricing';
       }
       if (model.benchmarks && model.benchmarks.llm) {
         if (typeof pricing.inputPerMTok !== 'number' || typeof pricing.outputPerMTok !== 'number') return 'no token pricing';
@@ -1055,12 +1330,13 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return item.provider || '';
     }
 
-    function renderSortableTable(tableId, rows, columns, defaultSortKey, defaultDirection) {
+    function renderSortableTable(tableId, rows, columns, defaultSortKey, defaultDirection, defaultCompare) {
       benchmarkTables[tableId] = {
         rows: rows,
         columns: columns,
         sortKey: defaultSortKey,
         direction: defaultDirection || 'desc',
+        defaultCompare: defaultCompare,
         selectedId: selectedBenchmark.tableId === tableId ? selectedBenchmark.modelId : ''
       };
       renderSortableHeader(tableId, columns);
@@ -1100,6 +1376,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       }
 
       var sorted = visibleRows.slice().sort(function (left, right) {
+        if (state.defaultCompare) return state.defaultCompare(left, right);
         var a = sortValue(column.value(left));
         var b = sortValue(column.value(right));
         if (typeof a === 'string' || typeof b === 'string') {
@@ -1124,12 +1401,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function benchmarkTableForUseCase(useCase) {
       if (useCase === 'voice') return 'voiceRows';
+      if (useCase === 'speech-to-text') return 'sttRows';
       if (useCase === 'customer-support') return 'supportRows';
       return '';
     }
 
     function benchmarkPanelForUseCase(useCase) {
       if (useCase === 'voice') return 'voice';
+      if (useCase === 'speech-to-text') return 'speech-to-text';
       if (useCase === 'customer-support') return 'customer-support';
       return '';
     }
@@ -1138,12 +1417,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (useCase === 'voice') {
         return {
           title: 'Voice Benchmark',
-          hint: 'Voice models are ranked for speech-to-speech agents using τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
+          hint: 'Voice priorities are explicit: fast and cheap sorts by input AUD/hr, output AUD/hr, then TTFA; highest quality sorts by τ-Voice, speech reasoning, and telecom score; balanced highlights the middle filtered quality row.'
+        };
+      }
+      if (useCase === 'speech-to-text') {
+        return {
+          title: 'Speech-To-Text Benchmark',
+          hint: 'Speech-to-text models are ranked using AA-WER, AUD per 1,000 minutes, and speed factor. Highest accuracy sorts by lower AA-WER, fast and cheap sorts by lower AUD/1k min, and balanced selects the middle filtered accuracy candidate.'
         };
       }
       return {
         title: 'Customer Support Benchmark',
-        hint: 'Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.'
+        hint: 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, highest safety sorts by ITS false positives then accuracy, and balanced highlights the middle filtered safety row.'
       };
     }
 
@@ -1159,6 +1444,35 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       hint.textContent = copy.hint;
     }
 
+    function updateTierOptions(useCase) {
+      var labels = useCase === 'speech-to-text'
+        ? {
+          '': 'balanced trade-off',
+          fast: 'fast and cheap',
+          best: 'highest accuracy'
+        }
+        : useCase === 'voice'
+          ? {
+            '': 'balanced trade-off',
+            fast: 'fast and cheap',
+            best: 'highest quality'
+          }
+        : useCase === 'customer-support'
+          ? {
+            '': 'balanced trade-off',
+            fast: 'fast and cheap',
+            best: 'highest safety'
+          }
+        : {
+          '': 'balanced',
+          fast: 'lower Run AUD',
+          best: 'highest score'
+        };
+      Array.prototype.forEach.call(fields.tier.options, function (option) {
+        option.textContent = labels[option.value] || option.textContent;
+      });
+    }
+
     function pricingContext(data) {
       if (data && data.exchangeRate) {
         var rate = Number(data.exchangeRate.rate).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
@@ -1169,10 +1483,14 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function updateFilterVisibility(useCase) {
-      var isVoice = useCase === 'voice';
+      var activeScope = useCase === 'voice'
+        ? 'voice'
+        : useCase === 'speech-to-text'
+          ? 'speech-to-text'
+          : 'text';
       document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
         var scope = field.getAttribute('data-filter-scope');
-        field.hidden = scope === 'voice' ? !isVoice : isVoice;
+        field.hidden = scope !== activeScope;
       });
     }
 
@@ -1213,6 +1531,44 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return agentic * 0.45 + speech * 0.25 + telecom * 0.1 + ttfa * 0.08 + costScore * 0.12;
     }
 
+    function voiceSignals(model) {
+      return ((model.benchmarks || {}).voice || {});
+    }
+
+    function voiceTtfa(model) {
+      return voiceSignals(model).timeToFirstAudioSeconds;
+    }
+
+    function voiceQualityRowCompare(left, right) {
+      var leftVoice = voiceSignals(left);
+      var rightVoice = voiceSignals(right);
+      return (
+        compareNumberDesc(leftVoice.agenticPerformance, rightVoice.agenticPerformance) ||
+        compareNumberDesc(leftVoice.speechReasoning, rightVoice.speechReasoning) ||
+        compareNumberDesc(leftVoice.telecomAgenticPerformance, rightVoice.telecomAgenticPerformance) ||
+        compareNumberDesc(leftVoice.conversationalDynamics, rightVoice.conversationalDynamics) ||
+        compareNumberAsc(voiceTtfa(left), voiceTtfa(right)) ||
+        compareNumberAsc(voiceCost(left), voiceCost(right)) ||
+        compareNumberAsc(voiceOutputCost(left), voiceOutputCost(right)) ||
+        String(left.name || '').localeCompare(String(right.name || ''))
+      );
+    }
+
+    function voiceFastRowCompare(left, right) {
+      return (
+        compareNumberAsc(voiceCost(left), voiceCost(right)) ||
+        compareNumberAsc(voiceOutputCost(left), voiceOutputCost(right)) ||
+        compareNumberAsc(voiceTtfa(left), voiceTtfa(right)) ||
+        voiceQualityRowCompare(left, right)
+      );
+    }
+
+    function voiceTableSort() {
+      var tier = fields.tier.value || 'balanced';
+      if (tier === 'fast') return { key: 'inputCost', direction: 'asc', compare: voiceFastRowCompare };
+      return { key: 'agentic', direction: 'desc', compare: voiceQualityRowCompare };
+    }
+
     function voiceBenchmarkModels(models) {
       return models.filter(function (model) {
         return model.recommendable !== false && model.benchmarks && model.benchmarks.voice;
@@ -1232,15 +1588,87 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         setText('voiceSource', 'AA extract ' + formatAge(source.extractedAt));
       }
 
+      var voiceSort = voiceTableSort();
+
       renderSortableTable('voiceRows', rows, [
         { key: 'model', value: function (model) { return model.name; }, render: renderModelCell },
-        { key: 'agentic', value: function (model) { return ((model.benchmarks || {}).voice || {}).agenticPerformance; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).agenticPerformance); } },
-        { key: 'speech', value: function (model) { return ((model.benchmarks || {}).voice || {}).speechReasoning; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).speechReasoning); } },
-        { key: 'telecom', value: function (model) { return ((model.benchmarks || {}).voice || {}).telecomAgenticPerformance; }, render: function (model) { return pct(((model.benchmarks || {}).voice || {}).telecomAgenticPerformance); } },
-        { key: 'ttfa', value: function (model) { return -(((model.benchmarks || {}).voice || {}).timeToFirstAudioSeconds || Infinity); }, render: function (model) { return seconds(((model.benchmarks || {}).voice || {}).timeToFirstAudioSeconds); } },
+        { key: 'agentic', value: function (model) { return voiceSignals(model).agenticPerformance; }, render: function (model) { return pct(voiceSignals(model).agenticPerformance); } },
+        { key: 'speech', value: function (model) { return voiceSignals(model).speechReasoning; }, render: function (model) { return pct(voiceSignals(model).speechReasoning); } },
+        { key: 'telecom', value: function (model) { return voiceSignals(model).telecomAgenticPerformance; }, render: function (model) { return pct(voiceSignals(model).telecomAgenticPerformance); } },
+        { key: 'ttfa', value: function (model) { return -(voiceTtfa(model) || Infinity); }, render: function (model) { return seconds(voiceTtfa(model)); } },
         { key: 'inputCost', value: voiceCost, render: function (model) { return money(voiceCost(model)); } },
         { key: 'outputCost', value: voiceOutputCost, render: function (model) { return money(voiceOutputCost(model)); } }
-      ], 'agentic', 'desc');
+      ], voiceSort.key, voiceSort.direction, voiceSort.compare);
+    }
+
+    function sttSignals(model) {
+      return ((model.benchmarks || {}).speechToText || {});
+    }
+
+    function sttCost(model) {
+      var pricing = model.pricing || {};
+      return pricing.transcriptionCostPer1kMinutes || Infinity;
+    }
+
+    function sttHost(model) {
+      var signals = sttSignals(model);
+      var host = signals.hostingProviderName || signals.hostingProviderSlug || '';
+      return host && host.toLowerCase() !== String(model.provider || '').toLowerCase()
+        ? model.provider + ' / ' + host
+        : model.provider || host || '-';
+    }
+
+    function wer(value) {
+      return typeof value === 'number' ? value.toFixed(value < 10 ? 1 : 0) + '%' : '-';
+    }
+
+    function speedFactor(value) {
+      return typeof value === 'number' ? value.toFixed(value < 100 ? 1 : 0) + 'x' : '-';
+    }
+
+    function speechToTextBenchmarkModels(models) {
+      var maxTranscriptionCost = transcriptionCostCeiling();
+      var maxAaWer = aaWerCeiling();
+      return models.filter(function (model) {
+        var signals = model.benchmarks && model.benchmarks.speechToText;
+        if (model.recommendable === false || !signals) return false;
+        if (
+          maxTranscriptionCost !== undefined &&
+          (typeof sttCost(model) !== 'number' || sttCost(model) > maxTranscriptionCost)
+        ) return false;
+        if (
+          maxAaWer !== undefined &&
+          (typeof signals.aaWer !== 'number' || signals.aaWer > maxAaWer)
+        ) return false;
+        return true;
+      });
+    }
+
+    function renderSpeechToTextBenchmarks(models) {
+      var rows = speechToTextBenchmarkModels(models);
+      if (!rows.length) {
+        renderSortableTable('sttRows', [], [], 'wer', 'asc');
+        setText('sttSource', 'unavailable');
+        return;
+      }
+
+      var source = rows[0].benchmarks && rows[0].benchmarks.speechToText;
+      if (source && source.extractedAt) {
+        setText('sttSource', 'AA extract ' + formatAge(source.extractedAt));
+      }
+
+      var columns = [
+        { key: 'model', label: 'Model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'host', label: 'Provider/Host', value: sttHost, render: function (model) { return escapeHtml(sttHost(model)); } },
+        { key: 'wer', label: 'AA-WER', value: function (model) { return sttSignals(model).aaWer; }, render: function (model) { return wer(sttSignals(model).aaWer); } }
+      ];
+      columns.push(
+        { key: 'speed', label: 'Speed', value: function (model) { return sttSignals(model).speedFactor; }, render: function (model) { return speedFactor(sttSignals(model).speedFactor); } },
+        { key: 'cost', label: 'AUD/1k min', value: sttCost, render: function (model) { return money(sttCost(model)); } }
+      );
+
+      var tier = fields.tier.value || 'balanced';
+      renderSortableTable('sttRows', rows, columns, tier === 'fast' ? 'cost' : 'wer', 'asc');
     }
 
     function llmSignals(row) {
@@ -1263,6 +1691,53 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var signals = autoCloseSignals(row);
       if (typeof signals.falsePositiveCount !== 'number' || typeof signals.total !== 'number' || signals.total <= 0) return undefined;
       return signals.falsePositiveCount / signals.total;
+    }
+
+    function compareNumberAsc(left, right) {
+      var a = typeof left === 'number' && Number.isFinite(left) ? left : undefined;
+      var b = typeof right === 'number' && Number.isFinite(right) ? right : undefined;
+      if (a === undefined && b === undefined) return 0;
+      if (a === undefined) return 1;
+      if (b === undefined) return -1;
+      return a - b;
+    }
+
+    function compareNumberDesc(left, right) {
+      return compareNumberAsc(right, left);
+    }
+
+    function customerSupportSafetyRowCompare(left, right) {
+      var leftAutoClose = autoCloseSignals(left);
+      var rightAutoClose = autoCloseSignals(right);
+      return (
+        compareNumberAsc(falsePositiveRate(left), falsePositiveRate(right)) ||
+        compareNumberDesc(leftAutoClose.accuracy, rightAutoClose.accuracy) ||
+        compareNumberAsc(runCost(left), runCost(right)) ||
+        compareNumberAsc(leftAutoClose.invalidCount, rightAutoClose.invalidCount) ||
+        compareNumberAsc(leftAutoClose.falseNegativeCount, rightAutoClose.falseNegativeCount) ||
+        compareNumberDesc(leftAutoClose.weightedScore, rightAutoClose.weightedScore) ||
+        compareNumberDesc(llmSignals(left).intelligence, llmSignals(right).intelligence) ||
+        String((left.model || {}).name || '').localeCompare(String((right.model || {}).name || ''))
+      );
+    }
+
+    function customerSupportFastRowCompare(left, right) {
+      return (
+        compareNumberAsc(runCost(left), runCost(right)) ||
+        compareNumberAsc(outputCost(left), outputCost(right)) ||
+        customerSupportSafetyRowCompare(left, right)
+      );
+    }
+
+    function customerSupportTableSort(includeIts) {
+      var tier = fields.tier.value || 'balanced';
+      if (tier === 'fast') {
+        return { key: 'runCost', direction: 'asc', compare: customerSupportFastRowCompare };
+      }
+      if (includeIts) {
+        return { key: 'falsePositives', direction: 'desc', compare: customerSupportSafetyRowCompare };
+      }
+      return { key: 'score', direction: 'desc' };
     }
 
     function falsePositiveLabel(row) {
@@ -1475,11 +1950,23 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
     }
 
+    function formatTranscriptionCostCap(value, isMax, max) {
+      if (isMax && value >= max) return '$' + max.toLocaleString() + '+';
+      return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function formatAaWerCap(value, isMax, max) {
+      if (isMax && value >= max) return max.toLocaleString() + '%+';
+      return Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%';
+    }
+
     var inputCostRange;
     var outputCostRange;
     var contextRange;
     var runCostRange;
     var audioInputCostRange;
+    var transcriptionCostRange;
+    var aaWerRange;
 
     function syncRunCostRange() {
       syncDualRange(inputCostRange);
@@ -1487,6 +1974,8 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       syncDualRange(contextRange);
       syncDualRange(runCostRange);
       syncMaxRange(audioInputCostRange);
+      syncMaxRange(transcriptionCostRange);
+      syncMaxRange(aaWerRange);
     }
 
     function runCostFloor() {
@@ -1499,6 +1988,52 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       if (!fields.maxruncost.value) return undefined;
       var value = Number(fields.maxruncost.value);
       return Number.isFinite(value) ? value : undefined;
+    }
+
+    function intelligenceFloor() {
+      if (!fields.minintelligence.value) return undefined;
+      var value = Number(fields.minintelligence.value);
+      return Number.isFinite(value) ? value : undefined;
+    }
+
+    function transcriptionCostCeiling() {
+      if (!fields.maxtranscriptioncost.value) return undefined;
+      var value = Number(fields.maxtranscriptioncost.value);
+      return Number.isFinite(value) ? value : undefined;
+    }
+
+    function aaWerCeiling() {
+      if (!fields.maxaawer.value) return undefined;
+      var value = Number(fields.maxaawer.value);
+      return Number.isFinite(value) ? value : undefined;
+    }
+
+    function activeTextBenchmarkModels(models) {
+      var minRunCost = runCostFloor();
+      var maxRunCost = runCostCeiling();
+      var minIntelligence = intelligenceFloor();
+      var capability = fields.capability.value;
+      return (models || []).filter(function (model) {
+        var cost = runCost(model);
+        var intelligence = ((model.benchmarks || {}).llm || {}).intelligence;
+        if (
+          capability &&
+          (!model.capabilities || model.capabilities[capability] !== true)
+        ) return false;
+        if (
+          minRunCost !== undefined &&
+          (typeof cost !== 'number' || cost < minRunCost)
+        ) return false;
+        if (
+          maxRunCost !== undefined &&
+          (typeof cost !== 'number' || cost > maxRunCost)
+        ) return false;
+        if (
+          minIntelligence !== undefined &&
+          (typeof intelligence !== 'number' || intelligence < minIntelligence)
+        ) return false;
+        return true;
+      });
     }
 
     function textCostScore(model, outputWeight) {
@@ -1554,7 +2089,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
 
     function supportAgenticSignal(row) {
       var signals = llmSignals(row);
-      return typeof signals.agentic === 'number' ? signals.agentic : signals.tauTelecom;
+      return signals.agentic;
     }
 
     function includeItsBenchmark() {
@@ -1576,17 +2111,30 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (voiceBenchmarkRows) renderVoiceBenchmarks(voiceBenchmarkRows);
         return;
       }
+      if (fields.usecase.value === 'speech-to-text') {
+        if (sttBenchmarkRows) {
+          renderSpeechToTextBenchmarks(sttBenchmarkRows);
+        } else {
+          loadSpeechToTextBenchmarks();
+        }
+        return;
+      }
 
       var currentModels = currentTextBenchmarkModels();
-      if (currentModels) {
-        renderTextBenchmarks(currentModels);
-        renderFaq(currentModels);
+      if (!isBrowsingModels()) {
+        loadCurrentTextBenchmarks();
+        return;
       }
+      if (currentModels) renderTextBenchmarks(currentModels);
     }
 
     function renderFilteredModelBenchmarks(models) {
       if (fields.usecase.value === 'voice') {
         renderVoiceBenchmarks(models || []);
+        return;
+      }
+      if (fields.usecase.value === 'speech-to-text') {
+        renderSpeechToTextBenchmarks(models || []);
         return;
       }
 
@@ -1635,6 +2183,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       base.push(
         { key: 'ifbench', label: 'IFBench', value: function (row) { return llmSignals(row).instructionFollowing; }, render: function (row) { return score(llmSignals(row).instructionFollowing); } },
         { key: 'agentic', label: 'Agentic', value: supportAgenticSignal, render: function (row) { return score(supportAgenticSignal(row)); } },
+        { key: 'benchTelecom', label: 'Bench Telecom', value: function (row) { var value = llmSignals(row).tauTelecom; return typeof value === 'number' && value <= 1 ? value * 100 : value; }, render: function (row) { return benchmarkScore(llmSignals(row).tauTelecom); } },
         { key: 'intelligence', label: 'Intel', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
       );
       base.push(
@@ -1648,19 +2197,59 @@ print(r.json()['recommendation']['id'])</code></pre></div>
     }
 
     function renderTextBenchmarks(models) {
-      var support = textRows(models, 'customer-support');
+      var support = textRows(activeTextBenchmarkModels(models), 'customer-support');
       var includeIts = includeItsBenchmark();
+      var supportSort = customerSupportTableSort(includeIts);
 
       renderSortableTable(
         'supportRows',
         support,
         commonTextColumns('customer-support', includeIts),
-        includeIts ? 'runCost' : 'score',
-        includeIts ? 'asc' : 'desc'
+        supportSort.key,
+        supportSort.direction,
+        supportSort.compare
       );
 
       var label = support.length ? 'AA LLM extract' : 'unavailable';
       setText('supportSource', label);
+    }
+
+    function customerSupportBenchmarkPath() {
+      var params = new URLSearchParams();
+      params.set('useCase', 'customer-support');
+      if (fields.provider.value) params.set('provider', fields.provider.value);
+      if (fields.capability.value) params.set('capability', fields.capability.value);
+      if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
+      if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
+      if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+      if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
+      if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+      if (fields.minruncost.value) params.set('minRunCostAud', fields.minruncost.value);
+      if (fields.maxruncost.value) params.set('maxRunCostAud', fields.maxruncost.value);
+      if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
+      if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+      if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
+      return '/v1/benchmarks?' + params.toString();
+    }
+
+    function loadCurrentTextBenchmarks() {
+      if (fields.usecase.value !== 'customer-support') return;
+      var requestId = ++textBenchmarkRequest;
+      fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
+        .then(function (data) {
+          if (requestId !== textBenchmarkRequest) return;
+          if (fields.usecase.value !== 'customer-support' || isBrowsingModels()) return;
+          var rows = data.benchmarks || [];
+          renderTextBenchmarks(rows);
+          renderFaq(rows);
+        })
+        .catch(function () {
+          if (requestId !== textBenchmarkRequest) return;
+          var rows = document.getElementById('supportRows');
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="11">Benchmark data unavailable.</td></tr>';
+          setText('supportSource', 'unavailable');
+        });
     }
 
     function topBy(items, valueFn, direction) {
@@ -1697,9 +2286,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           var signals = autoCloseSignals(row);
           return signals.source && row.model.recommendable !== false;
         })
-        .sort(function (left, right) {
-          return autoCloseRankValue(left) - autoCloseRankValue(right);
-        });
+        .sort(customerSupportSafetyRowCompare);
     }
 
     function autoCloseSummary(row) {
@@ -1738,7 +2325,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         {
           q: 'Which model should customer support use?',
           a: includeIts && autoCloseSupport[0]
-            ? modelName(autoCloseSupport[0].model) + ' is the current safety-first recommendation from the IT Solver auto-close benchmark: ' + autoCloseSummary(autoCloseSupport[0]) + '.'
+            ? modelName(autoCloseSupport[0].model) + ' is the current highest-safety recommendation from the IT Solver auto-close benchmark: ' + autoCloseSummary(autoCloseSupport[0]) + '.'
             : support[0]
               ? modelName(support[0].model) + ' is the current recommendation using Artificial Analysis customer-support signals without ITS auto-close ranking.'
               : 'No customer support benchmark data is currently available.'
@@ -1762,6 +2349,10 @@ print(r.json()['recommendation']['id'])</code></pre></div>
           a: cheapestVoice[0]
             ? modelName(cheapestVoice[0]) + ' is the cheapest voice candidate on AA benchmark input-audio cost at ' + money(voiceCost(cheapestVoice[0])) + ' AUD/hr.'
             : 'No voice benchmark pricing is currently available.'
+        },
+        {
+          q: 'How do I choose the best speech to text model?',
+          a: 'Use the speech-to-text priority and price cap to trade off accuracy, speed, and price. Highest accuracy prioritizes lower AA-WER, fast and cheap prioritizes lower AUD/1k min, and balanced picks the middle filtered accuracy candidate.'
         },
         {
           q: 'Which text model has the lowest output price?',
@@ -1819,6 +2410,33 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         setText('voiceSource', 'unavailable');
       });
 
+    function loadSpeechToTextBenchmarks(attempt) {
+      if (sttBenchmarkLoading) return;
+      sttBenchmarkLoading = true;
+      setText('sttSource', 'loading...');
+      fetch('/v1/benchmarks?useCase=speech-to-text', { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
+        .then(function (data) {
+          sttBenchmarkRows = data.benchmarks || [];
+          sttBenchmarkLoading = false;
+          if (!isBrowsingModels() && fields.usecase.value === 'speech-to-text') {
+            renderSpeechToTextBenchmarks(sttBenchmarkRows);
+          }
+        })
+        .catch(function () {
+          sttBenchmarkLoading = false;
+          if ((attempt || 0) < 2) {
+            setTimeout(function () { loadSpeechToTextBenchmarks((attempt || 0) + 1); }, 1000);
+            return;
+          }
+          var rows = document.getElementById('sttRows');
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="8">STT benchmarks unavailable.</td></tr>';
+          setText('sttSource', 'unavailable');
+        });
+    }
+
+    loadSpeechToTextBenchmarks();
+
     Promise.all([
       fetch('/v1/benchmarks?useCase=customer-support', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); }),
@@ -1835,7 +2453,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       .catch(function () {
         ['supportRows'].forEach(function (id) {
           var rows = document.getElementById(id);
-          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="11">Benchmark data unavailable.</td></tr>';
         });
         setText('supportSource', 'unavailable');
         var faq = document.getElementById('faqRows');
@@ -1855,6 +2473,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         state.sortKey = sortKey;
         state.direction = sortKey === 'model' ? 'asc' : 'desc';
       }
+      state.defaultCompare = null;
       drawSortableTable(tableId);
     });
 
@@ -1896,11 +2515,18 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       var params = new URLSearchParams();
       if (fields.tier.value) params.set('tier', fields.tier.value);
       if (fields.provider.value) params.set('provider', fields.provider.value);
-      if (fields.capability.value) params.set('capability', fields.capability.value);
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
+      if (
+        fields.capability.value &&
+        fields.usecase.value !== 'voice' &&
+        fields.usecase.value !== 'speech-to-text'
+      ) params.set('capability', fields.capability.value);
       if (fields.usecase.value === 'voice') {
         if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
         if (fields.maxaudiooutputcost.value) params.set('maxAudioOutputCostPerHour', fields.maxaudiooutputcost.value);
+      } else if (fields.usecase.value === 'speech-to-text') {
+        if (fields.maxtranscriptioncost.value) params.set('maxTranscriptionCostPer1kMinutes', fields.maxtranscriptioncost.value);
+        if (fields.maxaawer.value) params.set('maxAaWer', fields.maxaawer.value);
       } else {
         if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
@@ -1909,6 +2535,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
         if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
         if (fields.minruncost.value) params.set('minRunCostAud', fields.minruncost.value);
         if (fields.maxruncost.value) params.set('maxRunCostAud', fields.maxruncost.value);
+        if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
         if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
         if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
       }
@@ -1916,11 +2543,80 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       return endpoint + (qs ? '?' + qs : '');
     }
 
+    function setSelectValue(select, value) {
+      if (!select || !value) return;
+      var option = Array.prototype.find.call(select.options, function (item) {
+        return item.value === value;
+      });
+      if (option) select.value = value;
+    }
+
+    function setInputValue(input, value) {
+      if (!input || value === null || value === undefined || value === '') return;
+      input.value = String(value);
+    }
+
+    function builderStateParams(path) {
+      var apiUrl = new URL(path || buildPath(), origin);
+      var params = new URLSearchParams(apiUrl.search);
+      params.set('endpoint', fields.endpoint.value === 'models' ? 'models' : 'recommend');
+      if (fields.providerTableOnly && fields.providerTableOnly.checked) {
+        params.set('providerTableOnly', 'true');
+      }
+      return params;
+    }
+
+    function syncPageUrl(path) {
+      if (!window.history || !window.history.replaceState) return;
+      var params = builderStateParams(path);
+      var query = params.toString();
+      var next = window.location.pathname + (query ? '?' + query : '') + window.location.hash;
+      var current = window.location.pathname + window.location.search + window.location.hash;
+      if (next !== current) window.history.replaceState(null, '', next);
+    }
+
+    function restoreBuilderStateFromUrl() {
+      var params = new URLSearchParams(window.location.search);
+      if (!Array.from(params.keys()).length) return;
+
+      setSelectValue(fields.endpoint, params.get('endpoint'));
+      setSelectValue(fields.tier, params.get('tier'));
+      setSelectValue(fields.provider, params.get('provider'));
+      setSelectValue(fields.capability, params.get('capability'));
+      setSelectValue(fields.usecase, params.get('useCase'));
+      if (fields.includeits && params.get('includeItsBenchmark') === 'false') {
+        fields.includeits.checked = false;
+      }
+      if (fields.providerTableOnly) {
+        fields.providerTableOnly.checked = params.get('providerTableOnly') === 'true';
+      }
+
+      setInputValue(fields.inputminrange, params.get('minInputCostPerMTok') || params.get('minCostPerMTok'));
+      setInputValue(fields.inputmaxrange, params.get('maxInputCostPerMTok') || params.get('maxCostPerMTok'));
+      setInputValue(fields.outputminrange, params.get('minOutputCostPerMTok'));
+      setInputValue(fields.outputmaxrange, params.get('maxOutputCostPerMTok'));
+      setInputValue(fields.runminrange, params.get('minRunCostAud'));
+      setInputValue(fields.runmaxrange, params.get('maxRunCostAud'));
+      setInputValue(fields.minintelligence, params.get('minIntelligence'));
+      setInputValue(fields.audioinputmaxrange, params.get('maxAudioInputCostPerHour'));
+      setInputValue(fields.maxaudiooutputcost, params.get('maxAudioOutputCostPerHour'));
+      setInputValue(fields.transcriptionmaxrange, params.get('maxTranscriptionCostPer1kMinutes'));
+      setInputValue(fields.aawermaxrange, params.get('maxAaWer'));
+      if (params.get('minContextWindow')) {
+        setInputValue(fields.contextminrange, Number(params.get('minContextWindow')) / 1000);
+      }
+      if (params.get('maxContextWindow')) {
+        setInputValue(fields.contextmaxrange, Number(params.get('maxContextWindow')) / 1000);
+      }
+    }
+
     var previewTimer = 0;
     function refreshBuilder() {
       syncRunCostRange();
+      updateTierOptions(fields.usecase.value);
       var path = buildPath();
       var full = origin + path;
+      syncPageUrl(path);
       updateBenchmarkPanel(fields.usecase.value);
       updateFilterVisibility(fields.usecase.value);
       if (!isBrowsingModels()) renderCurrentUseCaseBenchmarks();
@@ -1949,6 +2645,7 @@ print(r.json()['recommendation']['id'])</code></pre></div>
             }
           })
           .catch(function () {
+            if (requestedPath !== buildPath()) return;
             fields.result.textContent = 'unavailable';
             highlightBenchmark('', '');
           });
@@ -2012,13 +2709,36 @@ print(r.json()['recommendation']['id'])</code></pre></div>
       anyLabel: 'Any input audio AUD/hr',
       format: formatAudioCostCap
     };
+    transcriptionCostRange = {
+      min: 0,
+      max: 20,
+      maxRange: fields.transcriptionmaxrange,
+      hiddenMax: fields.maxtranscriptioncost,
+      label: fields.transcriptioncostlabel,
+      anyLabel: 'Any STT AUD/1k min',
+      format: formatTranscriptionCostCap
+    };
+    aaWerRange = {
+      min: 0,
+      max: 20,
+      maxRange: fields.aawermaxrange,
+      hiddenMax: fields.maxaawer,
+      label: fields.aawerlabel,
+      anyLabel: 'Any AA-WER',
+      format: formatAaWerCap
+    };
     fields.inputcostany.addEventListener('click', function () { resetDualRange(inputCostRange); });
     fields.outputcostany.addEventListener('click', function () { resetDualRange(outputCostRange); });
     fields.contextany.addEventListener('click', function () { resetDualRange(contextRange); });
     fields.runcostany.addEventListener('click', function () { resetDualRange(runCostRange); });
     fields.audioinputcostany.addEventListener('click', function () { resetMaxRange(audioInputCostRange); });
+    fields.transcriptioncostany.addEventListener('click', function () { resetMaxRange(transcriptionCostRange); });
+    fields.aawerany.addEventListener('click', function () { resetMaxRange(aaWerRange); });
     [inputCostRange, outputCostRange, contextRange, runCostRange].forEach(installDualRangePointer);
     installMaxRangePointer(audioInputCostRange);
+    installMaxRangePointer(transcriptionCostRange);
+    installMaxRangePointer(aaWerRange);
+    restoreBuilderStateFromUrl();
 
     fields.copy.addEventListener('click', function () {
       navigator.clipboard.writeText(fields.code.textContent).then(function () {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { handleRequest, type Env } from "../src/worker";
-import { artificialAnalysisFixture } from "./fixtures";
+import type { BenchmarkCandidate, Catalog } from "../src/registry";
+import {
+  artificialAnalysisFixture,
+  artificialAnalysisSpeechToTextFixture,
+} from "./fixtures";
 
 interface JsonObject {
   [key: string]: any;
@@ -14,12 +18,16 @@ const fxUrl =
 const artificialAnalysisUrl =
   "data:application/json," +
   encodeURIComponent(JSON.stringify(artificialAnalysisFixture));
+const artificialAnalysisSttUrl =
+  "data:application/json," +
+  encodeURIComponent(JSON.stringify(artificialAnalysisSpeechToTextFixture));
 
 function env(): Env {
   return {
     FX_RATE_URL: fxUrl,
     ARTIFICIAL_ANALYSIS_API_KEY: "aa-secret",
     ARTIFICIAL_ANALYSIS_LLM_URL: artificialAnalysisUrl,
+    ARTIFICIAL_ANALYSIS_STT_URL: artificialAnalysisSttUrl,
   };
 }
 
@@ -28,6 +36,100 @@ const ctx = {
     return undefined;
   },
 };
+
+function envWithCachedCatalog(catalog: Catalog): Env {
+  return {
+    MODEL_CACHE: {
+      get: async () => JSON.stringify(catalog),
+      put: async () => undefined,
+    } as unknown as KVNamespace,
+  };
+}
+
+function supportCandidate(
+  id: string,
+  falsePositiveCount: number,
+  accuracy: number,
+  runCost: number,
+  outputPerMTok: number,
+): BenchmarkCandidate {
+  return {
+    id,
+    provider: "openai",
+    name: id,
+    source: "artificialanalysis",
+    benchmarks: {
+      llm: {
+        instructionFollowing: 80,
+        intelligence: 80,
+        intelligenceRunTotalCost: runCost,
+        autoClose: {
+          source: "itsolver-autoclose",
+          modelKey: `test:${id}`,
+          apiModel: id,
+          displayName: id,
+          benchmarkReport: `${id}.md`,
+          resultsFile: `${id}.json`,
+          generatedAt: "2026-05-22T00:00:00Z",
+          benchmarkCodeSha: "test",
+          total: 100,
+          correctCount: Math.round(accuracy * 100),
+          accuracy,
+          falsePositiveCount,
+          falseNegativeCount: 100 - Math.round(accuracy * 100),
+          invalidCount: 0,
+          errorCount: 0,
+          parseSuccessRate: 1,
+          avgLatencyMs: 1000,
+          p95LatencyMs: 1200,
+          avgInputTokens: 1000,
+          avgOutputTokens: 100,
+          weightedScore: accuracy * 100,
+          sourceUrl: "https://example.test/autoclose",
+          verifiedOn: "2026-05-22",
+          availability: {
+            status: "production",
+            acceptedRisk: false,
+            reason: "test",
+          },
+        },
+      },
+    },
+    pricing: { inputPerMTok: 1, outputPerMTok },
+    recommendable: true,
+    availability: {
+      status: "production",
+      acceptedRisk: false,
+      reason: "test",
+    },
+    family: null,
+    contextWindow: null,
+    outputLimit: null,
+    capabilities: {
+      vision: false,
+      pdf: false,
+      reasoning: true,
+      toolCalling: false,
+      structuredOutput: false,
+    },
+    modalities: null,
+    openWeights: null,
+    tier: null,
+    deprecated: null,
+    updatedAt: null,
+  };
+}
+
+function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
+  return {
+    generatedAt: new Date().toISOString(),
+    modelCount: candidates.length,
+    activeModelCount: candidates.length,
+    providers: [{ provider: "openai", total: candidates.length, active: candidates.length }],
+    models: [],
+    benchmarkCandidates: candidates,
+  };
+}
 
 describe("worker routes", () => {
   it("serves the homepage without auth", async () => {
@@ -38,7 +140,17 @@ describe("worker routes", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("ai<span class=\"blink\">.</span>itsolver");
+    const html = await response.text();
+    expect(html).toContain("ai<span class=\"blink\">.</span>itsolver");
+    expect(html).toContain("Bench Telecom");
+    expect(html).toContain("highest quality");
+    expect(html).toContain('<option value="fast" selected>fast and cheap</option>');
+    expect(html).toContain(
+      '<div class="b-field" data-filter-scope="text">\n          <label for="b-capability">Must have</label>',
+    );
+    expect(html).toContain("model.capabilities[capability] !== true");
+    expect(html).toContain("function customerSupportBenchmarkPath()");
+    expect(html).toContain("fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })");
   });
 
   it("serves health metadata", async () => {
@@ -60,7 +172,7 @@ describe("worker routes", () => {
         quote: "AUD",
         rate: 1.5,
       },
-      providerCount: 4,
+      providerCount: 7,
     });
     expect(body.modelCount).toBeGreaterThanOrEqual(9);
     expect(body.activeModelCount).toBeGreaterThanOrEqual(8);
@@ -165,7 +277,7 @@ describe("worker routes", () => {
   it("hard-filters customer support rows by Run AUD range", async () => {
     const response = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&minRunCostAud=100&maxRunCostAud=500",
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false&minRunCostAud=100&maxRunCostAud=1500",
       ),
       env(),
       ctx,
@@ -180,9 +292,201 @@ describe("worker routes", () => {
           (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.NEGATIVE_INFINITY) >=
             100 &&
           (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.POSITIVE_INFINITY) <=
-            500,
+            1500,
       ),
     ).toBe(true);
+  });
+
+  it("does not recommend non-result AA rows in customer support AA-only mode", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&includeItsBenchmark=false",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).not.toBe("gpt-oss-20b-low");
+    expect(body.recommendation.capabilities).toMatchObject({
+      vision: true,
+      reasoning: true,
+    });
+  });
+
+  it("hard-filters customer support rows by Run AUD and intelligence", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarks.length).toBeGreaterThan(0);
+    expect(
+      body.benchmarks.every(
+        (row: {
+          benchmarks: {
+            llm?: {
+              intelligence?: number;
+              intelligenceRunTotalCost?: number;
+            };
+          };
+        }) =>
+          (row.benchmarks.llm?.intelligence ?? Number.NEGATIVE_INFINITY) >= 30 &&
+          (row.benchmarks.llm?.intelligenceRunTotalCost ??
+            Number.POSITIVE_INFINITY) <= 1300,
+      ),
+    ).toBe(true);
+    expect(
+      body.benchmarks.some(
+        (row: { benchmarks: { llm?: { tauTelecom?: number } } }) =>
+          typeof row.benchmarks.llm?.tauTelecom === "number",
+      ),
+    ).toBe(true);
+  });
+
+  it("hard-filters customer support rows by capability", async () => {
+    const reasoningResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&capability=reasoning&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const reasoningBody = (await reasoningResponse.json()) as JsonObject;
+    const pdfResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&capability=pdf&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const pdfBody = (await pdfResponse.json()) as JsonObject;
+    const recommendationResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&capability=pdf&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+
+    expect(reasoningResponse.status).toBe(200);
+    expect(reasoningBody.benchmarks.length).toBeGreaterThan(0);
+    expect(
+      reasoningBody.benchmarks.every(
+        (row: { capabilities?: { reasoning?: boolean } }) =>
+          row.capabilities?.reasoning === true,
+      ),
+    ).toBe(true);
+    expect(pdfResponse.status).toBe(200);
+    expect(pdfBody.benchmarks).toEqual([]);
+    expect(recommendationResponse.status).toBe(404);
+  });
+
+  it("applies Run AUD and intelligence filters to recommendations", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=xai&useCase=customer-support&tier=fast&includeItsBenchmark=false&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation).toMatchObject({
+      provider: "xai",
+      benchmarks: {
+        llm: expect.objectContaining({
+          intelligence: expect.any(Number),
+          intelligenceRunTotalCost: expect.any(Number),
+        }),
+      },
+    });
+    expect(body.recommendation.benchmarks.llm.intelligence).toBeGreaterThanOrEqual(
+      30,
+    );
+    expect(
+      body.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(1300);
+  });
+
+  it("supports USD run-cost caps and preview opt-in for customer-support recommendations", async () => {
+    const defaultResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=google&useCase=customer-support&tier=best&includeItsBenchmark=false&maxRunCostUsd=900",
+      ),
+      env(),
+      ctx,
+    );
+
+    const defaultBody = (await defaultResponse.json()) as JsonObject;
+
+    expect(defaultResponse.status).toBe(200);
+    expect(defaultBody.recommendation).toMatchObject({
+      provider: "google",
+      availability: expect.objectContaining({
+        status: "production",
+      }),
+    });
+
+    const previewResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=google&useCase=customer-support&tier=best&includeItsBenchmark=false&allowPreview=true&maxRunCostUsd=900",
+      ),
+      env(),
+      ctx,
+    );
+    const previewBody = (await previewResponse.json()) as JsonObject;
+
+    expect(previewResponse.status).toBe(200);
+    expect(previewBody.recommendation).toMatchObject({
+      id: "gemini-3-1-pro-preview",
+      provider: "google",
+      availability: expect.objectContaining({
+        status: "preview",
+      }),
+    });
+    expect(
+      previewBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(1350);
+
+    const cappedRowsResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false&allowPreview=true&maxRunCostUsd=900",
+      ),
+      env(),
+      ctx,
+    );
+    const cappedRowsBody = (await cappedRowsResponse.json()) as JsonObject;
+    const ids = cappedRowsBody.benchmarks.map((row: { id: string }) => row.id);
+
+    expect(cappedRowsResponse.status).toBe(200);
+    expect(ids).toContain("gemini-3-1-pro-preview");
+    expect(ids).toContain("grok-4-3");
+    expect(ids).not.toContain("gemini-3-5-flash");
+
+    const xaiResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=xai&useCase=customer-support&tier=fast&includeItsBenchmark=false&maxRunCostUsd=900",
+      ),
+      env(),
+      ctx,
+    );
+    const xaiBody = (await xaiResponse.json()) as JsonObject;
+
+    expect(xaiResponse.status).toBe(200);
+    expect(xaiBody.recommendation).toMatchObject({
+      provider: "xai",
+    });
+    expect(
+      xaiBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(1350);
   });
 
   it("uses customer-support priority tiers for OpenAI recommendations", async () => {
@@ -197,18 +501,18 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation).toMatchObject({
-      id: "gpt-5-4-low",
+      id: "gpt-5-4-mini-medium",
       provider: "openai",
       pricing: expect.objectContaining({
-        inputPerMTok: 3.75,
-        outputPerMTok: 22.5,
+        inputPerMTok: 1.125,
+        outputPerMTok: 6.75,
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 6,
+          customerSupportRank: 4,
           autoClose: expect.objectContaining({
-            falsePositiveCount: 6,
-            verifiedOn: "2026-05-21",
+            falsePositiveCount: 5,
+            verifiedOn: "2026-06-06",
           }),
         }),
       },
@@ -225,17 +529,416 @@ describe("worker routes", () => {
 
     expect(bestResponse.status).toBe(200);
     expect(bestBody.recommendation).toMatchObject({
-      id: "gpt-5-4-low",
+      id: "gpt-5-5-medium",
       provider: "openai",
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 6,
+          customerSupportRank: 16,
           autoClose: expect.objectContaining({
-            falsePositiveCount: 6,
+            falsePositiveCount: 3,
           }),
         }),
       },
     });
+
+    const fastResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?provider=openai&useCase=customer-support&tier=fast",
+      ),
+      env(),
+      ctx,
+    );
+    const fastBody = (await fastResponse.json()) as JsonObject;
+
+    expect(fastResponse.status).toBe(200);
+    expect(fastBody.recommendation).toMatchObject({
+      provider: "openai",
+      benchmarks: {
+        llm: expect.objectContaining({
+          intelligenceRunTotalCost: expect.any(Number),
+        }),
+      },
+    });
+    expect(
+      fastBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(
+      body.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+    );
+  });
+
+  it("returns the next two safest customer-support failovers for best tier", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=best&capability=reasoning",
+      ),
+      envWithCachedCatalog(
+        supportCatalog([
+          supportCandidate("safest", 0, 0.91, 500, 20),
+          supportCandidate("safe", 1, 0.92, 400, 20),
+          supportCandidate("middle", 2, 0.93, 300, 20),
+          supportCandidate("risky", 3, 0.99, 200, 20),
+        ]),
+      ),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("safest");
+    expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
+      "safe",
+      "middle",
+    ]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 2,
+    });
+  });
+
+  it("returns the next two cheapest customer-support failovers for fast tier", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning",
+      ),
+      envWithCachedCatalog(
+        supportCatalog([
+          supportCandidate("safest-expensive", 0, 0.91, 900, 20),
+          supportCandidate("cheapest", 4, 0.99, 50, 1),
+          supportCandidate("next-cheapest", 3, 0.99, 100, 1),
+          supportCandidate("third-cheapest", 2, 0.99, 200, 1),
+        ]),
+      ),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("cheapest");
+    expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
+      "next-cheapest",
+      "third-cheapest",
+    ]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 2,
+    });
+  });
+
+  it("reports thin customer-support failover coverage", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=best&capability=reasoning",
+      ),
+      envWithCachedCatalog(
+        supportCatalog([supportCandidate("only-benchmarked", 0, 0.91, 500, 20)]),
+      ),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("only-benchmarked");
+    expect(body.failovers).toEqual([]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 0,
+      reason: "insufficient_its_autoclose_benchmarks",
+    });
+  });
+
+  it("uses voice priority tiers for quality, cost, and balance", async () => {
+    const defaultResponse = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/models/recommend?useCase=voice"),
+      env(),
+      ctx,
+    );
+    const defaultBody = (await defaultResponse.json()) as JsonObject;
+    const fastResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=fast",
+      ),
+      env(),
+      ctx,
+    );
+    const fastBody = (await fastResponse.json()) as JsonObject;
+    const bestResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=best",
+      ),
+      env(),
+      ctx,
+    );
+    const bestBody = (await bestResponse.json()) as JsonObject;
+
+    expect(defaultResponse.status).toBe(200);
+    expect(fastResponse.status).toBe(200);
+    expect(bestResponse.status).toBe(200);
+    expect(defaultBody.recommendation).toMatchObject({
+      benchmarks: { voice: expect.any(Object) },
+      pricing: expect.objectContaining({
+        benchmarkInputAudioPerHour: expect.any(Number),
+      }),
+    });
+    expect(defaultBody.recommendation.id).toBe(fastBody.recommendation.id);
+    expect(fastBody.recommendation).toMatchObject({
+      benchmarks: { voice: expect.any(Object) },
+      pricing: expect.objectContaining({
+        benchmarkInputAudioPerHour: expect.any(Number),
+      }),
+    });
+    expect(bestBody.recommendation).toMatchObject({
+      benchmarks: { voice: expect.any(Object) },
+      pricing: expect.objectContaining({
+        benchmarkInputAudioPerHour: expect.any(Number),
+      }),
+    });
+    expect(
+      fastBody.recommendation.pricing.benchmarkInputAudioPerHour,
+    ).toBeLessThanOrEqual(
+      bestBody.recommendation.pricing.benchmarkInputAudioPerHour,
+    );
+    const voiceQuality = (voice: {
+      agenticPerformance?: number;
+      speechReasoning?: number;
+      telecomAgenticPerformance?: number;
+      conversationalDynamics?: number;
+    }) =>
+      (voice.agenticPerformance ?? 0) * 0.45 +
+      (voice.speechReasoning ?? 0) * 0.35 +
+      (voice.telecomAgenticPerformance ?? 0) * 0.15 +
+      (voice.conversationalDynamics ?? 0) * 0.05;
+    expect(voiceQuality(bestBody.recommendation.benchmarks.voice)).toBeGreaterThanOrEqual(
+      voiceQuality(fastBody.recommendation.benchmarks.voice),
+    );
+  });
+
+  it("hard-filters voice rows by input audio cost", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=voice&maxAudioInputCostPerHour=3",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarks.length).toBeGreaterThan(0);
+    expect(
+      body.benchmarks.every(
+        (row: { pricing: { benchmarkInputAudioPerHour?: number } }) =>
+          (row.pricing.benchmarkInputAudioPerHour ?? Number.POSITIVE_INFINITY) <= 3,
+      ),
+    ).toBe(true);
+  });
+
+  it("serves speech-to-text benchmark rows", async () => {
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text"),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarks).toContainEqual(
+      expect.objectContaining({
+        id: "elevenlabs-scribe-v2",
+        provider: "elevenlabs",
+        recommendable: true,
+        pricing: expect.objectContaining({
+          transcriptionCostPer1kMinutes: 7.5,
+        }),
+        benchmarks: {
+          speechToText: expect.objectContaining({
+            aaWer: 2.2,
+            source: "artificialanalysis",
+          }),
+        },
+      }),
+    );
+    expect(
+      body.benchmarks.some((row: { id: string }) => row.id.includes("missing")),
+    ).toBe(false);
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
+      "google-gemini-2-0-flash-lite",
+    );
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
+      "google-gemini-2-0-flash",
+    );
+  });
+
+  it("hard-filters speech-to-text rows by AA-WER", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text&maxAaWer=3",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(
+      body.benchmarks.every(
+        (row: { benchmarks: { speechToText?: { aaWer?: number } } }) =>
+          (row.benchmarks.speechToText?.aaWer ?? Number.POSITIVE_INFINITY) <= 3,
+      ),
+    ).toBe(true);
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
+      "groq-whisper-large-v3-turbo",
+    );
+  });
+
+  it("keeps Groq Whisper and excludes deprecated Gemini STT rows under default ceilings", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+    const ids = body.benchmarks.map((row: { id: string }) => row.id);
+
+    expect(response.status).toBe(200);
+    expect(ids).toContain("groq-whisper-large-v3-turbo");
+    expect(ids).not.toContain("google-gemini-2-0-flash-lite");
+    expect(ids).not.toContain("google-gemini-2-0-flash");
+    expect(
+      body.benchmarks.every(
+        (row: { benchmarks: { speechToText?: { aaWer?: number } } }) =>
+          (row.benchmarks.speechToText?.aaWer ?? Number.POSITIVE_INFINITY) <= 4.6,
+      ),
+    ).toBe(true);
+  });
+
+  it("serves speech-to-text browse rows", async () => {
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/models?useCase=speech-to-text"),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.models).toContainEqual(
+      expect.objectContaining({
+        id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+        provider: "nvidia",
+        benchmarks: {
+          speechToText: expect.objectContaining({
+            hostingProviderName: "Together.ai",
+          }),
+        },
+      }),
+    );
+    expect(body.models.map((row: { id: string }) => row.id)).not.toContain(
+      "google-gemini-2-0-flash-lite",
+    );
+    expect(body.models.map((row: { id: string }) => row.id)).not.toContain(
+      "google-gemini-2-0-flash",
+    );
+  });
+
+  it("recommends NVIDIA, ElevenLabs, and Groq speech-to-text rows", async () => {
+    const nvidiaResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=nvidia",
+      ),
+      env(),
+      ctx,
+    );
+    const nvidiaBody = (await nvidiaResponse.json()) as JsonObject;
+    const elevenLabsResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=elevenlabs",
+      ),
+      env(),
+      ctx,
+    );
+    const elevenLabsBody = (await elevenLabsResponse.json()) as JsonObject;
+    const groqResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=groq",
+      ),
+      env(),
+      ctx,
+    );
+    const groqBody = (await groqResponse.json()) as JsonObject;
+
+    expect(nvidiaResponse.status).toBe(200);
+    expect(nvidiaBody.recommendation).toMatchObject({
+      id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
+      provider: "nvidia",
+    });
+    expect(elevenLabsResponse.status).toBe(200);
+    expect(elevenLabsBody.recommendation).toMatchObject({
+      id: "elevenlabs-scribe-v2",
+      provider: "elevenlabs",
+    });
+    expect(groqResponse.status).toBe(200);
+    expect(groqBody.recommendation).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
+      pricing: expect.objectContaining({
+        transcriptionCostPer1kMinutes: 1.005,
+      }),
+    });
+
+    const defaultCappedResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
+      ),
+      env(),
+      ctx,
+    );
+    const defaultCappedBody = (await defaultCappedResponse.json()) as JsonObject;
+    const cappedGroqVisibleResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=groq&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
+      ),
+      env(),
+      ctx,
+    );
+    const cappedGroqVisibleBody =
+      (await cappedGroqVisibleResponse.json()) as JsonObject;
+    const fastCheapResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&tier=fast&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
+      ),
+      env(),
+      ctx,
+    );
+    const fastCheapBody = (await fastCheapResponse.json()) as JsonObject;
+
+    expect(defaultCappedResponse.status).toBe(200);
+    expect(defaultCappedBody.recommendation.deprecated).not.toBe(true);
+    expect(defaultCappedBody.recommendation.id).not.toBe(
+      "google-gemini-2-0-flash-lite",
+    );
+    expect(cappedGroqVisibleResponse.status).toBe(200);
+    expect(cappedGroqVisibleBody.recommendation).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
+    });
+    expect(fastCheapResponse.status).toBe(200);
+    expect(fastCheapBody.recommendation).toMatchObject({
+      id: "groq-whisper-large-v3-turbo",
+      provider: "groq",
+    });
+
+    const cappedGroqResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=groq&maxAaWer=3",
+      ),
+      env(),
+      ctx,
+    );
+    const cappedGroqBody = (await cappedGroqResponse.json()) as JsonObject;
+
+    expect(cappedGroqResponse.status).toBe(404);
+    expect(cappedGroqBody.error).toBe("not_found");
   });
 
   it("mirrors unprefixed model endpoints", async () => {
@@ -252,6 +955,9 @@ describe("worker routes", () => {
       "google",
       "xai",
       "anthropic",
+      "nvidia",
+      "elevenlabs",
+      "groq",
     ]);
   });
 

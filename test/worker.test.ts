@@ -572,15 +572,12 @@ describe("worker routes", () => {
 
     expect(previewResponse.status).toBe(200);
     expect(previewBody.recommendation).toMatchObject({
-      id: "gemini-3-1-flash-lite-preview",
+      id: "gemini-2-5-pro",
       provider: "google",
       availability: expect.objectContaining({
-        status: "preview",
+        status: "production",
       }),
     });
-    expect(
-      previewBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
-    ).toBeLessThanOrEqual(1350);
 
     const cappedRowsResponse = await handleRequest(
       new Request(

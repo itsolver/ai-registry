@@ -444,6 +444,7 @@ interface AiAutoCloseBenchmarkModel {
   displayName: string;
   benchmarkReport: string;
   resultsFile: string;
+  deprecated?: boolean;
   generatedAt: string;
   benchmarkCodeSha: string;
   total: number;
@@ -1371,6 +1372,7 @@ function buildBenchmarkCandidates(
         ? existing!.pricing
         : geminiAutoClosePricing(autoCloseModel, exchangeRate),
       contextWindow: existing?.contextWindow ?? 1_000_000,
+      deprecated: autoCloseModel.deprecated,
       capabilities: {
         vision: true,
         reasoning: true,
@@ -1701,7 +1703,9 @@ function isProductionAvailabilityAllowed(
   availability: ModelAvailabilityMetadata,
   filters?: ModelFilters,
 ): boolean {
-  if (filters?.allowPreview && availability.status === "preview") return true;
+  if (filters?.allowPreview && availability.status === "preview") {
+    return availability.acceptedRisk;
+  }
   return availability.status === "production" || availability.acceptedRisk;
 }
 

@@ -98,6 +98,7 @@ export const AI_AUTOCLOSE_BENCHMARKS = [
     displayName: "Gemini 3.1 Flash-Lite Preview",
     benchmarkReport: "AI_AUTOCLOSE_GEMINI_MODEL_BENCHMARK.md",
     resultsFile: "ai_autoclose_gemini_benchmark_results.json",
+    deprecated: true,
     generatedAt: "2026-06-06T14:35:16.280310+00:00",
     benchmarkCodeSha: "1ccdec2",
     total: 43,

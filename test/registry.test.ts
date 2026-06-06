@@ -418,6 +418,7 @@ describe("Artificial Analysis catalog", () => {
     expect(byId.get("gemini-3-1-flash-lite-preview")).toMatchObject({
       modelKey: "gemini:gemini-3.1-flash-lite-preview",
       total: 43,
+      deprecated: true,
       falsePositiveCount: 1,
       invalidCount: 0,
       availability: expect.objectContaining({
@@ -1358,7 +1359,7 @@ describe("Artificial Analysis catalog", () => {
         minIntelligence: 30,
       }),
     ).toMatchObject({
-      id: "gemini-3-1-flash-lite-preview",
+      id: "gemini-2-5-pro",
       provider: "google",
     });
     const xaiFast = recommendModel(catalog, {
@@ -1481,10 +1482,10 @@ describe("Artificial Analysis catalog", () => {
         allowPreview: true,
       }),
     ).toMatchObject({
-      id: "gemini-3-1-flash-lite-preview",
+      id: "gemini-2-5-pro",
       provider: "google",
       availability: expect.objectContaining({
-        status: "preview",
+        status: "production",
       }),
     });
   });

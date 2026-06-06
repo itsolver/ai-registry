@@ -132,7 +132,7 @@ export const AI_AUTOCLOSE_BENCHMARKS = [
       "modelKey": "codex:gpt-5.5-low",
       "apiModel": "gpt-5.5",
       "displayName": "GPT-5.5 (low)",
-      "benchmarkReport": "AI_AUTOCLOSE_CODEX_GPT_5_5_LOW_NEW.md",
+      "benchmarkReport": "AI_AUTOCLOSE_CODEX_GPT_5_5_LOW.md",
       "resultsFile": "ai_autoclose_codex_gpt_5_5_low_results.json",
       "generatedAt": "2026-06-06T08:56:14.876879+00:00",
       "benchmarkCodeSha": "ef190ce",

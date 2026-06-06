@@ -258,7 +258,7 @@ describe("Artificial Analysis catalog", () => {
           agentic: expect.any(Number),
           autoClose: expect.objectContaining({
             falsePositiveCount: 5,
-            benchmarkReport: "AI_AUTOCLOSE_CODEX_GPT_5_5_LOW_NEW.md",
+            benchmarkReport: "AI_AUTOCLOSE_CODEX_GPT_5_5_LOW.md",
           }),
         },
       },

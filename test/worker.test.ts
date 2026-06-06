@@ -297,6 +297,24 @@ describe("worker routes", () => {
     ).toBe(true);
   });
 
+  it("does not recommend non-result AA rows in customer support AA-only mode", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&includeItsBenchmark=false",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).not.toBe("gpt-oss-20b-low");
+    expect(body.recommendation.capabilities).toMatchObject({
+      vision: true,
+      reasoning: true,
+    });
+  });
+
   it("hard-filters customer support rows by Run AUD and intelligence", async () => {
     const response = await handleRequest(
       new Request(

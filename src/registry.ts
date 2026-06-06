@@ -43,6 +43,16 @@ const RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES = {
   groq: ["groq", "whisper"],
 } as const satisfies Record<ProviderId, readonly string[]>;
 
+const PROVIDER_DISPLAY_NAMES = {
+  openai: "OpenAI",
+  google: "Google",
+  xai: "xAI",
+  anthropic: "Anthropic",
+  nvidia: "NVIDIA",
+  elevenlabs: "ElevenLabs",
+  groq: "Groq",
+} as const satisfies Record<ProviderId, string>;
+
 const NON_WORK_MODEL_PATTERNS = [
   "audio",
   "embedding",
@@ -851,6 +861,13 @@ function isUseCaseRecommendationCandidate(
 
   const signals = candidate.benchmarks.llm;
   if (filters.includeItsBenchmark !== false && !signals?.autoClose) return false;
+  if (
+    filters.includeItsBenchmark === false &&
+    (candidate.capabilities?.vision !== true ||
+      candidate.capabilities?.reasoning !== true)
+  ) {
+    return false;
+  }
 
   return isProductionAvailabilityAllowed(
     candidate.availability ??
@@ -1351,7 +1368,15 @@ function benchmarkCandidatesFromSpeechToTextModel(
   const modelName = stringValue(model.name, stringValue(model.id, ""));
   if (!modelName) return [];
 
-  const baseSlug = slugFrom(stringValue(model.slug, modelName));
+  const baseSlug = slugFrom(
+    stringValue(
+      model.slug,
+      modelSlugName(
+        modelName,
+        creatorProvider ? PROVIDER_DISPLAY_NAMES[creatorProvider] : undefined,
+      ),
+    ),
+  );
   const deprecated = isKnownDeprecatedModel(baseSlug, modelName);
   const extractedAt = stringValue(model.extractedAt, generatedAt);
   const providerRows = speechToTextProviderRows(model);
@@ -3083,6 +3108,18 @@ function slugFrom(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function modelSlugName(name: string, providerName: string | undefined): string {
+  if (!providerName) return name;
+  return name.replace(
+    new RegExp(`,\\s*${escapeRegExp(providerName)}$`, "i"),
+    "",
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function optionalTokenPrice(

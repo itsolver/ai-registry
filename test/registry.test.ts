@@ -770,6 +770,23 @@ describe("Artificial Analysis catalog", () => {
     expect(rows.map((row) => row.id)).not.toContain(
       "google-gemini-2-0-flash-lite",
     );
+    const noSlugIds = benchmarkCandidates(
+      normalizeArtificialAnalysisCatalog(
+        "2026-06-01T00:00:00Z",
+        undefined,
+        [],
+        [
+          {
+            ...artificialAnalysisSpeechToTextFixture.data[0],
+            name: "GPT-4o Mini Transcribe, OpenAI",
+            slug: undefined,
+          },
+        ],
+      ),
+      { useCase: "speech-to-text" },
+    ).map((row) => row.id);
+    expect(noSlugIds).toContain("openai-gpt-4o-mini-transcribe");
+    expect(noSlugIds).not.toContain("openai-gpt-4o-mini-transcribe-openai");
     expect(rawGeminiLite).toMatchObject({
       deprecated: true,
       recommendable: false,

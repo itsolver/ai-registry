@@ -1351,16 +1351,26 @@ function buildBenchmarkCandidates(
 
   for (const autoCloseModel of AI_AUTOCLOSE_BENCHMARKS as readonly AiAutoCloseBenchmarkModel[]) {
     if (autoCloseModel.id !== "gemini-3-flash-reasoning") continue;
-    if (candidates.has(autoCloseModel.id)) continue;
 
-    const signals = standaloneGeminiFlashSignals(autoCloseModel, exchangeRate);
+    const existing = candidates.get(autoCloseModel.id);
+    const signals = {
+      ...standaloneGeminiFlashSignals(autoCloseModel, exchangeRate),
+      ...(existing?.benchmarks.llm ?? {}),
+      intelligenceRunTotalCost:
+        existing?.benchmarks.llm?.intelligenceRunTotalCost ??
+        standaloneGeminiFlashSignals(autoCloseModel, exchangeRate)
+          .intelligenceRunTotalCost,
+      ...autoCloseSignalsFromBenchmark(autoCloseModel, exchangeRate),
+    };
     const candidate = benchmarkCandidateFromRegistry({
       id: autoCloseModel.id,
       provider: autoCloseModel.provider,
-      name: autoCloseModel.displayName,
+      name: existing?.name ?? autoCloseModel.displayName,
       benchmarks: { llm: signals },
-      pricing: geminiFlashPreviewPricing(exchangeRate),
-      contextWindow: 1_000_000,
+      pricing: hasTokenPricing(existing?.pricing ?? {})
+        ? existing!.pricing
+        : geminiFlashPreviewPricing(exchangeRate),
+      contextWindow: existing?.contextWindow ?? 1_000_000,
       capabilities: {
         vision: true,
         reasoning: true,

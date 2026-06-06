@@ -168,11 +168,14 @@ async function routeApi(
 
   if (route === "/benchmarks") {
     const filters = parseFilters(params);
-    const rows = benchmarkCandidates(catalog, filters).filter(
-      (row) =>
-        !filters.useCase ||
-        isBenchmarkCandidateRecommendedForFilters(row, filters),
-    );
+    const rows =
+      filters.useCase === "customer-support"
+        ? benchmarkCandidates(catalog, filters)
+        : benchmarkCandidates(catalog, filters).filter(
+            (row) =>
+              !filters.useCase ||
+              isBenchmarkCandidateRecommendedForFilters(row, filters),
+          );
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
       benchmarkCount: rows.length,

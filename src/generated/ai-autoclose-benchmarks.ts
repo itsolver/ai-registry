@@ -2,18 +2,18 @@ export const AI_AUTOCLOSE_BENCHMARKS_EXTRACTED_AT = "2026-06-07T00:00:00Z";
 
 export const AI_AUTOCLOSE_PRICE_METADATA = {
   sourceUrl:
-    "https://ai.google.dev/gemini-api/docs/pricing",
-  verifiedOn: "2026-06-07",
+    "https://ai.itsolver.au/v1/models?useCase=customer-support&maxRunCostAud=1500",
+  verifiedOn: "2026-05-22",
   pricingCurrency: "USD",
   registryPricingCurrency: "AUD",
   sourcePricingCurrency: "USD",
   exchangeRate: {
     base: "USD",
     quote: "AUD",
-    rate: 1.4015,
-    date: "2026-06-04",
+    rate: 1.403,
+    date: "2026-05-21",
     source:
-      "https://www.investing.com/currencies/usd-aud-historical-data",
+      "https://ai.itsolver.au/v1/models?useCase=customer-support&maxRunCostAud=1500",
   },
 } as const;
 

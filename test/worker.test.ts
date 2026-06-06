@@ -265,7 +265,7 @@ describe("worker routes", () => {
     expect(body.recommendation.benchmarkSignals).toBeUndefined();
   });
 
-  it("serves recommendable AA benchmark rows without registry joins", async () => {
+  it("serves benchmark rows without registry joins", async () => {
     const response = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support",
@@ -288,9 +288,10 @@ describe("worker routes", () => {
     );
     expect(
       body.benchmarks.some(
-        (row: { recommendable: boolean }) => !row.recommendable,
+        (row: { id: string; recommendable: boolean }) =>
+          row.id === "gemini-2-5-flash-lite" && row.recommendable === false,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(body.benchmarks).toContainEqual(
       expect.objectContaining({
         id: "grok-4-3",

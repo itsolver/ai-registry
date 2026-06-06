@@ -415,6 +415,16 @@ describe("Artificial Analysis catalog", () => {
         acceptedRisk: false,
       }),
     });
+    expect(byId.get("gemini-3-1-flash-lite-preview")).toMatchObject({
+      modelKey: "gemini:gemini-3.1-flash-lite-preview",
+      total: 43,
+      falsePositiveCount: 1,
+      invalidCount: 0,
+      availability: expect.objectContaining({
+        status: "retired",
+        acceptedRisk: false,
+      }),
+    });
     expect(byId.get("gemini-2-5-flash-lite")).toMatchObject({
       modelKey: "gemini:gemini-2.5-flash-lite",
       total: 43,

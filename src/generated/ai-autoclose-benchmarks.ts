@@ -121,9 +121,9 @@ export const AI_AUTOCLOSE_BENCHMARKS = [
     officialSourceUrl: "https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite",
     officialVerifiedOn: "2026-06-07",
     availability: {
-      status: "preview",
+      status: "retired",
       acceptedRisk: false,
-      reason: "Gemini-only 43-case end-to-end replay failed production safety eligibility: minimum 95% accuracy, 98% parse success, zero false positives, and zero errors were required.",
+      reason: "Gemini-only 43-case end-to-end replay failed production safety eligibility and current official docs point production use to the stable gemini-3.1-flash-lite replacement.",
     },
   },
   {

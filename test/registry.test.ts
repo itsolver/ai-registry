@@ -320,6 +320,14 @@ describe("Artificial Analysis catalog", () => {
       useCase: "customer-support",
       tier: "best",
     });
+    const filteredGoogleBestRecommendation = recommendModel(catalog, {
+      provider: "google",
+      useCase: "customer-support",
+      tier: "best",
+      capability: "reasoning",
+      maxRunCostAud: 1300,
+      minIntelligence: 30,
+    });
 
     expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
       fastRecommendation?.id,
@@ -349,6 +357,14 @@ describe("Artificial Analysis catalog", () => {
     expect(falsePositiveRate(bestRecommendation)).toBeLessThanOrEqual(
       falsePositiveRate(fastRecommendation),
     );
+    expect(filteredGoogleBestRecommendation).toMatchObject({
+      id: "gemini-3-flash-reasoning",
+      provider: "google",
+      availability: expect.objectContaining({
+        status: "preview",
+        acceptedRisk: true,
+      }),
+    });
     expect(openaiRecommendation).toMatchObject({
       id: "gpt-5-4-mini-medium",
       provider: "openai",
@@ -382,7 +398,14 @@ describe("Artificial Analysis catalog", () => {
         },
       },
     });
-    expect(googlePreviewRecommendation).toBeUndefined();
+    expect(googlePreviewRecommendation).toMatchObject({
+      id: "gemini-3-flash-reasoning",
+      provider: "google",
+      availability: expect.objectContaining({
+        status: "preview",
+        acceptedRisk: true,
+      }),
+    });
   });
 
   it("tracks curated ITS auto-close rows for model-table joins", () => {
@@ -401,6 +424,10 @@ describe("Artificial Analysis catalog", () => {
       falsePositiveCount: 1,
       invalidCount: 0,
       benchmarkReport: "AI_AUTOCLOSE_MODEL_BENCHMARK.md",
+      availability: expect.objectContaining({
+        status: "preview",
+        acceptedRisk: true,
+      }),
     });
     expect(byId.get("gpt-5-mini")).toMatchObject({
       falsePositiveCount: 0,

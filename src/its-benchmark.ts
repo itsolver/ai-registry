@@ -147,7 +147,7 @@ const ITS_BENCHMARK_ROWS: ItsBenchmarkRow[] = [
     avgTokens: 2068.3055555555557,
     updatedAgo: "742h ago",
     invalidSummary: "none",
-    note: "promising preview; not a default production recommendation",
+    note: "accepted-risk preview candidate",
     highlight: true,
   },
 ];
@@ -347,7 +347,7 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
     <section class="info" aria-label="Benchmark notes">
       <p><strong>Invalids are contract failures.</strong> They are cases where the model did not return a parseable final intent. Invalid and error outputs fail closed to <code>Needs Help</code> and are not counted as false positives.</p>
       <p><strong>False positives matter most.</strong> A false positive is an unresolved ticket predicted as resolved, so the production recommendation path ranks ITS benchmarked candidates by false-positive risk before accuracy.</p>
-      <p><strong>Preview caveat.</strong> <code>gemini:gemini-3-flash-preview</code> is highlighted because this run is promising, but it remains a preview model and is not a default long-lived production recommendation.</p>
+      <p><strong>Preview caveat.</strong> <code>gemini:gemini-3-flash-preview</code> is highlighted because this run is promising and is now an accepted-risk preview candidate for customer-support recommendations.</p>
     </section>
   </main>
   <script>

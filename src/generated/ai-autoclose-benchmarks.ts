@@ -50,9 +50,9 @@ export const AI_AUTOCLOSE_BENCHMARKS = [
     officialVerifiedOn: "2026-05-06",
     availability: {
       status: "preview",
-      acceptedRisk: false,
+      acceptedRisk: true,
       reason:
-        "Gemini 3 Flash Preview was benchmarked as a preview model, so it is not a default long-lived production recommendation.",
+        "Angus accepted preview-model risk for customer-support recommendation and failover use on 2026-06-06.",
     },
   },
   {

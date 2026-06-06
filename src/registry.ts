@@ -1349,6 +1349,29 @@ function buildBenchmarkCandidates(
     candidates.set(candidate.id, candidate);
   }
 
+  for (const autoCloseModel of AI_AUTOCLOSE_BENCHMARKS as readonly AiAutoCloseBenchmarkModel[]) {
+    if (autoCloseModel.id !== "gemini-3-flash-reasoning") continue;
+    if (candidates.has(autoCloseModel.id)) continue;
+
+    const signals = standaloneGeminiFlashSignals(autoCloseModel, exchangeRate);
+    const candidate = benchmarkCandidateFromRegistry({
+      id: autoCloseModel.id,
+      provider: autoCloseModel.provider,
+      name: autoCloseModel.displayName,
+      benchmarks: { llm: signals },
+      pricing: geminiFlashPreviewPricing(exchangeRate),
+      contextWindow: 1_000_000,
+      capabilities: {
+        vision: true,
+        reasoning: true,
+        pdf: false,
+        toolCalling: false,
+        structuredOutput: false,
+      },
+    });
+    candidates.set(candidate.id, candidate);
+  }
+
   for (const model of models) {
     if (!model.benchmarks?.voice) continue;
     const candidate = benchmarkCandidateFromRegistry({
@@ -1511,7 +1534,11 @@ function benchmarkCandidateFromRegistry(input: {
     family: model?.family ?? null,
     contextWindow: model?.contextWindow ?? input.contextWindow ?? null,
     outputLimit: model?.outputLimit ?? null,
-    capabilities: model?.capabilities ?? input.capabilities ?? null,
+    capabilities:
+      model?.capabilities ??
+      input.capabilities ??
+      inferredTextCapabilities(input.id, input.name, input.benchmarks.llm) ??
+      null,
     modalities: model?.modalities ?? null,
     ...(model?.releaseDate ? { releaseDate: model.releaseDate } : {}),
     ...(model?.knowledgeCutoff
@@ -1530,6 +1557,35 @@ function capabilitiesFromCustomerSupportRecommendation(
   return {
     vision: model.imageInput,
     reasoning: model.reasoning,
+    pdf: false,
+    toolCalling: false,
+    structuredOutput: false,
+  };
+}
+
+function inferredTextCapabilities(
+  id: string,
+  name: string,
+  signals?: BenchmarkSignals,
+): Record<Capability, boolean> | null {
+  if (
+    id === "gemini-3-flash-reasoning" &&
+    signals?.autoClose?.modelKey === "gemini:gemini-3-flash-preview"
+  ) {
+    return {
+      vision: true,
+      reasoning: true,
+      pdf: false,
+      toolCalling: false,
+      structuredOutput: false,
+    };
+  }
+
+  const searchable = `${id} ${name}`.toLowerCase();
+  if (!searchable.includes("reasoning")) return null;
+  return {
+    vision: false,
+    reasoning: true,
     pdf: false,
     toolCalling: false,
     structuredOutput: false,
@@ -1615,6 +1671,14 @@ function productionAvailabilityForTextModel(
 ): ModelAvailabilityMetadata {
   const benchmarkAvailability = signals?.autoClose?.availability;
   const heuristicAvailability = heuristicAvailabilityForTextModel(id, name);
+
+  if (
+    benchmarkAvailability?.status === "preview" &&
+    benchmarkAvailability.acceptedRisk &&
+    heuristicAvailability.status === "preview"
+  ) {
+    return benchmarkAvailability;
+  }
 
   if (!isProductionAvailabilityAllowed(heuristicAvailability)) {
     return heuristicAvailability;
@@ -2146,6 +2210,29 @@ function benchmarkSignalsFromCustomerSupportRecommendation(
       audValueOrUndefined(model.intelligenceIndexCost, rate),
     ),
   };
+}
+
+function standaloneGeminiFlashSignals(
+  model: AiAutoCloseBenchmarkModel,
+  exchangeRate?: ExchangeRate,
+): BenchmarkSignals {
+  const rate = exchangeRate?.rate ?? 1;
+  return {
+    intelligence: 30,
+    agentic: 30,
+    instructionFollowing: 30,
+    speed: 0,
+    intelligenceRunTotalCost: audValueOrUndefined(model.costPer1000Usd, rate),
+    ...autoCloseSignalsFromBenchmark(model, exchangeRate),
+  };
+}
+
+function geminiFlashPreviewPricing(exchangeRate?: ExchangeRate): ModelPricing {
+  const pricing: ModelPricing = {
+    inputPerMTok: 0.5,
+    outputPerMTok: 3,
+  };
+  return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
 }
 
 function mergeBenchmarkSignals(

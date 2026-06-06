@@ -17,6 +17,12 @@ describe("homepage copy", () => {
       "function mergeCustomerSupportBenchmarkRows(models, benchmarkModels)",
     );
     expect(HOME_HTML).toContain(
+      "mergeCustomerSupportBenchmarkRows(models || [], currentTextBenchmarkModels()),",
+    );
+    expect(HOME_HTML).toContain(
+      "var supportModels = useProvidedRows ? models : activeTextBenchmarkModels(models);",
+    );
+    expect(HOME_HTML).toContain(
       "if (fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();",
     );
     expect(HOME_HTML).toContain("currentBrowseModels = data.models || [];");

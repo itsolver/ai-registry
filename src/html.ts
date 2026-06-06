@@ -2150,7 +2150,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
 
       renderTextBenchmarks(
-        mergeCustomerSupportBenchmarkRows(models || [], currentTextBenchmarkModels())
+        mergeCustomerSupportBenchmarkRows(models || [], currentTextBenchmarkModels()),
+        true
       );
       renderFaq(models || []);
     }
@@ -2228,8 +2229,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       return base;
     }
 
-    function renderTextBenchmarks(models) {
-      var support = textRows(activeTextBenchmarkModels(models), 'customer-support');
+    function renderTextBenchmarks(models, useProvidedRows) {
+      var supportModels = useProvidedRows ? models : activeTextBenchmarkModels(models);
+      var support = textRows(supportModels, 'customer-support');
       var includeIts = includeItsBenchmark();
       var supportSort = customerSupportTableSort(includeIts);
 

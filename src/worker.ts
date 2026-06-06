@@ -16,7 +16,7 @@ import {
   type ExchangeRate,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v18";
+const CACHE_KEY = "catalog:v20";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
 const DEFAULT_FX_RATE_URL =
@@ -168,11 +168,14 @@ async function routeApi(
 
   if (route === "/benchmarks") {
     const filters = parseFilters(params);
-    const rows = benchmarkCandidates(catalog, filters).filter(
-      (row) =>
-        !filters.useCase ||
-        isBenchmarkCandidateRecommendedForFilters(row, filters),
-    );
+    const rows =
+      filters.useCase === "customer-support"
+        ? benchmarkCandidates(catalog, filters)
+        : benchmarkCandidates(catalog, filters).filter(
+            (row) =>
+              !filters.useCase ||
+              isBenchmarkCandidateRecommendedForFilters(row, filters),
+          );
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
       benchmarkCount: rows.length,

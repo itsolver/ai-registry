@@ -444,6 +444,7 @@ interface AiAutoCloseBenchmarkModel {
   displayName: string;
   benchmarkReport: string;
   resultsFile: string;
+  deprecated?: boolean;
   generatedAt: string;
   benchmarkCodeSha: string;
   total: number;
@@ -1350,7 +1351,7 @@ function buildBenchmarkCandidates(
   }
 
   for (const autoCloseModel of AI_AUTOCLOSE_BENCHMARKS as readonly AiAutoCloseBenchmarkModel[]) {
-    if (autoCloseModel.id !== "gemini-3-flash-reasoning") continue;
+    if (autoCloseModel.provider !== "google") continue;
 
     const existing = candidates.get(autoCloseModel.id);
     const signals = {
@@ -1369,8 +1370,9 @@ function buildBenchmarkCandidates(
       benchmarks: { llm: signals },
       pricing: hasTokenPricing(existing?.pricing ?? {})
         ? existing!.pricing
-        : geminiFlashPreviewPricing(exchangeRate),
+        : geminiAutoClosePricing(autoCloseModel, exchangeRate),
       contextWindow: existing?.contextWindow ?? 1_000_000,
+      deprecated: autoCloseModel.deprecated,
       capabilities: {
         vision: true,
         reasoning: true,
@@ -1701,7 +1703,9 @@ function isProductionAvailabilityAllowed(
   availability: ModelAvailabilityMetadata,
   filters?: ModelFilters,
 ): boolean {
-  if (filters?.allowPreview && availability.status === "preview") return true;
+  if (filters?.allowPreview && availability.status === "preview") {
+    return availability.acceptedRisk;
+  }
   return availability.status === "production" || availability.acceptedRisk;
 }
 
@@ -2242,6 +2246,24 @@ function geminiFlashPreviewPricing(exchangeRate?: ExchangeRate): ModelPricing {
     inputPerMTok: 0.5,
     outputPerMTok: 3,
   };
+  return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
+}
+
+function geminiAutoClosePricing(
+  model: AiAutoCloseBenchmarkModel,
+  exchangeRate?: ExchangeRate,
+): ModelPricing {
+  const pricingByModel: Record<string, ModelPricing> = {
+    "gemini-2.5-flash-lite": { inputPerMTok: 0.1, outputPerMTok: 0.4 },
+    "gemini-2.5-flash": { inputPerMTok: 0.3, outputPerMTok: 2.5 },
+    "gemini-3.1-flash-lite-preview": {
+      inputPerMTok: 0.25,
+      outputPerMTok: 1.5,
+    },
+    "gemini-3-flash-preview": { inputPerMTok: 0.5, outputPerMTok: 3 },
+    "gemini-3.1-pro-preview": { inputPerMTok: 2, outputPerMTok: 12 },
+  };
+  const pricing = pricingByModel[model.apiModel] ?? geminiFlashPreviewPricing();
   return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
 }
 

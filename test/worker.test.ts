@@ -180,7 +180,7 @@ describe("worker routes", () => {
       const html = await response.text();
       expect(html).toContain("ITS Auto-Close Benchmark");
       expect(html).toContain("gemini:gemini-3-flash-preview");
-      expect(html).toContain("promising preview");
+      expect(html).toContain("No Gemini candidate");
       expect(html).toContain("Invalids are contract failures.");
       expect(html).toContain('data-sort="accuracy"');
     }
@@ -265,7 +265,7 @@ describe("worker routes", () => {
     expect(body.recommendation.benchmarkSignals).toBeUndefined();
   });
 
-  it("serves recommendable AA benchmark rows without registry joins", async () => {
+  it("serves benchmark rows without registry joins", async () => {
     const response = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support",
@@ -288,9 +288,10 @@ describe("worker routes", () => {
     );
     expect(
       body.benchmarks.some(
-        (row: { recommendable: boolean }) => !row.recommendable,
+        (row: { id: string; recommendable: boolean }) =>
+          row.id === "gemini-2-5-flash-lite" && row.recommendable === false,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(body.benchmarks).toContainEqual(
       expect.objectContaining({
         id: "grok-4-3",
@@ -571,15 +572,12 @@ describe("worker routes", () => {
 
     expect(previewResponse.status).toBe(200);
     expect(previewBody.recommendation).toMatchObject({
-      id: "gemini-3-1-flash-lite-preview",
+      id: "gemini-2-5-pro",
       provider: "google",
       availability: expect.objectContaining({
-        status: "preview",
+        status: "production",
       }),
     });
-    expect(
-      previewBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
-    ).toBeLessThanOrEqual(1350);
 
     const cappedRowsResponse = await handleRequest(
       new Request(

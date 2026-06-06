@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added Gemini-only IT Solver auto-close benchmark results to generated data, model details, benchmark APIs, and `/its`.
 - Added customer-support recommendation failovers and refreshed no-cost IT Solver auto-close benchmark rows.
 - Added a public aggregate ITS auto-close benchmark page at `/its`.
 

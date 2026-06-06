@@ -17,9 +17,94 @@ type ItsBenchmarkRow = {
   highlight?: boolean;
 };
 
-const ITS_BENCHMARK_GENERATED_AT = "2026-06-06T12:27:59.180541+00:00";
+const ITS_BENCHMARK_GENERATED_AT = "2026-06-06T14:35:16.280310+00:00";
 
 const ITS_BENCHMARK_ROWS: ItsBenchmarkRow[] = [
+  {
+    displayName: "Gemini 2.5 Flash-Lite",
+    modelKey: "gemini:gemini-2.5-flash-lite",
+    status: "complete",
+    completed: 43,
+    total: 43,
+    accuracy: 0.8604651162790697,
+    falsePositive: 3,
+    falseNegative: 3,
+    invalid: 0,
+    errors: 0,
+    costAud: 0.00720385015,
+    avgTokens: 1055.4186046511627,
+    updatedAgo: "0h ago",
+    invalidSummary: "none",
+    note: "not production-safe: 3 FP, 86.0% acc",
+  },
+  {
+    displayName: "Gemini 2.5 Flash",
+    modelKey: "gemini:gemini-2.5-flash",
+    status: "complete",
+    completed: 43,
+    total: 43,
+    accuracy: 0.5348837209302325,
+    falsePositive: 0,
+    falseNegative: 20,
+    invalid: 0,
+    errors: 0,
+    costAud: 0.06807519965,
+    avgTokens: 1339.5581395348838,
+    updatedAgo: "0h ago",
+    invalidSummary: "none",
+    note: "not production-safe: 53.5% acc",
+  },
+  {
+    displayName: "Gemini 3.1 Flash-Lite Preview",
+    modelKey: "gemini:gemini-3.1-flash-lite-preview",
+    status: "complete",
+    completed: 43,
+    total: 43,
+    accuracy: 0.9069767441860465,
+    falsePositive: 1,
+    falseNegative: 3,
+    invalid: 0,
+    errors: 0,
+    costAud: 0.018622781625,
+    avgTokens: 1046.6511627906978,
+    updatedAgo: "0h ago",
+    invalidSummary: "none",
+    note: "not production-safe: 1 FP, 90.7% acc, preview",
+  },
+  {
+    displayName: "Gemini 3 Flash Preview",
+    modelKey: "gemini:gemini-3-flash-preview",
+    status: "complete",
+    completed: 43,
+    total: 43,
+    accuracy: 0.8604651162790697,
+    falsePositive: 1,
+    falseNegative: 5,
+    invalid: 0,
+    errors: 0,
+    costAud: 0.03931838175,
+    avgTokens: 1058.1162790697674,
+    updatedAgo: "0h ago",
+    invalidSummary: "none",
+    note: "not production-safe: 1 FP, 86.0% acc, preview",
+  },
+  {
+    displayName: "Gemini 3.1 Pro Preview",
+    modelKey: "gemini:gemini-3.1-pro-preview",
+    status: "complete",
+    completed: 43,
+    total: 43,
+    accuracy: 0.8604651162790697,
+    falsePositive: 1,
+    falseNegative: 5,
+    invalid: 0,
+    errors: 0,
+    costAud: 0.21500972100000001,
+    avgTokens: 1137.953488372093,
+    updatedAgo: "0h ago",
+    invalidSummary: "none",
+    note: "not production-safe: 1 FP, 86.0% acc, preview",
+  },
   {
     displayName: "gpt-5.4 (low)",
     modelKey: "codex:gpt-5.4-low",
@@ -35,22 +120,6 @@ const ITS_BENCHMARK_ROWS: ItsBenchmarkRow[] = [
     avgTokens: 14232.296296296297,
     updatedAgo: "360h ago",
     invalidSummary: "none",
-  },
-  {
-    displayName: "gemini-2.5-flash",
-    modelKey: "gemini:gemini-2.5-flash",
-    status: "complete",
-    completed: 36,
-    total: 36,
-    accuracy: 0.3055555555555556,
-    falsePositive: 0,
-    falseNegative: 0,
-    invalid: 25,
-    errors: 0,
-    costAud: 0.0522013,
-    avgTokens: 2246.4166666666665,
-    updatedAgo: "742h ago",
-    invalidSummary: "missing parseable intent after reasoning",
   },
   {
     displayName: "gpt-5-mini",
@@ -131,25 +200,7 @@ const ITS_BENCHMARK_ROWS: ItsBenchmarkRow[] = [
     avgTokens: 1582.6172839506175,
     updatedAgo: "360h ago",
     invalidSummary: "none",
-  },
-  {
-    displayName: "gemini-3-flash-preview",
-    modelKey: "gemini:gemini-3-flash-preview",
-    status: "complete",
-    completed: 36,
-    total: 36,
-    accuracy: 0.9166666666666666,
-    falsePositive: 1,
-    falseNegative: 2,
-    invalid: 0,
-    errors: 0,
-    costAud: 0.0529495,
-    avgTokens: 2068.3055555555557,
-    updatedAgo: "742h ago",
-    invalidSummary: "none",
-    note: "accepted-risk preview candidate",
-    highlight: true,
-  },
+  }
 ];
 
 export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
@@ -347,7 +398,7 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
     <section class="info" aria-label="Benchmark notes">
       <p><strong>Invalids are contract failures.</strong> They are cases where the model did not return a parseable final intent. Invalid and error outputs fail closed to <code>Needs Help</code> and are not counted as false positives.</p>
       <p><strong>False positives matter most.</strong> A false positive is an unresolved ticket predicted as resolved, so the production recommendation path ranks ITS benchmarked candidates by false-positive risk before accuracy.</p>
-      <p><strong>Preview caveat.</strong> <code>gemini:gemini-3-flash-preview</code> is highlighted because this run is promising and is now an accepted-risk preview candidate for customer-support recommendations.</p>
+      <p><strong>Gemini result.</strong> No Gemini candidate in this run met the production-safety gate: zero false positives, at least 95% accuracy, at least 98% parse success, and no provider errors.</p>
     </section>
   </main>
   <script>

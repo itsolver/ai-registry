@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleRequest, type Env } from "../src/worker";
+import type { BenchmarkCandidate, Catalog } from "../src/registry";
 import {
   artificialAnalysisFixture,
   artificialAnalysisSpeechToTextFixture,
@@ -35,6 +36,100 @@ const ctx = {
     return undefined;
   },
 };
+
+function envWithCachedCatalog(catalog: Catalog): Env {
+  return {
+    MODEL_CACHE: {
+      get: async () => JSON.stringify(catalog),
+      put: async () => undefined,
+    } as unknown as KVNamespace,
+  };
+}
+
+function supportCandidate(
+  id: string,
+  falsePositiveCount: number,
+  accuracy: number,
+  runCost: number,
+  outputPerMTok: number,
+): BenchmarkCandidate {
+  return {
+    id,
+    provider: "openai",
+    name: id,
+    source: "artificialanalysis",
+    benchmarks: {
+      llm: {
+        instructionFollowing: 80,
+        intelligence: 80,
+        intelligenceRunTotalCost: runCost,
+        autoClose: {
+          source: "itsolver-autoclose",
+          modelKey: `test:${id}`,
+          apiModel: id,
+          displayName: id,
+          benchmarkReport: `${id}.md`,
+          resultsFile: `${id}.json`,
+          generatedAt: "2026-05-22T00:00:00Z",
+          benchmarkCodeSha: "test",
+          total: 100,
+          correctCount: Math.round(accuracy * 100),
+          accuracy,
+          falsePositiveCount,
+          falseNegativeCount: 100 - Math.round(accuracy * 100),
+          invalidCount: 0,
+          errorCount: 0,
+          parseSuccessRate: 1,
+          avgLatencyMs: 1000,
+          p95LatencyMs: 1200,
+          avgInputTokens: 1000,
+          avgOutputTokens: 100,
+          weightedScore: accuracy * 100,
+          sourceUrl: "https://example.test/autoclose",
+          verifiedOn: "2026-05-22",
+          availability: {
+            status: "production",
+            acceptedRisk: false,
+            reason: "test",
+          },
+        },
+      },
+    },
+    pricing: { inputPerMTok: 1, outputPerMTok },
+    recommendable: true,
+    availability: {
+      status: "production",
+      acceptedRisk: false,
+      reason: "test",
+    },
+    family: null,
+    contextWindow: null,
+    outputLimit: null,
+    capabilities: {
+      vision: false,
+      pdf: false,
+      reasoning: true,
+      toolCalling: false,
+      structuredOutput: false,
+    },
+    modalities: null,
+    openWeights: null,
+    tier: null,
+    deprecated: null,
+    updatedAt: null,
+  };
+}
+
+function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
+  return {
+    generatedAt: new Date().toISOString(),
+    modelCount: candidates.length,
+    activeModelCount: candidates.length,
+    providers: [{ provider: "openai", total: candidates.length, active: candidates.length }],
+    models: [],
+    benchmarkCandidates: candidates,
+  };
+}
 
 describe("worker routes", () => {
   it("serves the homepage without auth", async () => {
@@ -388,18 +483,18 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation).toMatchObject({
-      id: "gpt-5-5-low",
+      id: "gpt-5-4-mini-medium",
       provider: "openai",
       pricing: expect.objectContaining({
-        inputPerMTok: 7.5,
-        outputPerMTok: 45,
+        inputPerMTok: 1.125,
+        outputPerMTok: 6.75,
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 10,
+          customerSupportRank: 4,
           autoClose: expect.objectContaining({
-            falsePositiveCount: 8,
-            verifiedOn: "2026-05-21",
+            falsePositiveCount: 5,
+            verifiedOn: "2026-06-06",
           }),
         }),
       },
@@ -416,13 +511,13 @@ describe("worker routes", () => {
 
     expect(bestResponse.status).toBe(200);
     expect(bestBody.recommendation).toMatchObject({
-      id: "gpt-5-5-low",
+      id: "gpt-5-5-medium",
       provider: "openai",
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 10,
+          customerSupportRank: 16,
           autoClose: expect.objectContaining({
-            falsePositiveCount: 8,
+            falsePositiveCount: 3,
           }),
         }),
       },
@@ -451,6 +546,86 @@ describe("worker routes", () => {
     ).toBeLessThanOrEqual(
       body.recommendation.benchmarks.llm.intelligenceRunTotalCost,
     );
+  });
+
+  it("returns the next two safest customer-support failovers for best tier", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=best&capability=reasoning",
+      ),
+      envWithCachedCatalog(
+        supportCatalog([
+          supportCandidate("safest", 0, 0.91, 500, 20),
+          supportCandidate("safe", 1, 0.92, 400, 20),
+          supportCandidate("middle", 2, 0.93, 300, 20),
+          supportCandidate("risky", 3, 0.99, 200, 20),
+        ]),
+      ),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("safest");
+    expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
+      "safe",
+      "middle",
+    ]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 2,
+    });
+  });
+
+  it("returns the next two cheapest customer-support failovers for fast tier", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning",
+      ),
+      envWithCachedCatalog(
+        supportCatalog([
+          supportCandidate("safest-expensive", 0, 0.91, 900, 20),
+          supportCandidate("cheapest", 4, 0.99, 50, 1),
+          supportCandidate("next-cheapest", 3, 0.99, 100, 1),
+          supportCandidate("third-cheapest", 2, 0.99, 200, 1),
+        ]),
+      ),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("cheapest");
+    expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
+      "next-cheapest",
+      "third-cheapest",
+    ]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 2,
+    });
+  });
+
+  it("reports thin customer-support failover coverage", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=best&capability=reasoning",
+      ),
+      envWithCachedCatalog(
+        supportCatalog([supportCandidate("only-benchmarked", 0, 0.91, 500, 20)]),
+      ),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("only-benchmarked");
+    expect(body.failovers).toEqual([]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 0,
+      reason: "insufficient_its_autoclose_benchmarks",
+    });
   });
 
   it("uses voice priority tiers for quality, cost, and balance", async () => {

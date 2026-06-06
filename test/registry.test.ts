@@ -4,6 +4,7 @@ import {
   normalizeArtificialAnalysisCatalog,
   parseFilters,
   recommendModel,
+  recommendModelFailovers,
   type BenchmarkCandidate,
   type Catalog,
 } from "../src/registry";
@@ -230,20 +231,20 @@ describe("Artificial Analysis catalog", () => {
       falsePositiveRate(fastRecommendation),
     );
     expect(openaiRecommendation).toMatchObject({
-      id: "gpt-5-5-low",
+      id: "gpt-5-4-mini-medium",
       provider: "openai",
       recommendable: true,
       pricing: {
-        inputPerMTok: 5,
-        outputPerMTok: 30,
+        inputPerMTok: 0.75,
+        outputPerMTok: 4.5,
       },
       benchmarks: {
         llm: {
           autoClose: expect.objectContaining({
-            falsePositiveCount: 8,
+            falsePositiveCount: 5,
             accuracy: expect.any(Number),
             sourceUrl: expect.any(String),
-            verifiedOn: "2026-05-21",
+            verifiedOn: "2026-06-06",
           }),
         },
       },
@@ -256,8 +257,8 @@ describe("Artificial Analysis catalog", () => {
           instructionFollowing: expect.any(Number),
           agentic: expect.any(Number),
           autoClose: expect.objectContaining({
-            falsePositiveCount: 8,
-            benchmarkReport: "AI_AUTOCLOSE_CODEX_GPT_5_5_LOW.md",
+            falsePositiveCount: 5,
+            benchmarkReport: "AI_AUTOCLOSE_CODEX_GPT_5_5_LOW_NEW.md",
           }),
         },
       },
@@ -357,6 +358,18 @@ describe("Artificial Analysis catalog", () => {
     expect(
       recommendModel(catalog, { useCase: "customer-support", tier: "best" })?.id,
     ).toBe("safest");
+    expect(
+      recommendModelFailovers(catalog, {
+        useCase: "customer-support",
+        tier: "best",
+      }).map((model) => model.id),
+    ).toEqual(["safe", "middle"]);
+    expect(
+      recommendModelFailovers(catalog, {
+        useCase: "customer-support",
+        tier: "fast",
+      }).map((model) => model.id),
+    ).toEqual(["risky", "middle"]);
     expect(
       recommendModel(catalog, {
         useCase: "customer-support",

@@ -8,13 +8,14 @@ import {
   normalizeArtificialAnalysisCatalog,
   parseFilters,
   recommendModel,
+  recommendModelFailovers,
   type ArtificialAnalysisModel,
   type ArtificialAnalysisSpeechToTextModel,
   type Catalog,
   type ExchangeRate,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v11";
+const CACHE_KEY = "catalog:v12";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
 const DEFAULT_FX_RATE_URL =
@@ -123,7 +124,8 @@ async function routeApi(
   }
 
   if (route === "/models/recommend") {
-    const recommendation = recommendModel(catalog, parseFilters(params));
+    const filters = parseFilters(params);
+    const recommendation = recommendModel(catalog, filters);
     if (!recommendation) {
       return jsonResponse(
         {
@@ -134,9 +136,26 @@ async function routeApi(
       );
     }
 
+    const requestedFailovers = 2;
+    const failovers = recommendModelFailovers(
+      catalog,
+      filters,
+      requestedFailovers,
+    );
+    const failoverStatus = {
+      requested: requestedFailovers,
+      returned: failovers.length,
+      ...(filters.useCase === "customer-support" &&
+      failovers.length < requestedFailovers
+        ? { reason: "insufficient_its_autoclose_benchmarks" }
+        : {}),
+    };
+
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
       recommendation,
+      failovers,
+      failoverStatus,
     });
   }
 

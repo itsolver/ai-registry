@@ -185,15 +185,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       padding: 1.2rem 1.3rem 1.25rem;
       background: linear-gradient(180deg, #f7f4ec 0%, #f3eee4 100%);
     }
-    .builder-intro {
-      display: flex;
-      gap: 0.45rem;
-      align-items: center;
-      margin: 0 0 1.05rem;
-      color: var(--muted);
-      font-size: 0.84rem;
-    }
-    .builder-intro::before { content: '*'; color: var(--accent); font-weight: 700; }
     .builder-controls {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -555,53 +546,134 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
     @media (min-width: 1024px) {
       .query-benchmark-layout {
-        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-        gap: clamp(1rem, 2vw, 2rem);
+        grid-template-columns: minmax(420px, 460px) minmax(0, 1fr);
+        gap: clamp(0.9rem, 1.6vw, 1.6rem);
       }
       .query-sidebar {
         position: sticky;
-        top: 1rem;
-        max-height: calc(100vh - 2rem);
+        top: 0.65rem;
+        max-height: calc(100vh - 1.3rem);
         overflow-y: auto;
         padding-right: 0.1rem;
+      }
+      .query-sidebar h2,
+      .benchmark-column h2 {
+        margin-bottom: 0.55rem;
+        font-size: 1rem;
+        line-height: 1.1;
       }
       .query-sidebar .builder {
         margin: 0;
       }
       .query-sidebar .builder-form {
-        padding: 1rem;
+        padding: 0.7rem;
       }
-      .query-sidebar .builder-intro {
-        align-items: flex-start;
-        margin-bottom: 0.85rem;
-        font-size: 0.78rem;
+      .query-sidebar .builder-controls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.48rem 0.55rem;
       }
-      .query-sidebar .builder-controls,
       .query-sidebar .range-group {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.48rem 0.55rem;
       }
-      .query-sidebar .range-field,
       .query-sidebar .range-group {
-        grid-column: auto;
+        grid-column: 1 / -1;
+      }
+      .query-sidebar .range-group .b-field:last-child,
+      .query-sidebar .range-field {
+        grid-column: 1 / -1;
+      }
+      .query-sidebar .b-field {
+        gap: 0.16rem;
+      }
+      .query-sidebar .b-field label {
+        font-size: 0.54rem;
+        line-height: 1.1;
+      }
+      .query-sidebar .b-field select,
+      .query-sidebar .b-field input {
+        min-height: 30px;
+        padding: 0.32rem 0.45rem;
+        font-size: 0.76rem;
+      }
+      .query-sidebar .check-row {
+        min-height: 30px;
+        gap: 0.35rem;
+        font-size: 0.7rem;
+      }
+      .query-sidebar .check-row input {
+        width: 14px;
+        min-height: 14px;
+      }
+      .query-sidebar .price-filter-card,
+      .query-sidebar .compact-filter {
+        padding: 0.38rem 0.45rem 0.32rem;
+        border-radius: 6px;
+      }
+      .query-sidebar .price-filter-top,
+      .query-sidebar .price-filter-scale {
+        gap: 0.4rem;
+      }
+      .query-sidebar .price-filter-top strong,
+      .query-sidebar .compact-filter .price-filter-top strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.68rem;
+      }
+      .query-sidebar .price-filter-top button {
+        flex-shrink: 0;
+        padding: 0.08rem 0.38rem;
+        font-size: 0.62rem;
+      }
+      .query-sidebar .range-stack {
+        min-height: 20px;
+        margin: 0.22rem 0 0.12rem;
+        background-size: 100% 3px;
+      }
+      .query-sidebar .price-filter-card input[type="range"] {
+        min-height: 20px;
+      }
+      .query-sidebar .price-filter-scale {
+        font-size: 0.56rem;
+        line-height: 1.2;
       }
       .query-sidebar .builder-url {
         flex-wrap: wrap;
       }
       .query-sidebar .builder-method {
-        padding-left: 0.85rem;
+        padding: 0.42rem 0 0.36rem 0.65rem;
+        font-size: 0.68rem;
       }
       .query-sidebar .builder-url-text {
         width: 100%;
-        padding-left: 0.85rem;
+        padding: 0.38rem 0.55rem 0.4rem 0.65rem;
+      }
+      .query-sidebar .builder-url-text a {
+        font-size: 0.64rem;
       }
       .query-sidebar .builder-actions {
         width: 100%;
         justify-content: flex-end;
-        padding: 0 0.6rem 0.55rem;
+        padding: 0 0.45rem 0.38rem;
+      }
+      .query-sidebar .builder-action {
+        min-height: 24px;
+        padding: 0.2rem 0.48rem;
+        font-size: 0.62rem;
       }
       .query-sidebar pre {
-        padding: 0.85rem;
-        font-size: 0.72rem;
+        padding: 0.52rem 0.65rem;
+        font-size: 0.6rem;
+        line-height: 1.35;
+      }
+      .query-sidebar .pre-wrap .copy-btn {
+        display: none;
+      }
+      .query-sidebar .builder-result {
+        gap: 0.35rem;
+        padding: 0.42rem 0.65rem;
+        font-size: 0.66rem;
       }
       .header-stats {
         gap: 0.35rem;
@@ -670,7 +742,6 @@ export const HOME_HTML = String.raw`<!doctype html>
   <h2 id="builderTitle">Build Your Query</h2>
   <div class="builder">
     <div class="builder-form">
-      <p class="builder-intro">Tell the registry what you need. It builds the URL and previews the current answer.</p>
       <div class="builder-controls">
         <div class="b-field">
           <label for="b-endpoint">I want to</label>
@@ -1033,7 +1104,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
-    <p>The opinionated endpoint. Apply filters and get one customer support or voice-appropriate model back.</p>
+    <p>The opinionated endpoint. Apply filters and get one primary model plus benchmarked customer-support failovers when available.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/providers</code>
@@ -1064,6 +1135,19 @@ export const HOME_HTML = String.raw`<!doctype html>
       "outputPerMTok": 21.0405
     },
     "recommendable": true
+  },
+  "failovers": [
+    {
+      "id": "grok-4-3",
+      "provider": "xai",
+      "name": "Grok 4.3 (high)",
+      "recommendable": true
+    }
+  ],
+  "failoverStatus": {
+    "requested": 2,
+    "returned": 1,
+    "reason": "insufficient_its_autoclose_benchmarks"
   }
 }</code></pre></div>
 
@@ -1080,7 +1164,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     <li>Each model includes AUD pricing converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
     <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
-    <li>Always code a local fallback in client apps.</li>
+    <li>For customer support, try <code>recommendation</code> first, then <code>failovers[0]</code>, then <code>failovers[1]</code> when a provider or model is overloaded.</li>
   </ul>
 
   <p class="footnote">Last data refresh: <span id="generatedAt">checking...</span><br>Pricing shown as: <span id="pricingContext">checking...</span></p>

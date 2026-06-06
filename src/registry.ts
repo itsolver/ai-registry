@@ -260,6 +260,8 @@ export interface ModelFilters {
   allowPreview?: boolean;
 }
 
+export type RecommendedModel = RegistryModel | BenchmarkCandidate;
+
 export interface ArtificialAnalysisModel {
   id?: unknown;
   name?: unknown;
@@ -682,9 +684,16 @@ export function filterModels(
 export function recommendModel(
   catalog: Catalog,
   filters: ModelFilters,
-): RegistryModel | BenchmarkCandidate | undefined {
+): RecommendedModel | undefined {
+  return rankedRecommendedModels(catalog, filters)[0];
+}
+
+export function rankedRecommendedModels(
+  catalog: Catalog,
+  filters: ModelFilters,
+): RecommendedModel[] {
   if (filters.useCase) {
-    return recommendBenchmarkCandidate(catalog, filters);
+    return rankedBenchmarkRecommendations(catalog, filters);
   }
 
   const tier = recommendationTier(filters);
@@ -694,7 +703,24 @@ export function recommendModel(
 
   return [...matches].sort((left, right) =>
     compareRecommendations(left, right, tier, filters, catalog),
-  )[0];
+  );
+}
+
+export function recommendModelFailovers(
+  catalog: Catalog,
+  filters: ModelFilters,
+  limit = 2,
+): BenchmarkCandidate[] {
+  if (filters.useCase !== "customer-support" || limit <= 0) return [];
+
+  const recommendation = recommendModel(catalog, filters);
+  return rankedBenchmarkRecommendations(catalog, {
+    ...filters,
+    includeItsBenchmark: true,
+  })
+    .filter((candidate) => candidate.id !== recommendation?.id)
+    .filter((candidate) => Boolean(candidate.benchmarks.llm?.autoClose))
+    .slice(0, limit);
 }
 
 export function benchmarkCandidates(
@@ -747,6 +773,13 @@ function recommendBenchmarkCandidate(
   catalog: Catalog,
   filters: ModelFilters,
 ): BenchmarkCandidate | undefined {
+  return rankedBenchmarkRecommendations(catalog, filters)[0];
+}
+
+function rankedBenchmarkRecommendations(
+  catalog: Catalog,
+  filters: ModelFilters,
+): BenchmarkCandidate[] {
   const effectiveFilters = filtersWithUsdRunCost(catalog, filters);
   const tier = recommendationTier(filters);
   const matches = benchmarkCandidates(catalog, effectiveFilters).filter(
@@ -755,52 +788,58 @@ function recommendBenchmarkCandidate(
   );
 
   if (effectiveFilters.useCase === "speech-to-text" && tier === "balanced") {
-    return selectBalancedSpeechToTextCandidate(matches);
+    return rankBalancedSpeechToTextCandidates(matches);
   }
 
   if (effectiveFilters.useCase === "voice" && tier === "balanced") {
-    return selectBalancedVoiceCandidate(matches);
+    return rankBalancedVoiceCandidates(matches);
   }
 
   if (effectiveFilters.useCase === "customer-support" && tier === "balanced") {
-    return selectBalancedCustomerSupportCandidate(matches, effectiveFilters);
+    return rankBalancedCustomerSupportCandidates(matches, effectiveFilters);
   }
 
   return [...matches].sort((left, right) =>
     compareBenchmarkCandidates(left, right, tier, effectiveFilters),
-  )[0];
+  );
 }
 
-function selectBalancedSpeechToTextCandidate(
+function rankBalancedSpeechToTextCandidates(
   matches: BenchmarkCandidate[],
-): BenchmarkCandidate | undefined {
-  if (!matches.length) return undefined;
-
+): BenchmarkCandidate[] {
   const accuracyOrdered = [...matches].sort((left, right) =>
     compareSpeechToTextBenchmarkCandidates(left, right, "best"),
   );
-  return accuracyOrdered[Math.floor((accuracyOrdered.length - 1) / 2)];
+  return moveMiddleCandidateFirst(accuracyOrdered);
 }
 
-function selectBalancedVoiceCandidate(
+function rankBalancedVoiceCandidates(
   matches: BenchmarkCandidate[],
-): BenchmarkCandidate | undefined {
-  if (!matches.length) return undefined;
-
+): BenchmarkCandidate[] {
   const qualityOrdered = [...matches].sort(compareVoiceQualityOrder);
-  return qualityOrdered[Math.floor((qualityOrdered.length - 1) / 2)];
+  return moveMiddleCandidateFirst(qualityOrdered);
 }
 
-function selectBalancedCustomerSupportCandidate(
+function rankBalancedCustomerSupportCandidates(
   matches: BenchmarkCandidate[],
   filters: ModelFilters,
-): BenchmarkCandidate | undefined {
-  if (!matches.length) return undefined;
-
+): BenchmarkCandidate[] {
   const safetyOrdered = [...matches].sort((left, right) =>
     compareCustomerSupportSafetyOrder(left, right, filters),
   );
-  return safetyOrdered[Math.floor((safetyOrdered.length - 1) / 2)];
+  return moveMiddleCandidateFirst(safetyOrdered);
+}
+
+function moveMiddleCandidateFirst(
+  matches: BenchmarkCandidate[],
+): BenchmarkCandidate[] {
+  if (!matches.length) return [];
+  const middleIndex = Math.floor((matches.length - 1) / 2);
+  return [
+    matches[middleIndex],
+    ...matches.slice(0, middleIndex),
+    ...matches.slice(middleIndex + 1),
+  ];
 }
 
 function isUseCaseRecommendationCandidate(

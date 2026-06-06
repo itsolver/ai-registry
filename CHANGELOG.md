@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-06-06
+
+### Added
+
+- Added customer-support recommendation failovers and refreshed no-cost IT Solver auto-close benchmark rows.
+
+### Changed
+
+- Tightened the desktop homepage query builder so filters and preview content fit higher in the viewport.
+
 ## 2026-06-05
 
 ### Changed

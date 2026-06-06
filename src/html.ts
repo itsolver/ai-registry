@@ -962,10 +962,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       <div class="voice-head">
         <strong>Customer support</strong>
         <div class="voice-head-meta">
-          <label class="check-row" for="b-provider-table-only">
-            <input type="checkbox" id="b-provider-table-only">
-            <span>Only show selected provider</span>
-          </label>
           <span id="supportSource">loading...</span>
         </div>
       </div>
@@ -1182,7 +1178,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       endpoint: document.getElementById('b-endpoint'),
       tier: document.getElementById('b-tier'),
       provider: document.getElementById('b-provider'),
-      providerTableOnly: document.getElementById('b-provider-table-only'),
       capability: document.getElementById('b-capability'),
       includeits: document.getElementById('b-includeits'),
       usecase: document.getElementById('b-usecase'),
@@ -1367,7 +1362,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       var column = state.columns.find(function (item) { return item.key === state.sortKey; }) || state.columns[0];
       var direction = state.direction === 'asc' ? 1 : -1;
       var providerFilter = fields.provider.value;
-      var visibleRows = providerFilter && fields.providerTableOnly.checked
+      var visibleRows = providerFilter
         ? state.rows.filter(function (row) { return benchmarkRowProvider(row) === providerFilter; })
         : state.rows;
       if (!visibleRows.length) {
@@ -2592,9 +2587,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       var apiUrl = new URL(path || buildPath(), origin);
       var params = new URLSearchParams(apiUrl.search);
       params.set('endpoint', fields.endpoint.value === 'models' ? 'models' : 'recommend');
-      if (fields.providerTableOnly && fields.providerTableOnly.checked) {
-        params.set('providerTableOnly', 'true');
-      }
       return params;
     }
 
@@ -2619,10 +2611,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (fields.includeits && params.get('includeItsBenchmark') === 'false') {
         fields.includeits.checked = false;
       }
-      if (fields.providerTableOnly) {
-        fields.providerTableOnly.checked = params.get('providerTableOnly') === 'true';
-      }
-
       setInputValue(fields.inputminrange, params.get('minInputCostPerMTok') || params.get('minCostPerMTok'));
       setInputValue(fields.inputmaxrange, params.get('maxInputCostPerMTok') || params.get('maxCostPerMTok'));
       setInputValue(fields.outputminrange, params.get('minOutputCostPerMTok'));
@@ -2690,7 +2678,6 @@ export const HOME_HTML = String.raw`<!doctype html>
     ['change', 'input'].forEach(function (eventName) {
       document.querySelector('.builder').addEventListener(eventName, refreshBuilder);
     });
-    fields.providerTableOnly.addEventListener('change', refreshBuilder);
     inputCostRange = {
       min: 0,
       max: 50,

@@ -20,6 +20,11 @@ describe("homepage copy", () => {
       "mergeCustomerSupportBenchmarkRows(models || [], currentTextBenchmarkModels()),",
     );
     expect(HOME_HTML).toContain(
+      "var visibleRows = providerFilter\n        ? state.rows.filter(function (row) { return benchmarkRowProvider(row) === providerFilter; })",
+    );
+    expect(HOME_HTML).not.toContain("b-provider-table-only");
+    expect(HOME_HTML).not.toContain("providerTableOnly");
+    expect(HOME_HTML).toContain(
       "var supportModels = useProvidedRows ? models : activeTextBenchmarkModels(models);",
     );
     expect(HOME_HTML).toContain(

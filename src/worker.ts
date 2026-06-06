@@ -1,4 +1,5 @@
 import { HOME_HTML } from "./html";
+import { ITS_BENCHMARK_HTML } from "./its-benchmark";
 import {
   asProvider,
   benchmarkCandidates,
@@ -69,6 +70,10 @@ export async function handleRequest(
 
   if (route === "/") {
     return htmlResponse(HOME_HTML);
+  }
+
+  if (route === "/its") {
+    return htmlResponse(ITS_BENCHMARK_HTML);
   }
 
   if (route === "/favicon.ico") {

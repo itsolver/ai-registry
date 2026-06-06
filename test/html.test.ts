@@ -10,5 +10,8 @@ describe("homepage copy", () => {
     expect(HOME_HTML).toContain("highest AA support fit");
     expect(HOME_HTML).toContain("AA Support Score");
     expect(HOME_HTML).toContain("It is not an ITS safety score.");
+    expect(HOME_HTML).toContain(
+      '<a href="/its">Our reopened-ticket classifier replay</a>',
+    );
   });
 });

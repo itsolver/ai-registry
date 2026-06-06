@@ -168,6 +168,38 @@ describe("worker routes", () => {
     );
   });
 
+  it("serves the ITS auto-close benchmark page without catalog access", async () => {
+    for (const path of ["/its", "/its/"]) {
+      const response = await handleRequest(
+        new Request(`https://ai.itsolver.au${path}`),
+        {},
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain("ITS Auto-Close Benchmark");
+      expect(html).toContain("gemini:gemini-3-flash-preview");
+      expect(html).toContain("promising preview");
+      expect(html).toContain("Invalids are contract failures.");
+      expect(html).toContain('data-sort="accuracy"');
+    }
+  });
+
+  it("keeps public ITS benchmark rows aggregate-only", async () => {
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/its"),
+      {},
+      ctx,
+    );
+    const html = await response.text();
+
+    expect(html).not.toContain("29727");
+    expect(html).not.toContain("Perfect, understood");
+    expect(html).not.toContain("KeyboardInterrupt");
+    expect(html).not.toContain("raw_output");
+  });
+
   it("serves health metadata", async () => {
     const response = await handleRequest(
       new Request("https://ai.itsolver.au/v1/health"),

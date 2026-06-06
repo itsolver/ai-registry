@@ -448,6 +448,33 @@ describe("worker routes", () => {
     ).toBe(true);
   });
 
+  it("populates ITS auto-close columns in customer-support model rows", async () => {
+    const cappedResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models?tier=best&useCase=customer-support&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const cappedBody = (await cappedResponse.json()) as JsonObject;
+
+    expect(cappedResponse.status).toBe(200);
+    expect(
+      cappedBody.models
+        .filter(
+          (row: { benchmarks: { llm?: { autoClose?: unknown } } }) =>
+            row.benchmarks.llm?.autoClose,
+        )
+        .map((row: { id: string }) => row.id),
+    ).toEqual(
+      expect.arrayContaining([
+        "gpt-5-4-mini-medium",
+        "gpt-5-5-low",
+        "grok-4-3",
+      ]),
+    );
+  });
+
   it("hard-filters customer support rows by capability", async () => {
     const reasoningResponse = await handleRequest(
       new Request(

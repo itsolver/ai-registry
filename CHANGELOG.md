@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Populated customer-support model table rows with the curated ITS auto-close benchmark results where the registry already has matching models.
 - Clarified customer-support AA-only score and safety labels, and made balanced AA-only recommendations pick the median candidate from the AA support-score ordering.
 - Tightened the desktop homepage query builder so filters and preview content fit higher in the viewport.
 - Removed the duplicate generated URL from the homepage query builder.

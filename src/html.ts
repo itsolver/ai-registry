@@ -2216,7 +2216,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         supportSort.compare
       );
 
-      var label = support.length ? 'AA LLM extract' : 'unavailable';
+      var label = support.length ? (includeIts ? 'AA + ITS auto-close' : 'AA LLM extract') : 'unavailable';
       setText('supportSource', label);
     }
 

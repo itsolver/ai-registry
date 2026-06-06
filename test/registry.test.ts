@@ -9,6 +9,7 @@ import {
   type Catalog,
 } from "../src/registry";
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
+import { AI_AUTOCLOSE_BENCHMARKS } from "../src/generated/ai-autoclose-benchmarks";
 import {
   artificialAnalysisFixture,
   artificialAnalysisSpeechToTextFixture,
@@ -382,6 +383,37 @@ describe("Artificial Analysis catalog", () => {
       },
     });
     expect(googlePreviewRecommendation).toBeUndefined();
+  });
+
+  it("tracks curated ITS auto-close rows for model-table joins", () => {
+    const byId = new Map(AI_AUTOCLOSE_BENCHMARKS.map((row) => [row.id, row]));
+
+    expect(byId.get("gpt-5-4-low")).toMatchObject({
+      modelKey: "codex:gpt-5.4-low",
+      total: 81,
+      falsePositiveCount: 0,
+      falseNegativeCount: 16,
+      invalidCount: 0,
+    });
+    expect(byId.get("gemini-3-flash-reasoning")).toMatchObject({
+      modelKey: "gemini:gemini-3-flash-preview",
+      total: 36,
+      falsePositiveCount: 1,
+      invalidCount: 0,
+      benchmarkReport: "AI_AUTOCLOSE_MODEL_BENCHMARK.md",
+    });
+    expect(byId.get("gpt-5-mini")).toMatchObject({
+      falsePositiveCount: 0,
+      invalidCount: 18,
+    });
+    expect(byId.get("grok-4-1-fast-reasoning")).toMatchObject({
+      falsePositiveCount: 0,
+      falseNegativeCount: 2,
+      invalidCount: 2,
+      availability: expect.objectContaining({
+        status: "retired",
+      }),
+    });
   });
 
   it("uses customer-support recommendation priorities for cost, safety, and balance", () => {

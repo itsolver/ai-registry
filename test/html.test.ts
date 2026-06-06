@@ -13,5 +13,12 @@ describe("homepage copy", () => {
     expect(HOME_HTML).toContain(
       '<a href="/its">Our reopened-ticket classifier replay</a>',
     );
+    expect(HOME_HTML).toContain(
+      "function mergeCustomerSupportBenchmarkRows(models, benchmarkModels)",
+    );
+    expect(HOME_HTML).toContain(
+      "if (fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();",
+    );
+    expect(HOME_HTML).toContain("currentBrowseModels = data.models || [];");
   });
 });

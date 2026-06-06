@@ -1286,6 +1286,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     var textBenchmarkModels = null;
     var textBenchmarkModelsWithoutIts = null;
     var textBenchmarkRequest = 0;
+    var currentBrowseModels = null;
     var voiceBenchmarkRows = null;
     var sttBenchmarkRows = null;
     var sttBenchmarkLoading = false;
@@ -2127,6 +2128,10 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
 
       var currentModels = currentTextBenchmarkModels();
+      if (isBrowsingModels() && currentBrowseModels) {
+        renderFilteredModelBenchmarks(currentBrowseModels);
+        return;
+      }
       if (!isBrowsingModels()) {
         loadCurrentTextBenchmarks();
         return;
@@ -2144,8 +2149,29 @@ export const HOME_HTML = String.raw`<!doctype html>
         return;
       }
 
-      renderTextBenchmarks(models || []);
+      renderTextBenchmarks(
+        mergeCustomerSupportBenchmarkRows(models || [], currentTextBenchmarkModels())
+      );
       renderFaq(models || []);
+    }
+
+    function mergeCustomerSupportBenchmarkRows(models, benchmarkModels) {
+      var merged = new Map();
+      (models || []).forEach(function (model) {
+        if (model && model.id) merged.set(model.id, model);
+      });
+      (benchmarkModels || []).forEach(function (model) {
+        if (!model || !model.id) return;
+        if (!merged.has(model.id)) {
+          merged.set(model.id, model);
+          return;
+        }
+        var existing = merged.get(model.id);
+        var existingAutoClose = existing && existing.benchmarks && existing.benchmarks.llm && existing.benchmarks.llm.autoClose;
+        var benchmarkAutoClose = model.benchmarks && model.benchmarks.llm && model.benchmarks.llm.autoClose;
+        if (!existingAutoClose && benchmarkAutoClose) merged.set(model.id, model);
+      });
+      return Array.from(merged.values());
     }
 
     function textRows(models, useCase) {
@@ -2452,9 +2478,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       .then(function (responses) {
         textBenchmarkModels = responses[0].benchmarks || [];
         textBenchmarkModelsWithoutIts = responses[1].benchmarks || [];
-        if (!isBrowsingModels() && fields.usecase.value === 'customer-support') {
-          renderCurrentUseCaseBenchmarks();
-        }
+        if (fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();
       })
       .catch(function () {
         ['supportRows'].forEach(function (id) {
@@ -2636,6 +2660,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         var requestedPath = path;
         var requestedUseCase = fields.usecase.value;
         var requestedBrowse = isBrowsingModels();
+        if (!requestedBrowse) currentBrowseModels = null;
         fetch(path)
           .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
           .then(function (data) {
@@ -2645,7 +2670,10 @@ export const HOME_HTML = String.raw`<!doctype html>
               highlightBenchmark(data.recommendation.id, requestedUseCase);
             } else {
               fields.result.textContent = (data.modelCount || 0).toLocaleString() + ' models';
-              if (requestedBrowse) renderFilteredModelBenchmarks(data.models || []);
+              if (requestedBrowse) {
+                currentBrowseModels = data.models || [];
+                renderFilteredModelBenchmarks(currentBrowseModels);
+              }
               highlightBenchmark('', '');
             }
           })

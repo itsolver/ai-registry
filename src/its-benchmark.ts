@@ -15,6 +15,7 @@ type ItsBenchmarkRow = {
   invalidSummary: string;
   note?: string;
   highlight?: boolean;
+  deprecated?: boolean;
 };
 
 const ITS_BENCHMARK_GENERATED_AT = "2026-06-06T14:35:16.280310+00:00";
@@ -70,6 +71,7 @@ const ITS_BENCHMARK_ROWS: ItsBenchmarkRow[] = [
     updatedAgo: "0h ago",
     invalidSummary: "none",
     note: "not production-safe: 1 FP, 90.7% acc, preview",
+    deprecated: true,
   },
   {
     displayName: "Gemini 3 Flash Preview",
@@ -184,6 +186,7 @@ const ITS_BENCHMARK_ROWS: ItsBenchmarkRow[] = [
     avgTokens: 2562.3611111111113,
     updatedAgo: "742h ago",
     invalidSummary: "missing parseable intent after reasoning",
+    deprecated: true,
   },
   {
     displayName: "grok-4-3",
@@ -329,6 +332,19 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
       font-size: 0.78rem;
       font-weight: 700;
     }
+    .controls {
+      margin: 0 0 10px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    .toggle input { margin: 0; }
     .risk { color: var(--danger); font-weight: 700; }
     .ok { color: var(--accent); font-weight: 700; }
     .note {
@@ -365,11 +381,18 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
     </header>
 
     <section class="summary" aria-label="Benchmark summary">
-      <div class="metric"><strong>${ITS_BENCHMARK_ROWS.length}</strong><span>curated model rows</span></div>
-      <div class="metric"><strong>${countRowsWithLowFalsePositive()}</strong><span>rows with 0-1 false positives</span></div>
-      <div class="metric"><strong>${countRowsWithoutInvalids()}</strong><span>rows with no invalid output</span></div>
+      <div class="metric"><strong>${activeBenchmarkRows().length}</strong><span>active model rows</span></div>
+      <div class="metric"><strong>${countRowsWithLowFalsePositive()}</strong><span>active rows with 0-1 false positives</span></div>
+      <div class="metric"><strong>${countRowsWithoutInvalids()}</strong><span>active rows with no invalid output</span></div>
       <div class="metric"><strong>${escapeHtml(bestAccuracyLabel())}</strong><span>best accuracy in this table</span></div>
     </section>
+
+    <div class="controls">
+      <label class="toggle">
+        <input type="checkbox" id="show-deprecated">
+        Show deprecated rows
+      </label>
+    </div>
 
     <div class="table-wrap">
       <table id="its-table">
@@ -406,6 +429,7 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
       var table = document.getElementById('its-table');
       if (!table) return;
       var tbody = table.querySelector('tbody');
+      var showDeprecated = document.getElementById('show-deprecated');
       var sortState = { key: 'accuracy', direction: 'desc' };
 
       function cellValue(row, key) {
@@ -426,6 +450,10 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
       }
 
       function draw() {
+        var includeDeprecated = showDeprecated && showDeprecated.checked;
+        Array.from(tbody.querySelectorAll('tr[data-deprecated="true"]')).forEach(function (row) {
+          row.hidden = !includeDeprecated;
+        });
         Array.from(table.querySelectorAll('th[data-sort]')).forEach(function (th) {
           th.setAttribute('aria-sort', th.getAttribute('data-sort') === sortState.key ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none');
         });
@@ -447,6 +475,7 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
         }
         draw();
       });
+      if (showDeprecated) showDeprecated.addEventListener('change', draw);
 
       draw();
     }());
@@ -456,7 +485,13 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
 
 function renderRow(row: ItsBenchmarkRow): string {
   const note = [row.invalidSummary, row.note].filter(Boolean).join("; ");
-  return `<tr${row.highlight ? ' class="highlight"' : ""}>
+  const attributes = [
+    row.highlight ? 'class="highlight"' : "",
+    row.deprecated ? 'data-deprecated="true" hidden' : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `<tr${attributes ? ` ${attributes}` : ""}>
             <td data-value-model="${escapeHtml(row.displayName.toLowerCase())}">
               <span class="model">${escapeHtml(row.displayName)}</span>
               <span class="sub">${escapeHtml(row.modelKey)}</span>
@@ -476,18 +511,22 @@ function renderRow(row: ItsBenchmarkRow): string {
 }
 
 function countRowsWithLowFalsePositive(): number {
-  return ITS_BENCHMARK_ROWS.filter((row) => row.falsePositive <= 1).length;
+  return activeBenchmarkRows().filter((row) => row.falsePositive <= 1).length;
 }
 
 function countRowsWithoutInvalids(): number {
-  return ITS_BENCHMARK_ROWS.filter((row) => row.invalid === 0).length;
+  return activeBenchmarkRows().filter((row) => row.invalid === 0).length;
 }
 
 function bestAccuracyLabel(): string {
-  const best = ITS_BENCHMARK_ROWS.reduce((left, right) =>
+  const best = activeBenchmarkRows().reduce((left, right) =>
     right.accuracy > left.accuracy ? right : left,
   );
   return `${formatPercent(best.accuracy)} ${best.displayName}`;
+}
+
+function activeBenchmarkRows(): ItsBenchmarkRow[] {
+  return ITS_BENCHMARK_ROWS.filter((row) => row.deprecated !== true);
 }
 
 function formatPercent(value: number): string {

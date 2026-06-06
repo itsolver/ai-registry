@@ -183,6 +183,10 @@ describe("worker routes", () => {
       expect(html).toContain("No Gemini candidate");
       expect(html).toContain("Invalids are contract failures.");
       expect(html).toContain('data-sort="accuracy"');
+      expect(html).toContain("Show deprecated rows");
+      expect(html).toContain(
+        '<tr data-deprecated="true" hidden>\n            <td data-value-model="gemini 3.1 flash-lite preview">',
+      );
     }
   });
 

@@ -14,6 +14,114 @@ import {
   artificialAnalysisSpeechToTextFixture,
 } from "./fixtures";
 
+function aaSupportScore(candidate: BenchmarkCandidate): number {
+  const signals = candidate.benchmarks.llm ?? {};
+  if (typeof signals.customerSupportRank === "number") {
+    return Math.max(0, 102 - signals.customerSupportRank * 2);
+  }
+
+  const weightedSignal = (
+    values: Array<[number | undefined, number]>,
+    fallback: number,
+  ) => {
+    let total = 0;
+    let weight = 0;
+    for (const [value, itemWeight] of values) {
+      if (typeof value !== "number") continue;
+      total += value * itemWeight;
+      weight += itemWeight;
+    }
+    return weight ? total / weight : fallback;
+  };
+  const blendedPrice =
+    (candidate.pricing.inputPerMTok ?? 100) * 0.4 +
+    (candidate.pricing.outputPerMTok ?? 100) * 0.6;
+  const priceScore =
+    100 - Math.min(Math.log1p(blendedPrice) / Math.log1p(100), 1) * 100;
+  const runCostScore =
+    typeof signals.intelligenceRunTotalCost === "number"
+      ? 100 -
+        Math.min(
+          Math.log1p(signals.intelligenceRunTotalCost) / Math.log1p(100_000),
+          1,
+        ) *
+          100
+      : undefined;
+  const outputCostScore =
+    typeof signals.intelligenceRunOutputTokens === "number"
+      ? 100 -
+        Math.min(
+          Math.log1p(signals.intelligenceRunOutputTokens) /
+            Math.log1p(1_000_000),
+          1,
+        ) *
+          100
+      : undefined;
+  const textCostScore = weightedSignal(
+    [
+      [runCostScore, 0.55],
+      [priceScore, 0.2],
+      [outputCostScore, 0.25],
+    ],
+    priceScore,
+  );
+  const runCostValue =
+    typeof signals.intelligenceRunTotalCost === "number"
+      ? Math.max(
+          0,
+          100 -
+            Math.min(
+              Math.log1p(signals.intelligenceRunTotalCost) / Math.log1p(8000),
+              1,
+            ) *
+              100,
+        )
+      : undefined;
+  const outputTokenValue =
+    typeof signals.intelligenceRunOutputTokens === "number"
+      ? Math.max(
+          0,
+          100 -
+            Math.min(
+              Math.log1p(signals.intelligenceRunOutputTokens) /
+                Math.log1p(250_000_000),
+              1,
+            ) *
+              100,
+        )
+      : undefined;
+  const efficiencyScore = weightedSignal(
+    [
+      [runCostValue, 0.45],
+      [outputTokenValue, 0.55],
+    ],
+    50,
+  );
+  const quality = weightedSignal(
+    [
+      [signals.agentic ?? signals.tauTelecom, 0.25],
+      [signals.instructionFollowing, 0.3],
+      [signals.intelligence, 0.25],
+      [signals.professional, 0.1],
+    ],
+    60,
+  );
+
+  return (
+    quality * 0.62 +
+    textCostScore * 0.2 +
+    efficiencyScore * 0.1 +
+    Math.min((signals.speed ?? 0) / 220, 1) * 8
+  );
+}
+
+function aaSupportMedian(candidates: BenchmarkCandidate[]): BenchmarkCandidate {
+  const ordered = [...candidates].sort(
+    (left, right) => aaSupportScore(right) - aaSupportScore(left),
+  );
+  return ordered[Math.floor((ordered.length - 1) / 2)];
+}
+
 describe("filter parsing", () => {
   it("parses supported filters and legacy use-case aliases", () => {
     const filters = parseFilters(
@@ -52,7 +160,9 @@ describe("filter parsing", () => {
     expect(parseFilters(new URLSearchParams("useCase=support")).useCase).toBe(
       "customer-support",
     );
-    expect(parseFilters(new URLSearchParams("useCase=billing-incident"))).toMatchObject({
+    expect(
+      parseFilters(new URLSearchParams("useCase=billing-incident")),
+    ).toMatchObject({
       useCase: "customer-support",
     });
     expect(parseFilters(new URLSearchParams("useCase=stt"))).toMatchObject({
@@ -69,7 +179,9 @@ describe("filter parsing", () => {
       maxTranscriptionCostPer1kMinutes: 5,
       maxAaWer: 3,
     });
-    expect(parseFilters(new URLSearchParams("provider=deepgram"))).toMatchObject({
+    expect(
+      parseFilters(new URLSearchParams("provider=deepgram")),
+    ).toMatchObject({
       unsupportedProvider: true,
     });
   });
@@ -111,9 +223,9 @@ describe("Artificial Analysis catalog", () => {
     expect(ids).not.toContain("grok-4.20-multi-agent-0309");
     expect(ids).not.toContain("gemini-2.0-flash-lite");
     expect(ids).not.toContain("unsupported-model");
-    expect(
-      benchmarkCandidates(catalog, {}).map((row) => row.id),
-    ).not.toContain("gemini-2.0-flash-lite");
+    expect(benchmarkCandidates(catalog, {}).map((row) => row.id)).not.toContain(
+      "gemini-2.0-flash-lite",
+    );
   });
 
   it("displays AA-only rows without pricing but does not recommend them", () => {
@@ -220,7 +332,13 @@ describe("Artificial Analysis catalog", () => {
     );
     const falsePositiveRate = (
       candidate:
-        | { benchmarks?: { llm?: { autoClose?: { total: number; falsePositiveCount: number } } } }
+        | {
+            benchmarks?: {
+              llm?: {
+                autoClose?: { total: number; falsePositiveCount: number };
+              };
+            };
+          }
         | undefined,
     ) => {
       const autoClose = candidate?.benchmarks?.llm?.autoClose;
@@ -253,7 +371,7 @@ describe("Artificial Analysis catalog", () => {
       contextWindow: 922000,
       benchmarks: {
         llm: {
-          customerSupportRank: 10,
+          customerSupportRank: 6,
           instructionFollowing: expect.any(Number),
           agentic: expect.any(Number),
           autoClose: expect.objectContaining({
@@ -267,10 +385,7 @@ describe("Artificial Analysis catalog", () => {
   });
 
   it("uses customer-support recommendation priorities for cost, safety, and balance", () => {
-    const autoClose = (
-      falsePositiveCount: number,
-      accuracy: number,
-    ) => ({
+    const autoClose = (falsePositiveCount: number, accuracy: number) => ({
       source: "itsolver-autoclose" as const,
       modelKey: "test:model",
       apiModel: "test-model",
@@ -350,13 +465,16 @@ describe("Artificial Analysis catalog", () => {
       "cheapest",
     );
     expect(
-      recommendModel(catalog, { useCase: "customer-support", tier: "balanced" })?.id,
+      recommendModel(catalog, { useCase: "customer-support", tier: "balanced" })
+        ?.id,
     ).toBe("middle");
     expect(
-      recommendModel(catalog, { useCase: "customer-support", tier: "fast" })?.id,
+      recommendModel(catalog, { useCase: "customer-support", tier: "fast" })
+        ?.id,
     ).toBe("cheapest");
     expect(
-      recommendModel(catalog, { useCase: "customer-support", tier: "best" })?.id,
+      recommendModel(catalog, { useCase: "customer-support", tier: "best" })
+        ?.id,
     ).toBe("safest");
     expect(
       recommendModelFailovers(catalog, {
@@ -377,6 +495,74 @@ describe("Artificial Analysis catalog", () => {
         maxRunCostAud: 250,
       })?.id,
     ).toBe("cheapest");
+  });
+
+  it("uses the AA support-score median for AA-only customer-support balance", () => {
+    const candidate = (
+      id: string,
+      rank: number,
+      outputPerMTok = 5,
+    ): BenchmarkCandidate => ({
+      id,
+      provider: "openai",
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          customerSupportRank: rank,
+          instructionFollowing: 70,
+          agentic: 60,
+          intelligence: 50,
+          intelligenceRunTotalCost: 100 + rank,
+        },
+      },
+      pricing: { inputPerMTok: 1, outputPerMTok },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: {
+        vision: true,
+        pdf: false,
+        reasoning: true,
+        toolCalling: false,
+        structuredOutput: false,
+      },
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-06-06T00:00:00Z",
+      modelCount: 5,
+      activeModelCount: 5,
+      providers: [{ provider: "openai", total: 5, active: 5 }],
+      models: [],
+      benchmarkCandidates: [
+        candidate("aa-score-1", 1),
+        candidate("aa-score-2", 2),
+        candidate("aa-score-3", 3),
+        candidate("aa-score-4", 4),
+        candidate("aa-score-5", 5, 1),
+      ],
+    };
+
+    expect(
+      recommendModel(catalog, {
+        useCase: "customer-support",
+        tier: "best",
+        includeItsBenchmark: false,
+      })?.id,
+    ).toBe("aa-score-1");
+    expect(
+      recommendModel(catalog, {
+        useCase: "customer-support",
+        tier: "balanced",
+        includeItsBenchmark: false,
+      })?.id,
+    ).toBe("aa-score-3");
   });
 
   it("does not recommend deprecated or retired customer-support models by default", () => {
@@ -613,7 +799,13 @@ describe("Artificial Analysis catalog", () => {
       generatedAt: "2026-05-22T00:00:00Z",
       modelCount: candidates.length,
       activeModelCount: candidates.length,
-      providers: [{ provider: "google", total: candidates.length, active: candidates.length }],
+      providers: [
+        {
+          provider: "google",
+          total: candidates.length,
+          active: candidates.length,
+        },
+      ],
       models: [],
       benchmarkCandidates: candidates,
     };
@@ -636,7 +828,9 @@ describe("Artificial Analysis catalog", () => {
     expect(recommendModel(catalog, { useCase: "customer-support" })?.id).toBe(
       "customer-safe",
     );
-    expect(recommendModel(catalog, { useCase: "voice" })?.id).toBe("voice-safe");
+    expect(recommendModel(catalog, { useCase: "voice" })?.id).toBe(
+      "voice-safe",
+    );
     expect(recommendModel(catalog, { useCase: "speech-to-text" })?.id).toBe(
       "stt-safe",
     );
@@ -654,7 +848,10 @@ describe("Artificial Analysis catalog", () => {
 
   it("uses Artificial Analysis speech-to-speech data for voice recommendations", () => {
     const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z");
-    const recommendation = recommendModel(catalog, { provider: "xai", useCase: "voice" });
+    const recommendation = recommendModel(catalog, {
+      provider: "xai",
+      useCase: "voice",
+    });
 
     expect(recommendation).toMatchObject({
       provider: "xai",
@@ -665,7 +862,9 @@ describe("Artificial Analysis catalog", () => {
         },
       },
     });
-    expect(recommendation?.pricing.benchmarkInputAudioPerHour).toBeGreaterThan(0);
+    expect(recommendation?.pricing.benchmarkInputAudioPerHour).toBeGreaterThan(
+      0,
+    );
   });
 
   it("uses voice recommendation priorities for cost, quality, and balance", () => {
@@ -726,12 +925,12 @@ describe("Artificial Analysis catalog", () => {
     expect(
       recommendModel(catalog, { useCase: "voice", tier: "balanced" })?.id,
     ).toBe("middle-quality");
-    expect(recommendModel(catalog, { useCase: "voice", tier: "fast" })?.id).toBe(
-      "cheapest",
-    );
-    expect(recommendModel(catalog, { useCase: "voice", tier: "best" })?.id).toBe(
-      "highest-quality",
-    );
+    expect(
+      recommendModel(catalog, { useCase: "voice", tier: "fast" })?.id,
+    ).toBe("cheapest");
+    expect(
+      recommendModel(catalog, { useCase: "voice", tier: "best" })?.id,
+    ).toBe("highest-quality");
     expect(
       recommendModel(catalog, {
         useCase: "voice",
@@ -853,15 +1052,12 @@ describe("Artificial Analysis catalog", () => {
   });
 
   it("uses the checked-in speech-to-text table when beta API rows are absent", () => {
-    const catalog = normalizeArtificialAnalysisCatalog(
-      "2026-06-01T00:00:00Z",
-      {
-        base: "USD",
-        quote: "AUD",
-        rate: 2,
-        source: "test",
-      },
-    );
+    const catalog = normalizeArtificialAnalysisCatalog("2026-06-01T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 2,
+      source: "test",
+    });
     const nvidia = benchmarkCandidates(catalog, {
       useCase: "speech-to-text",
       provider: "nvidia",
@@ -927,7 +1123,9 @@ describe("Artificial Analysis catalog", () => {
       artificialAnalysisSpeechToTextFixture.data,
     );
 
-    expect(recommendModel(catalog, { useCase: "speech-to-text" })).toMatchObject({
+    expect(
+      recommendModel(catalog, { useCase: "speech-to-text" }),
+    ).toMatchObject({
       id: "groq-whisper-large-v3-turbo",
       provider: "groq",
     });
@@ -1022,10 +1220,10 @@ describe("Artificial Analysis catalog", () => {
         maxRunCostAud: 500,
       }).every(
         (row) =>
-          (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.NEGATIVE_INFINITY) >=
-            100 &&
-          (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.POSITIVE_INFINITY) <=
-          500,
+          (row.benchmarks.llm?.intelligenceRunTotalCost ??
+            Number.NEGATIVE_INFINITY) >= 100 &&
+          (row.benchmarks.llm?.intelligenceRunTotalCost ??
+            Number.POSITIVE_INFINITY) <= 500,
       ),
     ).toBe(true);
   });
@@ -1079,7 +1277,8 @@ describe("Artificial Analysis catalog", () => {
     expect(
       rows.every(
         (row) =>
-          (row.benchmarks.llm?.intelligence ?? Number.NEGATIVE_INFINITY) >= 30 &&
+          (row.benchmarks.llm?.intelligence ?? Number.NEGATIVE_INFINITY) >=
+            30 &&
           (row.benchmarks.llm?.intelligenceRunTotalCost ??
             Number.POSITIVE_INFINITY) <= 1300,
       ),
@@ -1095,7 +1294,7 @@ describe("Artificial Analysis catalog", () => {
         minIntelligence: 30,
       }),
     ).toMatchObject({
-      id: "gemini-3-1-pro-preview",
+      id: "gemini-3-1-flash-lite-preview",
       provider: "google",
     });
     const xaiFast = recommendModel(catalog, {
@@ -1107,8 +1306,41 @@ describe("Artificial Analysis catalog", () => {
       minIntelligence: 30,
     });
     expect(xaiFast).toMatchObject({ provider: "xai" });
-    expect(xaiFast?.benchmarks?.llm?.intelligenceRunTotalCost).toBeLessThanOrEqual(
-      1300,
+    expect(
+      xaiFast?.benchmarks?.llm?.intelligenceRunTotalCost,
+    ).toBeLessThanOrEqual(1300);
+  });
+
+  it("uses the visible AA support-score median for reported AA-only filters", () => {
+    const catalog = normalizeArtificialAnalysisCatalog("2026-06-06T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 1.4,
+      source: "test",
+    });
+    const filters = {
+      useCase: "customer-support" as const,
+      tier: "balanced" as const,
+      includeItsBenchmark: false,
+      maxInputCostPerMTok: 35.45,
+      maxRunCostAud: 1300,
+      minIntelligence: 30,
+    };
+    const eligibleRows = benchmarkCandidates(catalog, filters).filter(
+      (row) =>
+        row.recommendable !== false &&
+        row.capabilities?.vision === true &&
+        row.capabilities.reasoning === true &&
+        typeof row.pricing.inputPerMTok === "number" &&
+        typeof row.pricing.outputPerMTok === "number" &&
+        (row.availability === undefined ||
+          row.availability.status === "production" ||
+          row.availability.acceptedRisk),
+    );
+
+    expect(eligibleRows.length).toBeGreaterThan(2);
+    expect(recommendModel(catalog, filters)?.id).toBe(
+      aaSupportMedian(eligibleRows).id,
     );
   });
 
@@ -1185,7 +1417,7 @@ describe("Artificial Analysis catalog", () => {
         allowPreview: true,
       }),
     ).toMatchObject({
-      id: "gemini-3-1-pro-preview",
+      id: "gemini-3-1-flash-lite-preview",
       provider: "google",
       availability: expect.objectContaining({
         status: "preview",
@@ -1248,7 +1480,8 @@ describe("Artificial Analysis catalog", () => {
           coding: sourceRecord?.codingIndex,
           lcr: sourceRecord?.lcr,
           gpqa: sourceRecord?.gpqa,
-          intelligenceRunOutputTokens: sourceRecord?.intelligenceRunOutputTokens,
+          intelligenceRunOutputTokens:
+            sourceRecord?.intelligenceRunOutputTokens,
         },
       },
     });

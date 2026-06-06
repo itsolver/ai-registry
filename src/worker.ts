@@ -15,7 +15,7 @@ import {
   type ExchangeRate,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v14";
+const CACHE_KEY = "catalog:v15";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
 const DEFAULT_FX_RATE_URL =
@@ -87,7 +87,9 @@ export async function handleRequest(
       {
         error: "catalog_unavailable",
         message:
-          error instanceof Error ? error.message : "Unable to load model catalog.",
+          error instanceof Error
+            ? error.message
+            : "Unable to load model catalog.",
       },
       503,
     );
@@ -163,7 +165,8 @@ async function routeApi(
     const filters = parseFilters(params);
     const rows = benchmarkCandidates(catalog, filters).filter(
       (row) =>
-        !filters.useCase || isBenchmarkCandidateRecommendedForFilters(row, filters),
+        !filters.useCase ||
+        isBenchmarkCandidateRecommendedForFilters(row, filters),
     );
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
@@ -287,7 +290,9 @@ async function fetchArtificialAnalysisModels(
   if (!response.ok) return [];
 
   const data = (await response.json()) as { data?: unknown };
-  return Array.isArray(data.data) ? (data.data as ArtificialAnalysisModel[]) : [];
+  return Array.isArray(data.data)
+    ? (data.data as ArtificialAnalysisModel[])
+    : [];
 }
 
 async function fetchArtificialAnalysisSpeechToTextModels(
@@ -295,22 +300,26 @@ async function fetchArtificialAnalysisSpeechToTextModels(
 ): Promise<ArtificialAnalysisSpeechToTextModel[]> {
   if (!env.ARTIFICIAL_ANALYSIS_API_KEY) return [];
 
-  const response = await fetch(
-    env.ARTIFICIAL_ANALYSIS_STT_URL || DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL,
-    {
-      headers: {
-        Accept: "application/json",
-        "x-api-key": env.ARTIFICIAL_ANALYSIS_API_KEY,
+  try {
+    const response = await fetch(
+      env.ARTIFICIAL_ANALYSIS_STT_URL || DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL,
+      {
+        headers: {
+          Accept: "application/json",
+          "x-api-key": env.ARTIFICIAL_ANALYSIS_API_KEY,
+        },
       },
-    },
-  );
+    );
 
-  if (!response.ok) return [];
+    if (!response.ok) return [];
 
-  const data = (await response.json()) as { data?: unknown };
-  return Array.isArray(data.data)
-    ? (data.data as ArtificialAnalysisSpeechToTextModel[])
-    : [];
+    const data = (await response.json()) as { data?: unknown };
+    return Array.isArray(data.data)
+      ? (data.data as ArtificialAnalysisSpeechToTextModel[])
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 async function fetchUsdAudRate(env: Env): Promise<ExchangeRate | undefined> {
@@ -329,7 +338,11 @@ async function fetchUsdAudRate(env: Env): Promise<ExchangeRate | undefined> {
   };
   const rate = data.rates?.AUD;
 
-  if (data.base !== "USD" || typeof rate !== "number" || !Number.isFinite(rate)) {
+  if (
+    data.base !== "USD" ||
+    typeof rate !== "number" ||
+    !Number.isFinite(rate)
+  ) {
     return undefined;
   }
 

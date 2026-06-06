@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const SOURCE_URL =
   "https://artificialanalysis.ai/models/recommend?intelligence=6&cost=10&types=general%2Cinstruction-following&image=true&reasoning=true&providers=6047c38a-af71-4b47-9d66-d361753f71b4%2C80e7b7e3-e268-43db-a9b1-848693fbec85%2C50649676-6610-47a6-bb54-a2e213e6e414%2Ca7b7b981-8720-4260-92c4-ceb47e785efc&step=results";
-const OUT_PATH = resolve("src/generated/aa-customer-support-recommendations.ts");
+const OUT_PATH = resolve(
+  "src/generated/aa-customer-support-recommendations.ts",
+);
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   await main();
@@ -39,19 +41,25 @@ export const AA_CUSTOMER_SUPPORT_RECOMMENDATIONS = ${JSON.stringify(records, nul
 
   mkdirSync(dirname(OUT_PATH), { recursive: true });
   writeFileSync(OUT_PATH, content);
-  console.log(`Wrote ${records.length} customer support recommendation records to ${OUT_PATH}`);
+  console.log(
+    `Wrote ${records.length} customer support recommendation records to ${OUT_PATH}`,
+  );
 }
 
 export function extractRecommendationRecords(html) {
   return extractModels(html)
     .map((model) => normalizeRecommendationRecord(model))
     .filter((record) => record !== undefined)
+    .filter((record) => record.imageInput && record.reasoning)
     .map((record, index) => ({ ...record, rank: index + 1 }));
 }
 
 function extractModels(html) {
   for (const payload of extractNextFlightStrings(html)) {
-    if (!payload.includes('"models":[') || !payload.includes("intelligenceIndexCost")) {
+    if (
+      !payload.includes('"models":[') ||
+      !payload.includes("intelligenceIndexCost")
+    ) {
       continue;
     }
 
@@ -61,7 +69,10 @@ function extractModels(html) {
     if (arrayStart === -1 || arrayEnd === -1) continue;
 
     const models = JSON.parse(payload.slice(arrayStart, arrayEnd + 1));
-    if (Array.isArray(models) && models.some((model) => model?.intelligenceIndexCost)) {
+    if (
+      Array.isArray(models) &&
+      models.some((model) => model?.intelligenceIndexCost)
+    ) {
       return models;
     }
   }
@@ -120,7 +131,12 @@ function normalizeRecommendationRecord(model) {
   const inputPrice = numberOrUndefined(model.inputPrice);
   const outputPrice = numberOrUndefined(model.outputPrice);
 
-  if (!slug || !provider || inputPrice === undefined || outputPrice === undefined) {
+  if (
+    !slug ||
+    !provider ||
+    inputPrice === undefined ||
+    outputPrice === undefined
+  ) {
     return undefined;
   }
 
@@ -129,20 +145,29 @@ function normalizeRecommendationRecord(model) {
     slug,
     detailsUrl: `/models/${slug}`,
     provider,
-    ...optionalNumber("intelligenceIndex", numberOrUndefined(model.intelligenceIndex)),
+    ...optionalNumber(
+      "intelligenceIndex",
+      numberOrUndefined(model.intelligenceIndex),
+    ),
     ...optionalNumber("agenticScore", numberOrUndefined(model.agenticScore)),
     ...optionalNumber(
       "instructionFollowingScore",
       numberOrUndefined(model.instructionFollowingScore),
     ),
-    ...optionalNumber("medianOutputSpeed", numberOrUndefined(model.medianOutputSpeed)),
+    ...optionalNumber(
+      "medianOutputSpeed",
+      numberOrUndefined(model.medianOutputSpeed),
+    ),
     ...optionalNumber(
       "intelligenceIndexCost",
       numberOrUndefined(model.intelligenceIndexCost),
     ),
     inputPrice,
     outputPrice,
-    ...optionalNumber("cacheHitPrice", numberOrUndefined(model.cachedInputPrice)),
+    ...optionalNumber(
+      "cacheHitPrice",
+      numberOrUndefined(model.cachedInputPrice),
+    ),
     ...optionalNumber("contextWindow", numberOrUndefined(model.contextWindow)),
     imageInput: Boolean(model.imageInput),
     reasoning: Boolean(model.reasoning),
@@ -163,7 +188,9 @@ function stringOrUndefined(value) {
 }
 
 function numberOrUndefined(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function optionalNumber(key, value) {

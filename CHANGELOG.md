@@ -13,7 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Clarified customer-support AA-only score and safety labels, and made balanced AA-only recommendations pick the median candidate from the AA support-score ordering.
 - Tightened the desktop homepage query builder so filters and preview content fit higher in the viewport.
+- Removed the duplicate generated URL from the homepage query builder.
+
+### Fixed
+
+- Preserved balanced-tier query serialization, made live STT refresh failures non-fatal, and filtered AA-only support rows to the source capability constraints.
 
 ## 2026-06-05
 

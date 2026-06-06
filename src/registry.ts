@@ -486,8 +486,12 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
   const maxInputCostPerMTok =
     asFiniteNumber(params.get("maxInputCostPerMTok")) ??
     asFiniteNumber(params.get("maxCostPerMTok"));
-  const minOutputCostPerMTok = asFiniteNumber(params.get("minOutputCostPerMTok"));
-  const maxOutputCostPerMTok = asFiniteNumber(params.get("maxOutputCostPerMTok"));
+  const minOutputCostPerMTok = asFiniteNumber(
+    params.get("minOutputCostPerMTok"),
+  );
+  const maxOutputCostPerMTok = asFiniteNumber(
+    params.get("maxOutputCostPerMTok"),
+  );
   const minRunCostAud =
     asFiniteNumber(params.get("minRunCostAud")) ??
     asFiniteNumber(params.get("minRunAud")) ??
@@ -586,8 +590,9 @@ export function normalizeArtificialAnalysisCatalog(
     ...(Object.keys(benchmarkSignals).length ? { benchmarkSignals } : {}),
     ...(benchmarkCandidates.length ? { benchmarkCandidates } : {}),
     modelCount: benchmarkCandidates.length,
-    activeModelCount: benchmarkCandidates.filter((candidate) => candidate.recommendable)
-      .length,
+    activeModelCount: benchmarkCandidates.filter(
+      (candidate) => candidate.recommendable,
+    ).length,
     providers,
     models: [],
   };
@@ -606,10 +611,7 @@ export function filterModels(
       return false;
     }
     if (filters.tier && model.tier !== filters.tier) return false;
-    if (
-      filters.capability &&
-      model.capabilities[filters.capability] !== true
-    ) {
+    if (filters.capability && model.capabilities[filters.capability] !== true) {
       return false;
     }
     if (
@@ -740,33 +742,32 @@ export function benchmarkCandidates(
   const effectiveFilters = filtersWithUsdRunCost(catalog, filters);
   const useCase = effectiveFilters.useCase;
 
-  return (catalog.benchmarkCandidates ?? [])
-    .filter((candidate) => {
-      if (effectiveFilters.unsupportedProvider) return false;
-      if (isDeprecatedBenchmarkCandidate(candidate)) return false;
-      if (
-        effectiveFilters.provider &&
-        candidate.provider !== effectiveFilters.provider
-      ) {
-        return false;
-      }
-      if (
-        effectiveFilters.capability &&
-        candidate.capabilities?.[effectiveFilters.capability] !== true
-      ) {
-        return false;
-      }
-      if (useCase && !candidate.benchmarks[benchmarkKeyForUseCase(useCase)]) {
-        return false;
-      }
-      if (
-        useCase === "customer-support" &&
-        !hasCustomerSupportBenchmarkSignals(candidate.benchmarks.llm)
-      ) {
-        return false;
-      }
-      return passesCostFilters(candidate, effectiveFilters);
-    });
+  return (catalog.benchmarkCandidates ?? []).filter((candidate) => {
+    if (effectiveFilters.unsupportedProvider) return false;
+    if (isDeprecatedBenchmarkCandidate(candidate)) return false;
+    if (
+      effectiveFilters.provider &&
+      candidate.provider !== effectiveFilters.provider
+    ) {
+      return false;
+    }
+    if (
+      effectiveFilters.capability &&
+      candidate.capabilities?.[effectiveFilters.capability] !== true
+    ) {
+      return false;
+    }
+    if (useCase && !candidate.benchmarks[benchmarkKeyForUseCase(useCase)]) {
+      return false;
+    }
+    if (
+      useCase === "customer-support" &&
+      !hasCustomerSupportBenchmarkSignals(candidate.benchmarks.llm)
+    ) {
+      return false;
+    }
+    return passesCostFilters(candidate, effectiveFilters);
+  });
 }
 
 export function isBenchmarkCandidateRecommendedForFilters(
@@ -834,6 +835,13 @@ function rankBalancedCustomerSupportCandidates(
   matches: BenchmarkCandidate[],
   filters: ModelFilters,
 ): BenchmarkCandidate[] {
+  if (filters.includeItsBenchmark === false) {
+    const aaSupportOrdered = [...matches].sort(
+      compareCustomerSupportAaSupportOrder,
+    );
+    return moveMiddleCandidateFirst(aaSupportOrdered);
+  }
+
   const safetyOrdered = [...matches].sort((left, right) =>
     compareCustomerSupportSafetyOrder(left, right, filters),
   );
@@ -860,7 +868,8 @@ function isUseCaseRecommendationCandidate(
   if (isDeprecatedBenchmarkCandidate(candidate)) return false;
 
   const signals = candidate.benchmarks.llm;
-  if (filters.includeItsBenchmark !== false && !signals?.autoClose) return false;
+  if (filters.includeItsBenchmark !== false && !signals?.autoClose)
+    return false;
   if (
     filters.includeItsBenchmark === false &&
     (candidate.capabilities?.vision !== true ||
@@ -882,9 +891,13 @@ function filtersWithUsdRunCost(
 ): ModelFilters {
   const rate = catalog.exchangeRate?.rate ?? 1;
   const minRunCostUsdAud =
-    filters.minRunCostUsd === undefined ? undefined : filters.minRunCostUsd * rate;
+    filters.minRunCostUsd === undefined
+      ? undefined
+      : filters.minRunCostUsd * rate;
   const maxRunCostUsdAud =
-    filters.maxRunCostUsd === undefined ? undefined : filters.maxRunCostUsd * rate;
+    filters.maxRunCostUsd === undefined
+      ? undefined
+      : filters.maxRunCostUsd * rate;
   const minRunCostAud = maxDefined(filters.minRunCostAud, minRunCostUsdAud);
   const maxRunCostAud = minDefined(filters.maxRunCostAud, maxRunCostUsdAud);
 
@@ -1121,7 +1134,9 @@ function asUseCase(value: string | null): UseCase | undefined {
 function normalizeSpeechToSpeechModels(
   exchangeRate?: ExchangeRate,
 ): RegistryModel[] {
-  return (AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[])
+  return (
+    AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]
+  )
     .map((model) => normalizeSpeechToSpeechModel(model, exchangeRate))
     .filter((model): model is RegistryModel => model !== undefined);
 }
@@ -1210,7 +1225,8 @@ function buildBenchmarkProviderSummaries(
     return {
       provider,
       total: providerCandidates.length,
-      active: providerCandidates.filter((candidate) => candidate.recommendable).length,
+      active: providerCandidates.filter((candidate) => candidate.recommendable)
+        .length,
     };
   }).filter((summary) => summary.total > 0);
 }
@@ -1243,20 +1259,18 @@ function buildBenchmarkCandidates(
       ? aaPricing
       : hasTokenPricing(generatedPricing)
         ? generatedPricing
-        : registryModel?.pricing ?? {};
+        : (registryModel?.pricing ?? {});
     const id = registryModel?.id ?? stringValue(aaModel.slug ?? aaModel.id, "");
     if (!id) continue;
 
-    const candidate = benchmarkCandidateFromRegistry(
-      {
-        id,
-        provider,
-        name: registryModel?.name ?? stringValue(aaModel.name, id),
-        benchmarks: { llm: signals },
-        pricing,
-        registryModel,
-      },
-    );
+    const candidate = benchmarkCandidateFromRegistry({
+      id,
+      provider,
+      name: registryModel?.name ?? stringValue(aaModel.name, id),
+      benchmarks: { llm: signals },
+      pricing,
+      registryModel,
+    });
     candidates.set(candidate.id, candidate);
   }
 
@@ -1294,7 +1308,8 @@ function buildBenchmarkCandidates(
       name: existing?.name ?? efficiencyModel.label,
       benchmarks: { llm: signals },
       pricing,
-      contextWindow: existing?.contextWindow ?? efficiencyModel.contextWindowTokens,
+      contextWindow:
+        existing?.contextWindow ?? efficiencyModel.contextWindowTokens,
     });
     candidates.set(candidate.id, candidate);
   }
@@ -1326,8 +1341,10 @@ function buildBenchmarkCandidates(
       name: existing?.name ?? recommendationModel.label,
       benchmarks: { llm: signals },
       pricing,
-      capabilities: capabilitiesFromCustomerSupportRecommendation(recommendationModel),
-      contextWindow: existing?.contextWindow ?? recommendationModel.contextWindow,
+      capabilities:
+        capabilitiesFromCustomerSupportRecommendation(recommendationModel),
+      contextWindow:
+        existing?.contextWindow ?? recommendationModel.contextWindow,
     });
     candidates.set(candidate.id, candidate);
   }
@@ -1386,7 +1403,7 @@ function benchmarkCandidatesFromSpeechToTextModel(
     const provider =
       creatorProvider === "nvidia"
         ? creatorProvider
-        : hostProvider ?? (host ? undefined : creatorProvider);
+        : (hostProvider ?? (host ? undefined : creatorProvider));
     if (!provider) return [];
 
     const hostName = stringValue(host?.name, "");
@@ -1401,7 +1418,9 @@ function benchmarkCandidatesFromSpeechToTextModel(
     const pricing: ModelPricing = {
       ...optionalNumberPrice(
         "transcriptionCostPer1kMinutes",
-        nonNegativeNumberOrUndefined(numberOrUndefined(host?.price_per_1k_minutes)),
+        nonNegativeNumberOrUndefined(
+          numberOrUndefined(host?.price_per_1k_minutes),
+        ),
       ),
     };
 
@@ -1433,7 +1452,9 @@ function benchmarkCandidatesFromSpeechToTextModel(
           ),
           ...optionalSpeechToTextBenchmark(
             "speedFactor",
-            positiveNumberOrUndefined(numberOrUndefined(host?.median_speed_factor)),
+            positiveNumberOrUndefined(
+              numberOrUndefined(host?.median_speed_factor),
+            ),
           ),
           ...(hostName ? { hostingProviderName: hostName } : {}),
           ...(hostSlug ? { hostingProviderSlug: hostSlug } : {}),
@@ -1461,7 +1482,11 @@ function benchmarkCandidateFromRegistry(input: {
   const model = input.registryModel;
   const deprecated = model?.deprecated ?? input.deprecated ?? null;
   const availability = input.benchmarks.llm
-    ? productionAvailabilityForTextModel(input.id, input.name, input.benchmarks.llm)
+    ? productionAvailabilityForTextModel(
+        input.id,
+        input.name,
+        input.benchmarks.llm,
+      )
     : undefined;
   const recommendable = isBenchmarkCandidateRecommendable(
     input.provider,
@@ -1486,13 +1511,12 @@ function benchmarkCandidateFromRegistry(input: {
     family: model?.family ?? null,
     contextWindow: model?.contextWindow ?? input.contextWindow ?? null,
     outputLimit: model?.outputLimit ?? null,
-    capabilities:
-      model?.capabilities ??
-      input.capabilities ??
-      null,
+    capabilities: model?.capabilities ?? input.capabilities ?? null,
     modalities: model?.modalities ?? null,
     ...(model?.releaseDate ? { releaseDate: model.releaseDate } : {}),
-    ...(model?.knowledgeCutoff ? { knowledgeCutoff: model.knowledgeCutoff } : {}),
+    ...(model?.knowledgeCutoff
+      ? { knowledgeCutoff: model.knowledgeCutoff }
+      : {}),
     openWeights: model?.openWeights ?? null,
     tier: model?.tier ?? null,
     deprecated,
@@ -1548,7 +1572,9 @@ function isBenchmarkCandidateRecommendable(
   );
 }
 
-function hasRecommendableBenchmarkBasics(candidate: BenchmarkCandidate): boolean {
+function hasRecommendableBenchmarkBasics(
+  candidate: BenchmarkCandidate,
+): boolean {
   if (candidate.benchmarks.voice) {
     return (
       candidate.pricing.benchmarkInputAudioPerHour !== undefined &&
@@ -1638,28 +1664,32 @@ function heuristicAvailabilityForTextModel(
     return {
       status: "preview",
       acceptedRisk: false,
-      reason: "Preview-only models are excluded from default production recommendations.",
+      reason:
+        "Preview-only models are excluded from default production recommendations.",
     };
   }
   if (searchable.includes("experimental") || /\bexp\b/.test(searchable)) {
     return {
       status: "experimental",
       acceptedRisk: false,
-      reason: "Experimental models are excluded from default production recommendations.",
+      reason:
+        "Experimental models are excluded from default production recommendations.",
     };
   }
   if (/(^|[-_\s])latest($|[-_\s])/.test(searchable)) {
     return {
       status: "latest-alias",
       acceptedRisk: false,
-      reason: "Latest aliases are excluded because their behavior can change without a pinned model id.",
+      reason:
+        "Latest aliases are excluded because their behavior can change without a pinned model id.",
     };
   }
 
   return {
     status: "production",
     acceptedRisk: false,
-    reason: "No default-production exclusion was found in local model metadata.",
+    reason:
+      "No default-production exclusion was found in local model metadata.",
   };
 }
 
@@ -1679,7 +1709,9 @@ function isKnownDeprecatedModel(id: string, name: string): boolean {
   });
 }
 
-function isDeprecatedBenchmarkCandidate(candidate: BenchmarkCandidate): boolean {
+function isDeprecatedBenchmarkCandidate(
+  candidate: BenchmarkCandidate,
+): boolean {
   return (
     candidate.deprecated === true ||
     isKnownDeprecatedModel(candidate.id, candidate.name)
@@ -1798,30 +1830,28 @@ function pricingFromArtificialAnalysis(
   model: ArtificialAnalysisModel,
   exchangeRate?: ExchangeRate,
 ): ModelPricing {
-  const input =
-    firstNestedNumber(model as Record<string, unknown>, [
-      ["pricing", "input"],
-      ["pricing", "inputPerMTok"],
-      ["prices", "input"],
-      ["price", "input"],
-      ["cost", "input"],
-      ["input_price"],
-      ["input_cost"],
-      ["price_1m_input_tokens"],
-      ["input_cost_per_million_tokens"],
-    ]);
-  const output =
-    firstNestedNumber(model as Record<string, unknown>, [
-      ["pricing", "output"],
-      ["pricing", "outputPerMTok"],
-      ["prices", "output"],
-      ["price", "output"],
-      ["cost", "output"],
-      ["output_price"],
-      ["output_cost"],
-      ["price_1m_output_tokens"],
-      ["output_cost_per_million_tokens"],
-    ]);
+  const input = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "input"],
+    ["pricing", "inputPerMTok"],
+    ["prices", "input"],
+    ["price", "input"],
+    ["cost", "input"],
+    ["input_price"],
+    ["input_cost"],
+    ["price_1m_input_tokens"],
+    ["input_cost_per_million_tokens"],
+  ]);
+  const output = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "output"],
+    ["pricing", "outputPerMTok"],
+    ["prices", "output"],
+    ["price", "output"],
+    ["cost", "output"],
+    ["output_price"],
+    ["output_cost"],
+    ["price_1m_output_tokens"],
+    ["output_cost_per_million_tokens"],
+  ]);
   const pricing: ModelPricing = {
     ...optionalTokenPrice("inputPerMTok", input),
     ...optionalTokenPrice("outputPerMTok", output),
@@ -1898,7 +1928,8 @@ function providerFromArtificialAnalysis(
   if (slug.includes("openai") || name.includes("openai")) return "openai";
   if (slug.includes("google") || name.includes("google")) return "google";
   if (slug.includes("xai") || name.includes("xai")) return "xai";
-  if (slug.includes("anthropic") || name.includes("anthropic")) return "anthropic";
+  if (slug.includes("anthropic") || name.includes("anthropic"))
+    return "anthropic";
   return undefined;
 }
 
@@ -1912,8 +1943,10 @@ function providerFromArtificialAnalysisEfficiency(
   if (provider === "anthropic") return "anthropic";
 
   const searchable = `${model.slug} ${model.label}`.toLowerCase();
-  if (searchable.includes("gpt") || searchable.includes("openai")) return "openai";
-  if (searchable.includes("gemini") || searchable.includes("google")) return "google";
+  if (searchable.includes("gpt") || searchable.includes("openai"))
+    return "openai";
+  if (searchable.includes("gemini") || searchable.includes("google"))
+    return "google";
   if (searchable.includes("grok") || searchable.includes("xai")) return "xai";
   if (searchable.includes("claude") || searchable.includes("anthropic")) {
     return "anthropic";
@@ -1929,7 +1962,8 @@ function providerFromSpeechToTextCreator(
   if (slug.includes("openai") || name.includes("openai")) return "openai";
   if (slug.includes("google") || name.includes("google")) return "google";
   if (slug.includes("xai") || name.includes("xai")) return "xai";
-  if (slug.includes("anthropic") || name.includes("anthropic")) return "anthropic";
+  if (slug.includes("anthropic") || name.includes("anthropic"))
+    return "anthropic";
   if (slug.includes("nvidia") || name.includes("nvidia")) return "nvidia";
   if (slug.includes("groq") || name.includes("groq")) return "groq";
   if (slug.includes("elevenlabs") || name.includes("elevenlabs")) {
@@ -1946,7 +1980,8 @@ function providerFromSpeechToTextHost(
   if (slug.includes("openai") || name.includes("openai")) return "openai";
   if (slug.includes("google") || name.includes("google")) return "google";
   if (slug.includes("xai") || name.includes("xai")) return "xai";
-  if (slug.includes("anthropic") || name.includes("anthropic")) return "anthropic";
+  if (slug.includes("anthropic") || name.includes("anthropic"))
+    return "anthropic";
   if (slug.includes("groq") || name.includes("groq")) return "groq";
   if (slug.includes("elevenlabs") || name.includes("elevenlabs")) {
     return "elevenlabs";
@@ -1985,7 +2020,12 @@ function benchmarkSignalsFromArtificialAnalysis(
     ),
     ...optionalSignal(
       "instructionFollowing",
-      firstScore(evaluations, ["ifbench", "if_bench", "ifeval", "ifeval_strict"]),
+      firstScore(evaluations, [
+        "ifbench",
+        "if_bench",
+        "ifeval",
+        "ifeval_strict",
+      ]),
     ),
     ...optionalSignal(
       "terminalBench",
@@ -2040,20 +2080,23 @@ function benchmarkSignalsFromArtificialAnalysisEfficiency(
 ): BenchmarkSignals {
   const rate = exchangeRate?.rate ?? 1;
   const signals: BenchmarkSignals = {};
-  if (model.intelligenceIndex !== undefined) signals.intelligence = model.intelligenceIndex;
+  if (model.intelligenceIndex !== undefined)
+    signals.intelligence = model.intelligenceIndex;
   if (model.agenticIndex !== undefined) signals.agentic = model.agenticIndex;
   if (model.ifbench !== undefined) signals.instructionFollowing = model.ifbench;
   if (model.tau2 !== undefined) signals.tauTelecom = model.tau2;
   const professional = model.gdpvalNormalized ?? model.gdpval;
   if (professional !== undefined) signals.professional = professional;
-  if (model.terminalBenchHard !== undefined) signals.terminalBench = model.terminalBenchHard;
+  if (model.terminalBenchHard !== undefined)
+    signals.terminalBench = model.terminalBenchHard;
   const coding = model.codingIndex ?? model.sciCode;
   if (coding !== undefined) signals.coding = coding;
   if (model.lcr !== undefined) signals.lcr = model.lcr;
   if (model.hle !== undefined) signals.hle = model.hle;
   if (model.gpqa !== undefined) signals.gpqa = model.gpqa;
   if (model.critpt !== undefined) signals.critpt = model.critpt;
-  if (model.omniscienceIndex !== undefined) signals.omniscience = model.omniscienceIndex;
+  if (model.omniscienceIndex !== undefined)
+    signals.omniscience = model.omniscienceIndex;
 
   const speed = positiveNumberOrUndefined(model.outputSpeed);
   if (speed !== undefined) signals.speed = speed;
@@ -2062,8 +2105,12 @@ function benchmarkSignalsFromArtificialAnalysisEfficiency(
 
   const answerCost = audValueOrUndefined(model.intelligenceRunAnswerCost, rate);
   if (answerCost !== undefined) signals.intelligenceRunAnswerCost = answerCost;
-  const reasoningCost = audValueOrUndefined(model.intelligenceRunReasoningCost, rate);
-  if (reasoningCost !== undefined) signals.intelligenceRunReasoningCost = reasoningCost;
+  const reasoningCost = audValueOrUndefined(
+    model.intelligenceRunReasoningCost,
+    rate,
+  );
+  if (reasoningCost !== undefined)
+    signals.intelligenceRunReasoningCost = reasoningCost;
   const inputCost = audValueOrUndefined(model.intelligenceRunInputCost, rate);
   if (inputCost !== undefined) signals.intelligenceRunInputCost = inputCost;
   const totalCost = audValueOrUndefined(model.intelligenceRunTotalCost, rate);
@@ -2073,7 +2120,8 @@ function benchmarkSignalsFromArtificialAnalysisEfficiency(
     signals.intelligenceRunAnswerTokens = model.intelligenceRunAnswerTokens;
   }
   if (model.intelligenceRunReasoningTokens !== undefined) {
-    signals.intelligenceRunReasoningTokens = model.intelligenceRunReasoningTokens;
+    signals.intelligenceRunReasoningTokens =
+      model.intelligenceRunReasoningTokens;
   }
   if (model.intelligenceRunOutputTokens !== undefined) {
     signals.intelligenceRunOutputTokens = model.intelligenceRunOutputTokens;
@@ -2197,7 +2245,9 @@ function optionalSignal<K extends keyof BenchmarkSignals>(
   key: K,
   value: number | undefined,
 ): Pick<BenchmarkSignals, K> | Record<string, never> {
-  return value === undefined ? {} : ({ [key]: value } as Pick<BenchmarkSignals, K>);
+  return value === undefined
+    ? {}
+    : ({ [key]: value } as Pick<BenchmarkSignals, K>);
 }
 
 function maxDefined(
@@ -2230,7 +2280,11 @@ function artificialAnalysisEfficiencyKeys(
   model: ArtificialAnalysisLlmEfficiencyModel,
 ): Set<string> {
   return new Set(
-    [model.slug, model.label, model.detailsUrl.split("/").filter(Boolean).at(-1)]
+    [
+      model.slug,
+      model.label,
+      model.detailsUrl.split("/").filter(Boolean).at(-1),
+    ]
       .filter((value): value is string => typeof value === "string")
       .map(normalizeMatchKey),
   );
@@ -2240,7 +2294,11 @@ function artificialAnalysisPricingKeys(
   model: ArtificialAnalysisLlmPricingModel,
 ): Set<string> {
   return new Set(
-    [model.slug, model.label, model.detailsUrl.split("/").filter(Boolean).at(-1)]
+    [
+      model.slug,
+      model.label,
+      model.detailsUrl.split("/").filter(Boolean).at(-1),
+    ]
       .filter((value): value is string => typeof value === "string")
       .map(normalizeMatchKey),
   );
@@ -2312,27 +2370,28 @@ function compareBenchmarkCandidates(
   tier: Tier,
   filters: ModelFilters,
 ): number {
-  if (filters.useCase === "customer-support" && filters.includeItsBenchmark !== false) {
+  if (
+    filters.useCase === "customer-support" &&
+    filters.includeItsBenchmark !== false
+  ) {
     return compareCustomerSupportBenchmarkCandidates(left, right, tier);
   }
 
   if (filters.useCase === "customer-support" && tier === "best") {
-    return (
-      compareOptionalDesc(
-        left.benchmarks.llm?.intelligence,
-        right.benchmarks.llm?.intelligence,
-      ) ||
-      scoreBenchmarkCandidate(right, filters, tier) -
-        scoreBenchmarkCandidate(left, filters, tier) ||
-      compareBenchmarkCandidateForTier(left, right, tier)
-    );
+    return compareCustomerSupportAaSupportOrder(left, right);
   }
 
   if (filters.useCase === "customer-support" && tier === "fast") {
     return (
       compareCustomerSupportRunCost(left, right) ||
-      compareOptionalAsc(left.pricing.outputPerMTok, right.pricing.outputPerMTok) ||
-      compareOptionalDesc(left.benchmarks.llm?.speed, right.benchmarks.llm?.speed) ||
+      compareOptionalAsc(
+        left.pricing.outputPerMTok,
+        right.pricing.outputPerMTok,
+      ) ||
+      compareOptionalDesc(
+        left.benchmarks.llm?.speed,
+        right.benchmarks.llm?.speed,
+      ) ||
       compareOptionalAsc(
         left.benchmarks.llm?.customerSupportRank,
         right.benchmarks.llm?.customerSupportRank,
@@ -2370,7 +2429,10 @@ function compareSpeechToTextBenchmarkCandidates(
         candidateTranscriptionCost(left),
         candidateTranscriptionCost(right),
       ) ||
-      compareOptionalDesc(leftSignals?.speedFactor, rightSignals?.speedFactor) ||
+      compareOptionalDesc(
+        leftSignals?.speedFactor,
+        rightSignals?.speedFactor,
+      ) ||
       compareOptionalAsc(leftSignals?.aaWer, rightSignals?.aaWer) ||
       left.id.localeCompare(right.id)
     );
@@ -2379,7 +2441,10 @@ function compareSpeechToTextBenchmarkCandidates(
   if (tier === "best") {
     return (
       compareOptionalAsc(leftSignals?.aaWer, rightSignals?.aaWer) ||
-      compareOptionalDesc(leftSignals?.speedFactor, rightSignals?.speedFactor) ||
+      compareOptionalDesc(
+        leftSignals?.speedFactor,
+        rightSignals?.speedFactor,
+      ) ||
       compareOptionalAsc(
         candidateTranscriptionCost(left),
         candidateTranscriptionCost(right),
@@ -2410,7 +2475,10 @@ function compareVoiceBenchmarkCandidates(
         left.pricing.benchmarkInputAudioPerHour,
         right.pricing.benchmarkInputAudioPerHour,
       ) ||
-      compareOptionalAsc(candidateAudioOutputCost(left), candidateAudioOutputCost(right)) ||
+      compareOptionalAsc(
+        candidateAudioOutputCost(left),
+        candidateAudioOutputCost(right),
+      ) ||
       compareOptionalAsc(
         left.benchmarks.voice?.timeToFirstAudioSeconds,
         right.benchmarks.voice?.timeToFirstAudioSeconds,
@@ -2430,8 +2498,14 @@ function compareVoiceQualityOrder(
   const rightVoice = right.benchmarks.voice;
 
   return (
-    compareOptionalDesc(leftVoice?.agenticPerformance, rightVoice?.agenticPerformance) ||
-    compareOptionalDesc(leftVoice?.speechReasoning, rightVoice?.speechReasoning) ||
+    compareOptionalDesc(
+      leftVoice?.agenticPerformance,
+      rightVoice?.agenticPerformance,
+    ) ||
+    compareOptionalDesc(
+      leftVoice?.speechReasoning,
+      rightVoice?.speechReasoning,
+    ) ||
     compareOptionalDesc(
       leftVoice?.telecomAgenticPerformance,
       rightVoice?.telecomAgenticPerformance,
@@ -2448,7 +2522,10 @@ function compareVoiceQualityOrder(
       left.pricing.benchmarkInputAudioPerHour,
       right.pricing.benchmarkInputAudioPerHour,
     ) ||
-    compareOptionalAsc(candidateAudioOutputCost(left), candidateAudioOutputCost(right)) ||
+    compareOptionalAsc(
+      candidateAudioOutputCost(left),
+      candidateAudioOutputCost(right),
+    ) ||
     left.id.localeCompare(right.id)
   );
 }
@@ -2461,8 +2538,13 @@ function compareCustomerSupportBenchmarkCandidates(
   if (tier === "fast") {
     return (
       compareCustomerSupportRunCost(left, right) ||
-      compareOptionalAsc(left.pricing.outputPerMTok, right.pricing.outputPerMTok) ||
-      compareCustomerSupportSafetyOrder(left, right, { useCase: "customer-support" })
+      compareOptionalAsc(
+        left.pricing.outputPerMTok,
+        right.pricing.outputPerMTok,
+      ) ||
+      compareCustomerSupportSafetyOrder(left, right, {
+        useCase: "customer-support",
+      })
     );
   }
 
@@ -2489,8 +2571,14 @@ function compareCustomerSupportSafetyOrder(
       ) ||
       compareOptionalDesc(leftAutoClose.accuracy, rightAutoClose.accuracy) ||
       compareCustomerSupportRunCost(left, right) ||
-      compareOptionalAsc(leftAutoClose.invalidCount, rightAutoClose.invalidCount) ||
-      compareOptionalAsc(leftAutoClose.falseNegativeCount, rightAutoClose.falseNegativeCount) ||
+      compareOptionalAsc(
+        leftAutoClose.invalidCount,
+        rightAutoClose.invalidCount,
+      ) ||
+      compareOptionalAsc(
+        leftAutoClose.falseNegativeCount,
+        rightAutoClose.falseNegativeCount,
+      ) ||
       compareCustomerSupportTierTieBreak(left, right, "best") ||
       left.id.localeCompare(right.id)
     );
@@ -2502,6 +2590,87 @@ function compareCustomerSupportSafetyOrder(
     scoreBenchmarkCandidate(right, filters, "best") -
       scoreBenchmarkCandidate(left, filters, "best") ||
     compareBenchmarkCandidateForTier(left, right, "best")
+  );
+}
+
+function compareCustomerSupportAaSupportOrder(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+): number {
+  return (
+    customerSupportAaSupportScore(right) -
+      customerSupportAaSupportScore(left) ||
+    compareBenchmarkCandidateForTier(left, right, "balanced")
+  );
+}
+
+function customerSupportAaSupportScore(candidate: BenchmarkCandidate): number {
+  const signals = candidate.benchmarks.llm;
+  if (signals?.customerSupportRank !== undefined) {
+    return Math.max(0, 102 - signals.customerSupportRank * 2);
+  }
+
+  const quality = weightedAverage(
+    [
+      [signals?.agentic ?? signals?.tauTelecom, 0.25],
+      [signals?.instructionFollowing, 0.3],
+      [signals?.intelligence, 0.25],
+      [signals?.professional, 0.1],
+    ],
+    60,
+  );
+  const speed = Math.min((signals?.speed ?? 0) / 220, 1) * 8;
+  return (
+    quality * 0.62 +
+    costScore(
+      {
+        pricing: candidate.pricing,
+      } as RegistryModel,
+      "customer-support",
+      signals,
+      "balanced",
+    ) *
+      0.2 +
+    customerSupportEfficiencyScore(signals) * 0.1 +
+    speed
+  );
+}
+
+function customerSupportEfficiencyScore(
+  signals: BenchmarkSignals | undefined,
+): number {
+  const runCostValue =
+    signals?.intelligenceRunTotalCost !== undefined
+      ? Math.max(
+          0,
+          100 -
+            Math.min(
+              Math.log1p(signals.intelligenceRunTotalCost) / Math.log1p(8000),
+              1,
+            ) *
+              100,
+        )
+      : undefined;
+  const outputTokenValue =
+    signals?.intelligenceRunOutputTokens !== undefined
+      ? Math.max(
+          0,
+          100 -
+            Math.min(
+              Math.log1p(signals.intelligenceRunOutputTokens) /
+                Math.log1p(250_000_000),
+              1,
+            ) *
+              100,
+        )
+      : undefined;
+
+  return weightedAverage(
+    [
+      [runCostValue, 0.45],
+      [outputTokenValue, 0.55],
+    ],
+    50,
   );
 }
 
@@ -2549,7 +2718,10 @@ function compareCustomerSupportTierTieBreak(
         left.benchmarks.llm?.speed,
         right.benchmarks.llm?.speed,
       ) ||
-      compareOptionalAsc(candidateCheapestPrice(left), candidateCheapestPrice(right))
+      compareOptionalAsc(
+        candidateCheapestPrice(left),
+        candidateCheapestPrice(right),
+      )
     );
   }
 
@@ -2558,11 +2730,16 @@ function compareCustomerSupportTierTieBreak(
       left.benchmarks.llm?.autoClose?.weightedScore,
       right.benchmarks.llm?.autoClose?.weightedScore,
     ) ||
-    compareOptionalAsc(candidateCheapestPrice(left), candidateCheapestPrice(right))
+    compareOptionalAsc(
+      candidateCheapestPrice(left),
+      candidateCheapestPrice(right),
+    )
   );
 }
 
-function autoCloseFalsePositiveRate(signals: AutoCloseBenchmarkSignals): number {
+function autoCloseFalsePositiveRate(
+  signals: AutoCloseBenchmarkSignals,
+): number {
   return signals.total > 0 ? signals.falsePositiveCount / signals.total : 1;
 }
 
@@ -2580,7 +2757,8 @@ function compareBenchmarkCandidateForTier(
 ): number {
   if (tier === "best") {
     return (
-      candidateDateValue(right.releaseDate) - candidateDateValue(left.releaseDate) ||
+      candidateDateValue(right.releaseDate) -
+        candidateDateValue(left.releaseDate) ||
       (right.contextWindow ?? 0) - (left.contextWindow ?? 0) ||
       candidateCheapestPrice(right) - candidateCheapestPrice(left) ||
       left.id.localeCompare(right.id)
@@ -2696,7 +2874,9 @@ function benchmarkCandidateLatencyScore(
   }
 
   if (useCase === "speech-to-text") {
-    return speedScore({ speed: candidate.benchmarks.speechToText?.speedFactor });
+    return speedScore({
+      speed: candidate.benchmarks.speechToText?.speedFactor,
+    });
   }
 
   const latency = candidate.benchmarks.llm?.latency;
@@ -2742,7 +2922,8 @@ function scoreRecommendation(
   const useCase = filters.useCase;
   if (!useCase) return 0;
 
-  const signals = model.benchmarks?.llm ?? catalog.benchmarkSignals?.[modelKey(model)];
+  const signals =
+    model.benchmarks?.llm ?? catalog.benchmarkSignals?.[modelKey(model)];
   const quality = qualityScore(model, signals, useCase);
   const latency = latencyScore(signals, model, useCase);
   const speed = speedScore(signals);
@@ -2762,7 +2943,13 @@ function scoreRecommendation(
 function scoringWeights(
   useCase: UseCase,
   tier: Tier,
-): { quality: number; latency: number; speed: number; context: number; cost: number } {
+): {
+  quality: number;
+  latency: number;
+  speed: number;
+  context: number;
+  cost: number;
+} {
   if (tier === "fast") {
     if (useCase === "voice") {
       return { quality: 0.15, latency: 0.45, speed: 0, context: 0, cost: 0.4 };
@@ -2846,7 +3033,11 @@ function qualityScore(
 function familyQualityFallback(model: RegistryModel): number {
   const family = model.family.toLowerCase();
   if (family.includes("opus") || family.includes("pro")) return 84;
-  if (family.includes("sonnet") || family === "gpt" || family.includes("grok")) {
+  if (
+    family.includes("sonnet") ||
+    family === "gpt" ||
+    family.includes("grok")
+  ) {
     return 78;
   }
   if (family.includes("mini") || family.includes("flash")) return 68;
@@ -2947,7 +3138,9 @@ function costScore(
   return priceScore;
 }
 
-function benchmarkRunCostScore(signals: BenchmarkSignals | undefined): number | undefined {
+function benchmarkRunCostScore(
+  signals: BenchmarkSignals | undefined,
+): number | undefined {
   const cost = signals?.intelligenceRunTotalCost;
   if (cost === undefined) return undefined;
   return 100 - Math.min(Math.log1p(cost) / Math.log1p(8_000), 1) * 100;
@@ -2996,8 +3189,7 @@ function compareOptionalDesc(
 
 function compareCheapest(left: RegistryModel, right: RegistryModel): number {
   return (
-    cheapestPrice(left) - cheapestPrice(right) ||
-    compareNewest(left, right)
+    cheapestPrice(left) - cheapestPrice(right) || compareNewest(left, right)
   );
 }
 
@@ -3014,7 +3206,8 @@ function cheapestPrice(model: RegistryModel): number {
 function voiceCost(model: RegistryModel): number | undefined {
   const input = audioInputCost(model);
   const output = audioOutputCost(model);
-  if (input !== undefined && output !== undefined) return input * 0.6 + output * 0.4;
+  if (input !== undefined && output !== undefined)
+    return input * 0.6 + output * 0.4;
   return input ?? output;
 }
 
@@ -3029,7 +3222,9 @@ function audioOutputCost(model: RegistryModel): number | undefined {
 function hasPositiveAudioPrice(model: RegistryModel): boolean {
   const input = audioInputCost(model);
   const output = audioOutputCost(model);
-  return (input !== undefined && input > 0) || (output !== undefined && output > 0);
+  return (
+    (input !== undefined && input > 0) || (output !== undefined && output > 0)
+  );
 }
 
 function transcriptionCost(model: RegistryModel): number | undefined {
@@ -3039,7 +3234,8 @@ function transcriptionCost(model: RegistryModel): number | undefined {
 function candidateVoiceCost(candidate: BenchmarkCandidate): number | undefined {
   const input = candidate.pricing.benchmarkInputAudioPerHour;
   const output = candidateAudioOutputCost(candidate);
-  if (input !== undefined && output !== undefined) return input * 0.6 + output * 0.4;
+  if (input !== undefined && output !== undefined)
+    return input * 0.6 + output * 0.4;
   return input ?? output;
 }
 
@@ -3055,7 +3251,9 @@ function candidateAudioOutputCost(
 function hasPositiveCandidateAudioPrice(pricing: ModelPricing): boolean {
   const input = pricing.benchmarkInputAudioPerHour;
   const output = pricing.audioOutputPerHour ?? input;
-  return (input !== undefined && input > 0) || (output !== undefined && output > 0);
+  return (
+    (input !== undefined && input > 0) || (output !== undefined && output > 0)
+  );
 }
 
 function candidateTranscriptionCost(
@@ -3096,7 +3294,9 @@ function asFiniteNumber(value: string | null): number | undefined {
 }
 
 function numberOrUndefined(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function stringValue(value: unknown, fallback: string): string {
@@ -3141,11 +3341,15 @@ function optionalNumberPrice(
   return value === undefined ? {} : { [key]: value };
 }
 
-function optionalBenchmark<K extends keyof Omit<VoiceBenchmarks, "source" | "extractedAt">>(
+function optionalBenchmark<
+  K extends keyof Omit<VoiceBenchmarks, "source" | "extractedAt">,
+>(
   key: K,
   value: number | undefined,
 ): Pick<VoiceBenchmarks, K> | Record<string, never> {
-  return value === undefined ? {} : ({ [key]: value } as Pick<VoiceBenchmarks, K>);
+  return value === undefined
+    ? {}
+    : ({ [key]: value } as Pick<VoiceBenchmarks, K>);
 }
 
 function optionalSpeechToTextBenchmark<
@@ -3162,11 +3366,15 @@ function optionalSpeechToTextBenchmark<
     : ({ [key]: value } as Pick<SpeechToTextBenchmarks, K>);
 }
 
-function positiveNumberOrUndefined(value: number | undefined): number | undefined {
+function positiveNumberOrUndefined(
+  value: number | undefined,
+): number | undefined {
   return value === undefined || value <= 0 ? undefined : value;
 }
 
-function nonNegativeNumberOrUndefined(value: number | undefined): number | undefined {
+function nonNegativeNumberOrUndefined(
+  value: number | undefined,
+): number | undefined {
   return value === undefined || value < 0 ? undefined : value;
 }
 
@@ -3188,8 +3396,16 @@ function convertPricing(
   exchangeRate: ExchangeRate,
 ): ModelPricing {
   return {
-    ...optionalAudPrice("inputPerMTok", pricing.inputPerMTok, exchangeRate.rate),
-    ...optionalAudPrice("outputPerMTok", pricing.outputPerMTok, exchangeRate.rate),
+    ...optionalAudPrice(
+      "inputPerMTok",
+      pricing.inputPerMTok,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "outputPerMTok",
+      pricing.outputPerMTok,
+      exchangeRate.rate,
+    ),
     ...optionalAudPrice(
       "cacheReadPerMTok",
       pricing.cacheReadPerMTok,

@@ -13,7 +13,12 @@ interface JsonObject {
 const fxUrl =
   "data:application/json," +
   encodeURIComponent(
-    JSON.stringify({ amount: 1, base: "USD", date: "2026-05-19", rates: { AUD: 1.5 } }),
+    JSON.stringify({
+      amount: 1,
+      base: "USD",
+      date: "2026-05-19",
+      rates: { AUD: 1.5 },
+    }),
   );
 const artificialAnalysisUrl =
   "data:application/json," +
@@ -125,7 +130,13 @@ function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
     generatedAt: new Date().toISOString(),
     modelCount: candidates.length,
     activeModelCount: candidates.length,
-    providers: [{ provider: "openai", total: candidates.length, active: candidates.length }],
+    providers: [
+      {
+        provider: "openai",
+        total: candidates.length,
+        active: candidates.length,
+      },
+    ],
     models: [],
     benchmarkCandidates: candidates,
   };
@@ -141,16 +152,20 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain("ai<span class=\"blink\">.</span>itsolver");
+    expect(html).toContain('ai<span class="blink">.</span>itsolver');
     expect(html).toContain("Bench Telecom");
     expect(html).toContain("highest quality");
-    expect(html).toContain('<option value="fast" selected>fast and cheap</option>');
+    expect(html).toContain(
+      '<option value="fast" selected>fast and cheap</option>',
+    );
     expect(html).toContain(
       '<div class="b-field" data-filter-scope="text">\n          <label for="b-capability">Must have</label>',
     );
     expect(html).toContain("model.capabilities[capability] !== true");
     expect(html).toContain("function customerSupportBenchmarkPath()");
-    expect(html).toContain("fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })");
+    expect(html).toContain(
+      "fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })",
+    );
   });
 
   it("serves health metadata", async () => {
@@ -220,7 +235,9 @@ describe("worker routes", () => {
 
   it("serves recommendable AA benchmark rows without registry joins", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=customer-support"),
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support",
+      ),
       env(),
       ctx,
     );
@@ -238,7 +255,9 @@ describe("worker routes", () => {
       "gemini-2.0-flash-lite",
     );
     expect(
-      body.benchmarks.some((row: { recommendable: boolean }) => !row.recommendable),
+      body.benchmarks.some(
+        (row: { recommendable: boolean }) => !row.recommendable,
+      ),
     ).toBe(false);
     expect(body.benchmarks).toContainEqual(
       expect.objectContaining({
@@ -288,11 +307,13 @@ describe("worker routes", () => {
     expect(body.benchmarks.length).toBeGreaterThan(0);
     expect(
       body.benchmarks.every(
-        (row: { benchmarks: { llm?: { intelligenceRunTotalCost?: number } } }) =>
-          (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.NEGATIVE_INFINITY) >=
-            100 &&
-          (row.benchmarks.llm?.intelligenceRunTotalCost ?? Number.POSITIVE_INFINITY) <=
-            1500,
+        (row: {
+          benchmarks: { llm?: { intelligenceRunTotalCost?: number } };
+        }) =>
+          (row.benchmarks.llm?.intelligenceRunTotalCost ??
+            Number.NEGATIVE_INFINITY) >= 100 &&
+          (row.benchmarks.llm?.intelligenceRunTotalCost ??
+            Number.POSITIVE_INFINITY) <= 1500,
       ),
     ).toBe(true);
   });
@@ -312,6 +333,50 @@ describe("worker routes", () => {
     expect(body.recommendation.capabilities).toMatchObject({
       vision: true,
       reasoning: true,
+    });
+  });
+
+  it("returns an AA support candidate for balanced AA-only customer-support requests", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=balanced&includeItsBenchmark=false&maxInputCostPerMTok=35.45&maxRunCostAud=1300&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation).toMatchObject({
+      capabilities: expect.objectContaining({
+        vision: true,
+        reasoning: true,
+      }),
+      benchmarks: {
+        llm: expect.objectContaining({
+          customerSupportRank: expect.any(Number),
+          intelligenceRunTotalCost: expect.any(Number),
+        }),
+      },
+    });
+  });
+
+  it("keeps the catalog available when the optional STT API fetch fails", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support",
+      ),
+      {
+        ...env(),
+        ARTIFICIAL_ANALYSIS_STT_URL: "http://%",
+      },
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation).toMatchObject({
+      recommendable: true,
     });
   });
 
@@ -337,7 +402,8 @@ describe("worker routes", () => {
             };
           };
         }) =>
-          (row.benchmarks.llm?.intelligence ?? Number.NEGATIVE_INFINITY) >= 30 &&
+          (row.benchmarks.llm?.intelligence ?? Number.NEGATIVE_INFINITY) >=
+            30 &&
           (row.benchmarks.llm?.intelligenceRunTotalCost ??
             Number.POSITIVE_INFINITY) <= 1300,
       ),
@@ -408,9 +474,9 @@ describe("worker routes", () => {
         }),
       },
     });
-    expect(body.recommendation.benchmarks.llm.intelligence).toBeGreaterThanOrEqual(
-      30,
-    );
+    expect(
+      body.recommendation.benchmarks.llm.intelligence,
+    ).toBeGreaterThanOrEqual(30);
     expect(
       body.recommendation.benchmarks.llm.intelligenceRunTotalCost,
     ).toBeLessThanOrEqual(1300);
@@ -446,7 +512,7 @@ describe("worker routes", () => {
 
     expect(previewResponse.status).toBe(200);
     expect(previewBody.recommendation).toMatchObject({
-      id: "gemini-3-1-pro-preview",
+      id: "gemini-3-1-flash-lite-preview",
       provider: "google",
       availability: expect.objectContaining({
         status: "preview",
@@ -509,7 +575,7 @@ describe("worker routes", () => {
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 4,
+          customerSupportRank: 1,
           autoClose: expect.objectContaining({
             falsePositiveCount: 5,
             verifiedOn: "2026-06-06",
@@ -533,7 +599,7 @@ describe("worker routes", () => {
       provider: "openai",
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 16,
+          customerSupportRank: 9,
           autoClose: expect.objectContaining({
             falsePositiveCount: 3,
           }),
@@ -630,7 +696,9 @@ describe("worker routes", () => {
         "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=best&capability=reasoning",
       ),
       envWithCachedCatalog(
-        supportCatalog([supportCandidate("only-benchmarked", 0, 0.91, 500, 20)]),
+        supportCatalog([
+          supportCandidate("only-benchmarked", 0, 0.91, 500, 20),
+        ]),
       ),
       ctx,
     );
@@ -707,7 +775,9 @@ describe("worker routes", () => {
       (voice.speechReasoning ?? 0) * 0.35 +
       (voice.telecomAgenticPerformance ?? 0) * 0.15 +
       (voice.conversationalDynamics ?? 0) * 0.05;
-    expect(voiceQuality(bestBody.recommendation.benchmarks.voice)).toBeGreaterThanOrEqual(
+    expect(
+      voiceQuality(bestBody.recommendation.benchmarks.voice),
+    ).toBeGreaterThanOrEqual(
       voiceQuality(fastBody.recommendation.benchmarks.voice),
     );
   });
@@ -727,14 +797,17 @@ describe("worker routes", () => {
     expect(
       body.benchmarks.every(
         (row: { pricing: { benchmarkInputAudioPerHour?: number } }) =>
-          (row.pricing.benchmarkInputAudioPerHour ?? Number.POSITIVE_INFINITY) <= 3,
+          (row.pricing.benchmarkInputAudioPerHour ??
+            Number.POSITIVE_INFINITY) <= 3,
       ),
     ).toBe(true);
   });
 
   it("serves speech-to-text benchmark rows", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text"),
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text",
+      ),
       env(),
       ctx,
     );
@@ -808,7 +881,8 @@ describe("worker routes", () => {
     expect(
       body.benchmarks.every(
         (row: { benchmarks: { speechToText?: { aaWer?: number } } }) =>
-          (row.benchmarks.speechToText?.aaWer ?? Number.POSITIVE_INFINITY) <= 4.6,
+          (row.benchmarks.speechToText?.aaWer ?? Number.POSITIVE_INFINITY) <=
+          4.6,
       ),
     ).toBe(true);
   });
@@ -893,7 +967,8 @@ describe("worker routes", () => {
       env(),
       ctx,
     );
-    const defaultCappedBody = (await defaultCappedResponse.json()) as JsonObject;
+    const defaultCappedBody =
+      (await defaultCappedResponse.json()) as JsonObject;
     const cappedGroqVisibleResponse = await handleRequest(
       new Request(
         "https://ai.itsolver.au/v1/models/recommend?useCase=speech-to-text&provider=groq&maxAaWer=4.6&maxTranscriptionCostPer1kMinutes=10",
@@ -950,7 +1025,9 @@ describe("worker routes", () => {
     const body = (await response.json()) as JsonObject;
 
     expect(response.status).toBe(200);
-    expect(body.providers.map((provider: { provider: string }) => provider.provider)).toEqual([
+    expect(
+      body.providers.map((provider: { provider: string }) => provider.provider),
+    ).toEqual([
       "openai",
       "google",
       "xai",

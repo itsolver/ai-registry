@@ -72,7 +72,9 @@ export function extractSpeechToTextRecords(html) {
     if (cells.length < 6) continue;
 
     const name = cells[0];
-    const provider = providerFromName(cells[1]);
+    const creatorProvider = providerFromName(name);
+    const hostProvider = providerFromName(cells[1]);
+    const provider = creatorProvider ?? hostProvider;
     const aaWer = numberOrUndefined(cells[3]);
     const speedFactor = numberOrUndefined(cells[4]);
     const pricePer1kMinutes = numberOrUndefined(cells[5]);
@@ -87,8 +89,16 @@ export function extractSpeechToTextRecords(html) {
     }
 
     const providerName = SUPPORTED_PROVIDERS.get(provider);
+    const hostName = cells[1] || providerName;
+    const hostSlug = hostProvider ? hostProvider : hostSlugFromName(hostName);
     const slug = slugFrom(modelSlugName(name, providerName));
-    const id = `${provider}-${slug}`;
+    const id = [
+      provider,
+      slug,
+      hostSlug && hostSlug !== provider ? hostSlug : "",
+    ]
+      .filter(Boolean)
+      .join("-");
     byId.set(id, {
       id,
       name,
@@ -100,8 +110,8 @@ export function extractSpeechToTextRecords(html) {
       aa_wer_index: aaWer,
       providers: [
         {
-          name: providerName,
-          slug: provider,
+          name: hostName,
+          slug: hostSlug,
           price_per_1k_minutes: pricePer1kMinutes,
           median_speed_factor: speedFactor,
           aa_wer_index: aaWer,
@@ -160,7 +170,16 @@ function numberOrUndefined(value) {
 
 function modelSlugName(name, providerName) {
   if (!providerName) return name;
-  return name.replace(new RegExp(`,\\s*${escapeRegExp(providerName)}$`, "i"), "");
+  return name.replace(
+    new RegExp(`,\\s*${escapeRegExp(providerName)}$`, "i"),
+    "",
+  );
+}
+
+function hostSlugFromName(name) {
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (normalized === "togetherai") return "togetherai";
+  return slugFrom(name);
 }
 
 function escapeRegExp(value) {

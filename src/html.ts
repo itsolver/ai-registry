@@ -761,9 +761,9 @@ export const HOME_HTML = String.raw`<!doctype html>
         <div class="b-field">
           <label for="b-tier">Recommendation priority</label>
           <select id="b-tier">
-            <option value="">balanced trade-off</option>
+            <option value="balanced">balanced trade-off</option>
             <option value="fast" selected>fast and cheap</option>
-            <option value="best">highest safety</option>
+            <option value="best">highest ITS safety</option>
           </select>
         </div>
         <div class="b-field">
@@ -945,7 +945,6 @@ export const HOME_HTML = String.raw`<!doctype html>
           <a class="builder-action" id="b-open" href="/v1/models/recommend" target="_blank" rel="noopener">open</a>
         </div>
       </div>
-      <div class="pre-wrap"><pre><code id="b-code">https://ai.itsolver.au/v1/models/recommend</code></pre></div>
     </div>
     <div class="builder-result">
       <span class="pulse" aria-hidden="true"></span>
@@ -1058,11 +1057,13 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then safety tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>Customer support picks the middle filtered candidate after highest-safety ordering. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>Customer support picks the middle filtered candidate after ITS safety ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, highest safety prioritizes ITS false positives, then ITS accuracy. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dd>For customer support, highest ITS safety prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dt>AA Support Score</dt>
+      <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS safety score.</dd>
       <dt>cost caps</dt>
       <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
       <dt>AUD/MTok</dt>
@@ -1226,7 +1227,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       url: document.getElementById('b-url'),
       open: document.getElementById('b-open'),
       copy: document.getElementById('b-copy'),
-      code: document.getElementById('b-code'),
       result: document.getElementById('b-result')
     };
 
@@ -1428,7 +1428,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
       return {
         title: 'Customer Support Benchmark',
-        hint: 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, highest safety sorts by ITS false positives then accuracy, and balanced highlights the middle filtered safety row.'
+        hint: includeItsBenchmark()
+          ? 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, highest ITS safety sorts by ITS false-positive rate then accuracy, and balanced highlights the middle filtered ITS safety row.'
+          : 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, highest AA support fit sorts by AA support score, and balanced highlights the middle filtered AA support-score row.'
       };
     }
 
@@ -1447,24 +1449,28 @@ export const HOME_HTML = String.raw`<!doctype html>
     function updateTierOptions(useCase) {
       var labels = useCase === 'speech-to-text'
         ? {
-          '': 'balanced trade-off',
-          fast: 'fast and cheap',
-          best: 'highest accuracy'
-        }
+            '': 'balanced trade-off',
+            balanced: 'balanced trade-off',
+            fast: 'fast and cheap',
+            best: 'highest accuracy'
+          }
         : useCase === 'voice'
           ? {
-            '': 'balanced trade-off',
-            fast: 'fast and cheap',
-            best: 'highest quality'
-          }
+              '': 'balanced trade-off',
+              balanced: 'balanced trade-off',
+              fast: 'fast and cheap',
+              best: 'highest quality'
+            }
         : useCase === 'customer-support'
           ? {
             '': 'balanced trade-off',
+            balanced: 'balanced trade-off',
             fast: 'fast and cheap',
-            best: 'highest safety'
+            best: includeItsBenchmark() ? 'highest ITS safety' : 'highest AA support fit'
           }
         : {
           '': 'balanced',
+          balanced: 'balanced',
           fast: 'lower Run AUD',
           best: 'highest score'
         };
@@ -2169,11 +2175,11 @@ export const HOME_HTML = String.raw`<!doctype html>
         });
     }
 
-    function commonTextColumns(useCase, includeIts) {
-      var base = [
-        { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
-        { key: 'score', label: 'Score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
-      ];
+	    function commonTextColumns(useCase, includeIts) {
+	      var base = [
+	        { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
+	        { key: 'score', label: includeIts ? 'Score' : 'AA Support Score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
+	      ];
       if (includeIts) {
         base.push(
           { key: 'falsePositives', label: 'ITS FP', value: function (row) { var rate = falsePositiveRate(row); return typeof rate === 'number' ? -rate : -Infinity; }, render: falsePositiveLabel },
@@ -2624,7 +2630,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       fields.url.textContent = full;
       fields.url.href = path;
       fields.open.href = path;
-      fields.code.textContent = full;
       fields.result.textContent = 'checking...';
       clearTimeout(previewTimer);
       previewTimer = setTimeout(function () {
@@ -2741,7 +2746,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     restoreBuilderStateFromUrl();
 
     fields.copy.addEventListener('click', function () {
-      navigator.clipboard.writeText(fields.code.textContent).then(function () {
+      navigator.clipboard.writeText(fields.url.textContent).then(function () {
         fields.copy.textContent = 'copied!';
         setTimeout(function () { fields.copy.textContent = 'copy'; }, 1400);
       });

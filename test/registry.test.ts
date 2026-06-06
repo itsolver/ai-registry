@@ -357,14 +357,7 @@ describe("Artificial Analysis catalog", () => {
     expect(falsePositiveRate(bestRecommendation)).toBeLessThanOrEqual(
       falsePositiveRate(fastRecommendation),
     );
-    expect(filteredGoogleBestRecommendation).toMatchObject({
-      id: "gemini-3-flash-reasoning",
-      provider: "google",
-      availability: expect.objectContaining({
-        status: "preview",
-        acceptedRisk: true,
-      }),
-    });
+    expect(filteredGoogleBestRecommendation).toBeUndefined();
     expect(openaiRecommendation).toMatchObject({
       id: "gpt-5-4-mini-medium",
       provider: "openai",
@@ -398,14 +391,7 @@ describe("Artificial Analysis catalog", () => {
         },
       },
     });
-    expect(googlePreviewRecommendation).toMatchObject({
-      id: "gemini-3-flash-reasoning",
-      provider: "google",
-      availability: expect.objectContaining({
-        status: "preview",
-        acceptedRisk: true,
-      }),
-    });
+    expect(googlePreviewRecommendation).toBeUndefined();
   });
 
   it("tracks curated ITS auto-close rows for model-table joins", () => {
@@ -420,13 +406,22 @@ describe("Artificial Analysis catalog", () => {
     });
     expect(byId.get("gemini-3-flash-reasoning")).toMatchObject({
       modelKey: "gemini:gemini-3-flash-preview",
-      total: 36,
+      total: 43,
       falsePositiveCount: 1,
       invalidCount: 0,
-      benchmarkReport: "AI_AUTOCLOSE_MODEL_BENCHMARK.md",
+      benchmarkReport: "AI_AUTOCLOSE_GEMINI_MODEL_BENCHMARK.md",
       availability: expect.objectContaining({
         status: "preview",
-        acceptedRisk: true,
+        acceptedRisk: false,
+      }),
+    });
+    expect(byId.get("gemini-2-5-flash-lite")).toMatchObject({
+      modelKey: "gemini:gemini-2.5-flash-lite",
+      total: 43,
+      falsePositiveCount: 3,
+      accuracy: 0.8604651162790697,
+      availability: expect.objectContaining({
+        acceptedRisk: false,
       }),
     });
     expect(byId.get("gpt-5-mini")).toMatchObject({

@@ -16,7 +16,7 @@ import {
   type ExchangeRate,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v18";
+const CACHE_KEY = "catalog:v19";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
 const DEFAULT_FX_RATE_URL =

@@ -180,7 +180,7 @@ describe("worker routes", () => {
       const html = await response.text();
       expect(html).toContain("ITS Auto-Close Benchmark");
       expect(html).toContain("gemini:gemini-3-flash-preview");
-      expect(html).toContain("promising preview");
+      expect(html).toContain("No Gemini candidate");
       expect(html).toContain("Invalids are contract failures.");
       expect(html).toContain('data-sort="accuracy"');
     }

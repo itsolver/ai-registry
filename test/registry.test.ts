@@ -447,6 +447,35 @@ describe("Artificial Analysis catalog", () => {
         status: "retired",
       }),
     });
+    expect(byId.get("grok-4-3")).toMatchObject({
+      modelKey: "xai:grok-4-3-high",
+      total: 109,
+      falsePositiveCount: 8,
+      invalidCount: 0,
+      benchmarkReport: "AI_AUTOCLOSE_GROK_PAID_BENCHMARK.md",
+    });
+    expect(byId.get("grok-4-3-medium")).toMatchObject({
+      modelKey: "xai:grok-4-3-medium",
+      total: 109,
+      falsePositiveCount: 7,
+      invalidCount: 0,
+    });
+    expect(byId.get("grok-4-3-low")).toMatchObject({
+      modelKey: "xai:grok-4-3-low",
+      total: 109,
+      falsePositiveCount: 7,
+      invalidCount: 0,
+    });
+    expect(byId.get("gemma-4-26b-a4b-it")).toMatchObject({
+      modelKey: "gemini:gemma-4-26b-a4b-it",
+      total: 109,
+      falsePositiveCount: 5,
+      invalidCount: 0,
+      availability: expect.objectContaining({
+        status: "unknown",
+        acceptedRisk: false,
+      }),
+    });
   });
 
   it("uses customer-support recommendation priorities for cost, safety, and balance", () => {

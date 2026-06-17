@@ -763,7 +763,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           <select id="b-tier">
             <option value="balanced">balanced trade-off</option>
             <option value="fast" selected>fast and cheap</option>
-            <option value="best">highest ITS safety</option>
+            <option value="best">lowest false-positive risk</option>
           </select>
         </div>
         <div class="b-field">
@@ -1055,9 +1055,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>fast</dt>
       <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>Customer support picks the middle filtered candidate after ITS safety ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, highest ITS safety prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
       <dt>AA Support Score</dt>
       <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS safety score.</dd>
       <dt>cost caps</dt>
@@ -1425,7 +1425,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       return {
         title: 'Customer Support Benchmark',
         hint: includeItsBenchmark()
-          ? 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, highest ITS safety sorts by ITS false-positive rate then accuracy, and balanced highlights the middle filtered ITS safety row.'
+          ? 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, lowest false-positive risk sorts by ITS false-positive rate then accuracy, and balanced highlights the middle filtered false-positive risk row.'
           : 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, highest AA support fit sorts by AA support score, and balanced highlights the middle filtered AA support-score row.'
       };
     }
@@ -1462,7 +1462,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             '': 'balanced trade-off',
             balanced: 'balanced trade-off',
             fast: 'fast and cheap',
-            best: includeItsBenchmark() ? 'highest ITS safety' : 'highest AA support fit'
+            best: includeItsBenchmark() ? 'lowest false-positive risk' : 'highest AA support fit'
           }
         : {
           '': 'balanced',

@@ -45,7 +45,7 @@ Supported filters:
 
 ```text
 provider=openai|google|xai|anthropic|nvidia|elevenlabs|groq
-tier=fast|balanced|best
+tier=fast|balanced|best          # customer-support priorities: fast, balanced, lowest false-positive risk
 capability=vision|pdf|reasoning|toolCalling|structuredOutput
 maxInputCostPerMTok=2               # max input AUD per million tokens
 maxOutputCostPerMTok=10             # max output AUD per million tokens

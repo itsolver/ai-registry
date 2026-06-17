@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hid deprecated ITS auto-close benchmark rows by default while keeping them available behind an explicit toggle.
 - Populated customer-support model table rows with the curated ITS auto-close benchmark results where the registry already has matching models.
 - Clarified customer-support AA-only score and safety labels, and made balanced AA-only recommendations pick the median candidate from the AA support-score ordering.
+- Renamed the customer-support `best` recommendation label from highest ITS safety to lowest false-positive risk.
 - Tightened the desktop homepage query builder so filters and preview content fit higher in the viewport.
 - Removed the duplicate generated URL from the homepage query builder.
 

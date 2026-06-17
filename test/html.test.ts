@@ -6,7 +6,7 @@ describe("homepage copy", () => {
     expect(HOME_HTML).toContain(
       '<option value="balanced">balanced trade-off</option>',
     );
-    expect(HOME_HTML).toContain("highest ITS safety");
+    expect(HOME_HTML).toContain("lowest false-positive risk");
     expect(HOME_HTML).toContain("highest AA support fit");
     expect(HOME_HTML).toContain("AA Support Score");
     expect(HOME_HTML).toContain("It is not an ITS safety score.");

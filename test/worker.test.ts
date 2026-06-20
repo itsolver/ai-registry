@@ -204,6 +204,28 @@ describe("worker routes", () => {
     expect(html).not.toContain("raw_output");
   });
 
+  it("serves the web development benchmark composite without catalog access", async () => {
+    for (const path of ["/webdev", "/webdev/"]) {
+      const response = await handleRequest(
+        new Request(`https://ai.itsolver.au${path}`),
+        {},
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain("Composite Web Development Benchmark Signals");
+      expect(html).toContain("GPT-5.5: 69.85%");
+      expect(html).toContain("Claude Fable 5: 90.35%");
+      expect(html).toContain("Gemini 3.5 Flash: 78.80%");
+      expect(html).toContain("Grok CLI Grok 4.20 Reasoning at 57.3%");
+      expect(html).toContain("https://www.vals.ai/benchmarks/vibe-code");
+      expect(html).toContain(
+        "not averaged into one number because upstream metrics differ",
+      );
+    }
+  });
+
   it("serves health metadata", async () => {
     const response = await handleRequest(
       new Request("https://ai.itsolver.au/v1/health"),

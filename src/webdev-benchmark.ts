@@ -28,7 +28,7 @@ type BenchmarkEvidenceRow = {
   sourceUrl: string;
 };
 
-const WEBDEV_GENERATED_AT = "2026-06-21";
+const WEBDEV_SOURCE_CHECKED_AT = "2026-06-21T04:23:30Z";
 
 const WINNER_ROWS: WinnerRow[] = [
   {
@@ -460,7 +460,7 @@ export const WEBDEV_BENCHMARK_HTML = String.raw`<!doctype html>
         <div class="index-score">
           <span class="pill">VCB 90.35%</span>
           <span class="pill">SWE Verified 95.00%</span>
-          <span class="pill">Updated ${escapeHtml(WEBDEV_GENERATED_AT)}</span>
+          <span class="pill">Source checked ${escapeHtml(WEBDEV_SOURCE_CHECKED_AT)}</span>
         </div>
       </aside>
     </section>

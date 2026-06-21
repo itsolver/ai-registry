@@ -214,14 +214,17 @@ describe("worker routes", () => {
 
       expect(response.status).toBe(200);
       const html = await response.text();
-      expect(html).toContain("Composite Web Development Benchmark Signals");
+      expect(html).toContain("Web App Development Model Winners");
+      expect(html).toContain("Current public winner");
       expect(html).toContain("GPT-5.5: 69.85%");
       expect(html).toContain("Claude Fable 5: 90.35%");
       expect(html).toContain("Gemini 3.5 Flash: 78.80%");
-      expect(html).toContain("Grok CLI Grok 4.20 Reasoning at 57.3%");
+      expect(html).toContain("Grok CLI Grok 4.20 Reasoning: 57.3%");
+      expect(html).toContain('<span class="tab active">Performance</span>');
+      expect(html).toContain("Cost / time signal");
       expect(html).toContain("https://www.vals.ai/benchmarks/vibe-code");
       expect(html).toContain(
-        "not averaged into one number because upstream metrics differ",
+        "headline winners first, then benchmark breakdown, cost, and runtime context",
       );
     }
   });

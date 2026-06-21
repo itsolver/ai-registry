@@ -1072,6 +1072,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dd>The live recommendation for customer support, voice, or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
       <dt>IT Solver auto-close benchmark</dt>
       <dd><a href="/its">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
+      <dt>web development benchmark composite</dt>
+      <dd><a href="/webdev">Our web app development benchmark composite</a>. Use it to compare frontier-provider signals across frontend, backend, full-stack, browser, repository, cost, and latency dimensions.</dd>
       <dt>false positives / accuracy</dt>
       <dd>False positives are unresolved tickets predicted as resolved. Accuracy is overall classifier correctness on the auto-close replay set.</dd>
       <dt>ITS columns</dt>

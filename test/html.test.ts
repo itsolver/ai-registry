@@ -14,6 +14,9 @@ describe("homepage copy", () => {
       '<a href="/its">Our reopened-ticket classifier replay</a>',
     );
     expect(HOME_HTML).toContain(
+      '<a href="/webdev">Our web app development benchmark composite</a>',
+    );
+    expect(HOME_HTML).toContain(
       "function mergeCustomerSupportBenchmarkRows(models, benchmarkModels)",
     );
     expect(HOME_HTML).toContain(

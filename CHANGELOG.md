@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a public web application development benchmark composite page at `/webdev`.
 - Added Gemini-only IT Solver auto-close benchmark results to generated data, model details, benchmark APIs, and `/its`.
 - Added newer Grok 4.3 low/medium/high and Gemma IT Solver auto-close benchmark rows to generated data and `/its`.
 - Added customer-support recommendation failovers and refreshed no-cost IT Solver auto-close benchmark rows.
@@ -16,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Refocused the `/webdev` page around winner models, benchmark breakdown, cost, and execution-time context.
 - Hid deprecated ITS auto-close benchmark rows by default while keeping them available behind an explicit toggle.
 - Populated customer-support model table rows with the curated ITS auto-close benchmark results where the registry already has matching models.
 - Clarified customer-support AA-only score and safety labels, and made balanced AA-only recommendations pick the median candidate from the AA support-score ordering.

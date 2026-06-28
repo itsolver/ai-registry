@@ -54,7 +54,8 @@ export const AA_LLM_EFFICIENCY_MODELS = ${JSON.stringify(records, null, 2)} as c
 }
 
 export function extractLlmEfficiencyRecords(html) {
-  const frontierModels = extractNextFlightModelRecords(html).filter(
+  const allModels = extractNextFlightModelRecords(html);
+  const frontierModels = allModels.filter(
     (record) => record.frontier_model === true,
   );
   if (!frontierModels.length) {
@@ -62,7 +63,7 @@ export function extractLlmEfficiencyRecords(html) {
   }
 
   const datasets = extractJsonLdDatasets(html);
-  return mergeDatasets(datasets, frontierModels);
+  return mergeDatasets(datasets, frontierModels, allModels);
 }
 
 export function extractJsonLdDatasets(html) {
@@ -121,62 +122,16 @@ export function extractNextFlightModelRecords(html) {
     .filter((record) => record && typeof record === "object" && typeof record.slug === "string");
 }
 
-function mergeDatasets(datasets, frontierModels) {
+function mergeDatasets(datasets, frontierModels, allModels = frontierModels) {
   const bySlug = new Map();
+  const allModelsBySlug = new Map(allModels.map((model) => [model.slug, model]));
 
   for (const model of frontierModels) {
-    upsert(bySlug, nextFlightItem(model), {
-      provider: stringOrUndefined(model.model_creators?.slug),
-      contextWindowTokens: numberOrUndefined(model.context_window_tokens),
-      intelligenceIndex: numberOrUndefined(model.intelligence_index),
-      agenticIndex: numberOrUndefined(model.agentic_index),
-      ifbench: numberOrUndefined(model.ifbench),
-      tau2: numberOrUndefined(model.tau2),
-      gdpval: numberOrUndefined(model.gdpval),
-      gdpvalNormalized: normalizedGdpval(model.gdpval_normalized ?? model.gdpval),
-      terminalBenchHard: numberOrUndefined(model.terminalbench_hard),
-      sciCode: numberOrUndefined(model.scicode),
-      codingIndex: numberOrUndefined(model.coding_index),
-      lcr: numberOrUndefined(model.lcr),
-      hle: numberOrUndefined(model.hle),
-      gpqa: numberOrUndefined(model.gpqa),
-      critpt: numberOrUndefined(model.critpt),
-      omniscienceIndex: numberOrUndefined(model.omniscience?.omniscienceIndex ?? model.omniscience),
-      outputSpeed: numberOrUndefined(model.timescaleData?.median_output_speed),
-      latency: numberOrUndefined(
-        model.time_to_first_answer_token_metrics?.total_time ??
-          model.timescaleData?.median_time_to_first_chunk,
-      ),
-      inputPrice: numberOrUndefined(model.price_1m_input_tokens),
-      outputPrice: numberOrUndefined(model.price_1m_output_tokens),
-      cacheHitPrice: numberOrUndefined(model.cache_hit_price),
-      intelligenceRunAnswerCost: numberOrUndefined(model.intelligence_index_cost?.answer_cost),
-      intelligenceRunReasoningCost: numberOrUndefined(
-        model.intelligence_index_cost?.reasoning_cost,
-      ),
-      intelligenceRunInputCost: numberOrUndefined(model.intelligence_index_cost?.input_cost),
-      intelligenceRunTotalCost: numberOrUndefined(model.intelligence_index_cost?.total_cost),
-      intelligenceCostPerTask: numberOrUndefined(model.costPerIntelligenceIndexTask),
-      intelligenceRunAnswerTokens: numberOrUndefined(
-        model.intelligence_index_token_counts?.answer_tokens,
-      ),
-      intelligenceRunReasoningTokens: numberOrUndefined(
-        model.intelligence_index_token_counts?.reasoning_tokens,
-      ),
-      intelligenceRunOutputTokens: numberOrUndefined(
-        model.intelligence_index_token_counts?.output_tokens,
-      ),
-    });
-  }
-
-  for (const item of datasets.get(DATASETS.intelligence) ?? []) {
-    upsert(bySlug, item, {
-      intelligenceIndex: numberOrUndefined(item.intelligenceIndex),
-    }, false);
+    upsert(bySlug, nextFlightItem(model), nextFlightValues(model));
   }
 
   for (const item of datasets.get(DATASETS.costPerIntelligenceTask) ?? []) {
-    upsert(bySlug, item, {
+    upsertModelBacked(bySlug, allModelsBySlug, item, {
       intelligenceCostPerTask: sumDefined([
         numberOrUndefined(item.answer),
         numberOrUndefined(item.reasoning),
@@ -184,14 +139,20 @@ function mergeDatasets(datasets, frontierModels) {
         numberOrUndefined(item.cacheHit),
         numberOrUndefined(item.input),
       ]),
-    }, false);
+    });
   }
 
   for (const item of datasets.get(DATASETS.costPerTask) ?? []) {
-    upsert(bySlug, item, {
+    upsertModelBacked(bySlug, allModelsBySlug, item, {
       intelligenceCostPerTask: numberOrUndefined(
         item.costPerIntelligenceIndexTask,
       ),
+    });
+  }
+
+  for (const item of datasets.get(DATASETS.intelligence) ?? []) {
+    upsert(bySlug, item, {
+      intelligenceIndex: numberOrUndefined(item.intelligenceIndex),
     }, false);
   }
 
@@ -269,9 +230,68 @@ function nextFlightItem(model) {
   };
 }
 
+function nextFlightValues(model) {
+  return {
+    provider: stringOrUndefined(model.model_creators?.slug),
+    contextWindowTokens: numberOrUndefined(model.context_window_tokens),
+    intelligenceIndex: numberOrUndefined(model.intelligence_index),
+    agenticIndex: numberOrUndefined(model.agentic_index),
+    ifbench: numberOrUndefined(model.ifbench),
+    tau2: numberOrUndefined(model.tau2),
+    gdpval: numberOrUndefined(model.gdpval),
+    gdpvalNormalized: normalizedGdpval(model.gdpval_normalized ?? model.gdpval),
+    terminalBenchHard: numberOrUndefined(model.terminalbench_hard),
+    sciCode: numberOrUndefined(model.scicode),
+    codingIndex: numberOrUndefined(model.coding_index),
+    lcr: numberOrUndefined(model.lcr),
+    hle: numberOrUndefined(model.hle),
+    gpqa: numberOrUndefined(model.gpqa),
+    critpt: numberOrUndefined(model.critpt),
+    omniscienceIndex: numberOrUndefined(model.omniscience?.omniscienceIndex ?? model.omniscience),
+    outputSpeed: numberOrUndefined(model.timescaleData?.median_output_speed),
+    latency: numberOrUndefined(
+      model.time_to_first_answer_token_metrics?.total_time ??
+        model.timescaleData?.median_time_to_first_chunk,
+    ),
+    inputPrice: numberOrUndefined(model.price_1m_input_tokens),
+    outputPrice: numberOrUndefined(model.price_1m_output_tokens),
+    cacheHitPrice: numberOrUndefined(model.cache_hit_price),
+    intelligenceRunAnswerCost: numberOrUndefined(model.intelligence_index_cost?.answer_cost),
+    intelligenceRunReasoningCost: numberOrUndefined(
+      model.intelligence_index_cost?.reasoning_cost,
+    ),
+    intelligenceRunInputCost: numberOrUndefined(model.intelligence_index_cost?.input_cost),
+    intelligenceRunTotalCost: numberOrUndefined(model.intelligence_index_cost?.total_cost),
+    intelligenceCostPerTask: numberOrUndefined(model.costPerIntelligenceIndexTask),
+    intelligenceRunAnswerTokens: numberOrUndefined(
+      model.intelligence_index_token_counts?.answer_tokens,
+    ),
+    intelligenceRunReasoningTokens: numberOrUndefined(
+      model.intelligence_index_token_counts?.reasoning_tokens,
+    ),
+    intelligenceRunOutputTokens: numberOrUndefined(
+      model.intelligence_index_token_counts?.output_tokens,
+    ),
+  };
+}
+
+function upsertModelBacked(bySlug, allModelsBySlug, item, values) {
+  const slug = slugFromItem(item);
+  const model = slug ? allModelsBySlug.get(slug) : undefined;
+  if (!model) {
+    upsert(bySlug, item, values, false);
+    return;
+  }
+
+  upsert(bySlug, nextFlightItem(model), {
+    ...nextFlightValues(model),
+    ...values,
+  });
+}
+
 function upsert(bySlug, item, values, create = true) {
   const detailsUrl = stringOrUndefined(item.detailsUrl);
-  const slug = detailsUrl?.split("/").filter(Boolean).at(-1);
+  const slug = slugFromItem(item);
   if (!detailsUrl || !slug || (!create && !bySlug.has(slug))) return;
 
   const existing = bySlug.get(slug) ?? {
@@ -286,6 +306,11 @@ function upsert(bySlug, item, values, create = true) {
       Object.entries(values).filter(([, value]) => value !== undefined),
     ),
   });
+}
+
+function slugFromItem(item) {
+  const detailsUrl = stringOrUndefined(item.detailsUrl);
+  return detailsUrl?.split("/").filter(Boolean).at(-1);
 }
 
 function extractNamedJsonArrays(value, name) {

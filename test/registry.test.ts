@@ -373,18 +373,18 @@ describe("Artificial Analysis catalog", () => {
     );
     expect(filteredGoogleBestRecommendation).toBeUndefined();
     expect(openaiRecommendation).toMatchObject({
-      id: "gpt-5-5",
+      id: "gpt-5-4-mini",
       provider: "openai",
       recommendable: true,
       pricing: {
-        inputPerMTok: 5,
-        outputPerMTok: 30,
+        inputPerMTok: 0.75,
+        outputPerMTok: 4.5,
       },
       benchmarks: {
         llm: {
           intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
-            falsePositiveCount: 4,
+            falsePositiveCount: 6,
             accuracy: expect.any(Number),
             sourceUrl: expect.any(String),
             verifiedOn: "2026-06-06",

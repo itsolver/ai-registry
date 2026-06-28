@@ -671,18 +671,18 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation).toMatchObject({
-      id: "gpt-5-5",
+      id: "gpt-5-4-mini",
       provider: "openai",
       pricing: expect.objectContaining({
-        inputPerMTok: 7.5,
-        outputPerMTok: 45,
+        inputPerMTok: 1.125,
+        outputPerMTok: 6.75,
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 5,
+          customerSupportRank: 2,
           intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
-            falsePositiveCount: 4,
+            falsePositiveCount: 6,
             verifiedOn: "2026-06-06",
           }),
         }),

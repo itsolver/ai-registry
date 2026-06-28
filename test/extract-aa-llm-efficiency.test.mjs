@@ -175,6 +175,63 @@ describe("AA LLM efficiency extractor", () => {
       intelligenceCostPerTask: 1.5,
     });
   });
+
+  it("keeps non-frontier models when task-cost chart data exists", () => {
+    const flight = `35:${JSON.stringify({
+      defaultData: [
+        {
+          slug: "frontier-seed",
+          name: "Frontier Seed",
+          model_url: "/models/frontier-seed",
+          frontier_model: true,
+          model_creators: { slug: "openai" },
+        },
+        {
+          slug: "grok-chart-row",
+          name: "Grok Chart Row",
+          model_url: "/models/grok-chart-row",
+          frontier_model: false,
+          model_creators: { slug: "xai" },
+          intelligence_index: 55,
+          price_1m_input_tokens: 2,
+          price_1m_output_tokens: 10,
+        },
+      ],
+    })}`;
+    const html = [
+      dataset("Cost per Intelligence Index Task", [
+        {
+          label: "Grok Chart Row",
+          answer: 0.1,
+          reasoning: 0.2,
+          cacheWrite: 0.3,
+          cacheHit: 0.4,
+          input: 0.5,
+          detailsUrl: "/models/grok-chart-row",
+        },
+      ]),
+      dataset("Cost per Task", [
+        {
+          label: "Grok Chart Row",
+          costPerIntelligenceIndexTask: 0.42,
+          detailsUrl: "/models/grok-chart-row",
+        },
+      ]),
+      `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script>`,
+    ].join("");
+
+    const records = extractLlmEfficiencyRecords(html);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      slug: "grok-chart-row",
+      provider: "xai",
+      intelligenceIndex: 55,
+      inputPrice: 2,
+      outputPrice: 10,
+      intelligenceCostPerTask: 0.42,
+    });
+  });
 });
 
 function dataset(name, data) {

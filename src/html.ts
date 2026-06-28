@@ -912,21 +912,21 @@ export const HOME_HTML = String.raw`<!doctype html>
         </div>
         </div>
         <div class="b-field range-field" data-filter-scope="text">
-          <label for="b-run-min-range">Run AUD range</label>
+          <label for="b-run-min-range">Task AUD range</label>
           <input type="hidden" id="b-minruncost">
           <input type="hidden" id="b-maxruncost">
           <div class="price-filter-card">
             <div class="price-filter-top">
-              <strong id="b-runcost-label">Any Run AUD</strong>
+              <strong id="b-runcost-label">Any Task AUD</strong>
               <button type="button" id="b-runcost-any">Any</button>
             </div>
             <div class="range-stack">
-              <input type="range" id="b-run-min-range" min="0" max="8000" step="50" value="0" aria-label="Minimum Run AUD">
-              <input type="range" id="b-run-max-range" min="0" max="8000" step="50" value="1300" aria-label="Maximum Run AUD">
+              <input type="range" id="b-run-min-range" min="0" max="2.5" step="0.01" value="0" aria-label="Minimum Intelligence Index task AUD">
+              <input type="range" id="b-run-max-range" min="0" max="2.5" step="0.01" value="2.5" aria-label="Maximum Intelligence Index task AUD">
             </div>
             <div class="price-filter-scale">
               <span>$0</span>
-              <span>$8,000+</span>
+              <span>$2.50+</span>
             </div>
           </div>
         </div>
@@ -978,7 +978,7 @@ export const HOME_HTML = String.raw`<!doctype html>
               <th data-table="supportRows" data-sort="benchTelecom">Bench Telecom</th>
               <th data-table="supportRows" data-sort="intelligence">Intel</th>
               <th data-table="supportRows" data-sort="outputCost">Output AUD/MTok</th>
-              <th data-table="supportRows" data-sort="runCost">Run AUD</th>
+              <th data-table="supportRows" data-sort="runCost">Task AUD</th>
               <th data-table="supportRows" data-sort="note">ITS Notes</th>
             </tr>
           </thead>
@@ -988,7 +988,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         </table>
       </div>
     </div>
-      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Run AUD/token efficiency.</p>
+      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Intelligence Index Task AUD.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
       <div class="voice-bench">
@@ -1053,7 +1053,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Run AUD, then lower output cost, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then lower output cost, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
       <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
@@ -1064,6 +1064,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
       <dt>AUD/MTok</dt>
       <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
+      <dt>Task AUD</dt>
+      <dd>Australian dollars per weighted average Artificial Analysis Intelligence Index task. Source benchmark cost is stored in USD and converted with the current catalog exchange rate.</dd>
       <dt>voice AUD/hr</dt>
       <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
       <dt>STT AUD/1k min</dt>
@@ -1133,6 +1135,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       "inputPerMTok": 5.2601,
       "outputPerMTok": 21.0405
     },
+    "benchmarks": {
+      "llm": {
+        "intelligenceCostPerTask": 1.2112
+      }
+    },
     "recommendable": true
   },
   "failovers": [
@@ -1160,7 +1167,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   <ul>
     <li>This public endpoint is maintained for IT Solver projects and shared as-is.</li>
     <li>OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq are exposed.</li>
-    <li>Each model includes AUD pricing converted from USD with the current cached Frankfurter exchange rate.</li>
+    <li>Each model includes AUD pricing and benchmark costs converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
     <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
     <li>For customer support, try <code>recommendation</code> first, then <code>failovers[0]</code>, then <code>failovers[1]</code> when a provider or model is overloaded.</li>
@@ -1427,8 +1434,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       return {
         title: 'Customer Support Benchmark',
         hint: includeItsBenchmark()
-          ? 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, lowest false-positive risk sorts by ITS false-positive rate then accuracy, and balanced highlights the middle filtered false-positive risk row.'
-          : 'Customer support priorities are explicit: fast and cheap sorts by Run AUD, highest AA support fit sorts by AA support score, and balanced highlights the middle filtered AA support-score row.'
+          ? 'Customer support priorities are explicit: fast and cheap sorts by Task AUD, lowest false-positive risk sorts by ITS false-positive rate then accuracy, and balanced highlights the middle filtered false-positive risk row.'
+          : 'Customer support priorities are explicit: fast and cheap sorts by Task AUD, highest AA support fit sorts by AA support score, and balanced highlights the middle filtered AA support-score row.'
       };
     }
 
@@ -1469,7 +1476,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         : {
           '': 'balanced',
           balanced: 'balanced',
-          fast: 'lower Run AUD',
+          fast: 'lower Task AUD',
           best: 'highest score'
         };
       Array.prototype.forEach.call(fields.tier.options, function (option) {
@@ -1684,7 +1691,14 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function runCost(row) {
-      return llmSignals(row).intelligenceRunTotalCost;
+      return llmSignals(row).intelligenceCostPerTask;
+    }
+
+    function supportCostSortValue(row) {
+      var signals = llmSignals(row);
+      return typeof signals.intelligenceCostPerTask === 'number'
+        ? signals.intelligenceCostPerTask
+        : signals.intelligenceRunTotalCost;
     }
 
     function autoCloseSignals(row) {
@@ -1716,7 +1730,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       return (
         compareNumberAsc(falsePositiveRate(left), falsePositiveRate(right)) ||
         compareNumberDesc(leftAutoClose.accuracy, rightAutoClose.accuracy) ||
-        compareNumberAsc(runCost(left), runCost(right)) ||
+        compareNumberAsc(supportCostSortValue(left), supportCostSortValue(right)) ||
         compareNumberAsc(leftAutoClose.invalidCount, rightAutoClose.invalidCount) ||
         compareNumberAsc(leftAutoClose.falseNegativeCount, rightAutoClose.falseNegativeCount) ||
         compareNumberDesc(leftAutoClose.weightedScore, rightAutoClose.weightedScore) ||
@@ -1727,7 +1741,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function customerSupportFastRowCompare(left, right) {
       return (
-        compareNumberAsc(runCost(left), runCost(right)) ||
+        compareNumberAsc(supportCostSortValue(left), supportCostSortValue(right)) ||
         compareNumberAsc(outputCost(left), outputCost(right)) ||
         customerSupportSafetyRowCompare(left, right)
       );
@@ -1945,8 +1959,8 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function formatRunCostCap(value, isMax, max) {
-      if (isMax && value >= 8000) return '$8,000+';
-      return '$' + Math.round(value).toLocaleString();
+      if (isMax && value >= max) return '$' + max.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '+';
+      return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
     }
 
     function formatAudioCostCap(value, isMax, max) {
@@ -2050,7 +2064,9 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function textEfficiencyScore(model) {
       var signals = ((model.benchmarks || {}).llm || {});
-      var runCostValue = typeof signals.intelligenceRunTotalCost === 'number'
+      var runCostValue = typeof signals.intelligenceCostPerTask === 'number'
+        ? Math.max(0, 100 - Math.min(Math.log1p(signals.intelligenceCostPerTask) / Math.log1p(2), 1) * 100)
+        : typeof signals.intelligenceRunTotalCost === 'number'
         ? Math.max(0, 100 - Math.min(Math.log1p(signals.intelligenceRunTotalCost) / Math.log1p(8000), 1) * 100)
         : undefined;
       var outputTokenValue = typeof signals.intelligenceRunOutputTokens === 'number'
@@ -2218,7 +2234,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       );
       base.push(
         { key: 'outputCost', label: 'Output AUD/MTok', value: outputCost, render: function (row) { return money(outputCost(row)); } },
-        { key: 'runCost', label: 'Run AUD', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } }
+        { key: 'runCost', label: 'Task AUD', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } }
       );
       if (includeIts) {
         base.push({ key: 'note', label: 'ITS Notes', value: autoCloseNote, render: function (row) { return '<div class="note-cell">' + escapeHtml(autoCloseNote(row)) + '</div>'; } });
@@ -2255,8 +2271,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
       if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
       if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
-      if (fields.minruncost.value) params.set('minRunCostAud', fields.minruncost.value);
-      if (fields.maxruncost.value) params.set('maxRunCostAud', fields.maxruncost.value);
+      if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
+      if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
       if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
       if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
       if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
@@ -2307,7 +2323,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         ? signals.falsePositiveCount / signals.total
         : 1;
       var accuracy = typeof signals.accuracy === 'number' ? signals.accuracy : 0;
-      var cost = typeof runCost(row) === 'number' ? runCost(row) / 100000 : 1;
+      var cost = typeof supportCostSortValue(row) === 'number' ? supportCostSortValue(row) : 1;
       return fpRate - accuracy / 1000 + cost;
     }
 
@@ -2321,7 +2337,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function autoCloseSummary(row) {
-      return falsePositiveLabel(row) + ' FP, ' + accuracyLabel(row) + ' accuracy, ' + money(runCost(row)) + ' Run AUD';
+      return falsePositiveLabel(row) + ' FP, ' + accuracyLabel(row) + ' accuracy, ' + money(runCost(row)) + ' Task AUD';
     }
 
     function topAutoCloseList(rows) {
@@ -2400,7 +2416,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'How are recommendations compared here?',
           a: includeIts
-            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Run AUD/token efficiency. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
+            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
             : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
         }
       ];
@@ -2562,8 +2578,8 @@ export const HOME_HTML = String.raw`<!doctype html>
         if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
         if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
         if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
-        if (fields.minruncost.value) params.set('minRunCostAud', fields.minruncost.value);
-        if (fields.maxruncost.value) params.set('maxRunCostAud', fields.maxruncost.value);
+        if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
+        if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
         if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
         if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
         if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
@@ -2617,8 +2633,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       setInputValue(fields.inputmaxrange, params.get('maxInputCostPerMTok') || params.get('maxCostPerMTok'));
       setInputValue(fields.outputminrange, params.get('minOutputCostPerMTok'));
       setInputValue(fields.outputmaxrange, params.get('maxOutputCostPerMTok'));
-      setInputValue(fields.runminrange, params.get('minRunCostAud'));
-      setInputValue(fields.runmaxrange, params.get('maxRunCostAud'));
+      setInputValue(fields.runminrange, params.get('minIntelligenceCostPerTaskAud'));
+      setInputValue(fields.runmaxrange, params.get('maxIntelligenceCostPerTaskAud'));
       setInputValue(fields.minintelligence, params.get('minIntelligence'));
       setInputValue(fields.audioinputmaxrange, params.get('maxAudioInputCostPerHour'));
       setInputValue(fields.maxaudiooutputcost, params.get('maxAudioOutputCostPerHour'));
@@ -2721,7 +2737,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       hiddenMin: fields.minruncost,
       hiddenMax: fields.maxruncost,
       label: fields.runcostlabel,
-      anyLabel: 'Any Run AUD',
+      anyLabel: 'Any Task AUD',
       format: formatRunCostCap
     };
     audioInputCostRange = {

@@ -60,6 +60,24 @@ describe("AA LLM efficiency extractor", () => {
           detailsUrl: "/models/claude-frontier",
         },
       ]),
+      dataset("Cost per Intelligence Index Task", [
+        {
+          label: "Claude Frontier",
+          answer: 0.1,
+          reasoning: 0.2,
+          cacheWrite: 0.3,
+          cacheHit: 0.4,
+          input: 0.5,
+          detailsUrl: "/models/claude-frontier",
+        },
+      ]),
+      dataset("Cost per Task", [
+        {
+          label: "Claude Frontier",
+          costPerIntelligenceIndexTask: 0.42,
+          detailsUrl: "/models/claude-frontier",
+        },
+      ]),
       dataset("Cost to Run Artificial Analysis Intelligence Index", [
         {
           label: "Claude Frontier",
@@ -117,7 +135,44 @@ describe("AA LLM efficiency extractor", () => {
       cacheHitPrice: 0.3,
       outputSpeed: 61,
       intelligenceRunTotalCost: 66,
+      intelligenceCostPerTask: 0.42,
       intelligenceRunOutputTokens: 330,
+    });
+  });
+
+  it("falls back to Intelligence Index task-cost components", () => {
+    const flight = `35:${JSON.stringify({
+      defaultData: [
+        {
+          slug: "claude-frontier",
+          name: "Claude Frontier",
+          model_url: "/models/claude-frontier",
+          frontier_model: true,
+          model_creators: { slug: "anthropic" },
+          intelligence_index: 12,
+        },
+      ],
+    })}`;
+    const html = [
+      dataset("Cost per Intelligence Index Task", [
+        {
+          label: "Claude Frontier",
+          answer: 0.1,
+          reasoning: 0.2,
+          cacheWrite: 0.3,
+          cacheHit: 0.4,
+          input: 0.5,
+          detailsUrl: "/models/claude-frontier",
+        },
+      ]),
+      `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script>`,
+    ].join("");
+
+    const records = extractLlmEfficiencyRecords(html);
+
+    expect(records[0]).toMatchObject({
+      slug: "claude-frontier",
+      intelligenceCostPerTask: 1.5,
     });
   });
 });

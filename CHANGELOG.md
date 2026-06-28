@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added Artificial Analysis Intelligence Index Task AUD to customer-support benchmark data, filters, and homepage tables.
 - Added a public web application development benchmark composite page at `/webdev`.
 - Added Gemini-only IT Solver auto-close benchmark results to generated data, model details, benchmark APIs, and `/its`.
 - Added newer Grok 4.3 low/medium/high and Gemma IT Solver auto-close benchmark rows to generated data and `/its`.
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replaced customer-support Run AUD emphasis with Intelligence Index Task AUD while keeping legacy Run AUD filters supported.
 - Refocused the `/webdev` page around winner models, benchmark breakdown, cost, and execution-time context.
 - Hid deprecated ITS auto-close benchmark rows by default while keeping them available behind an explicit toggle.
 - Populated customer-support model table rows with the curated ITS auto-close benchmark results where the registry already has matching models.

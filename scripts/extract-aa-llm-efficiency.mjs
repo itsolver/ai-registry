@@ -9,6 +9,8 @@ const SOURCE_URL = "https://artificialanalysis.ai/models";
 const OUT_PATH = resolve("src/generated/aa-llm-efficiency.ts");
 const DATASETS = {
   intelligence: "Artificial Analysis Intelligence Index",
+  costPerTask: "Cost per Task",
+  costPerIntelligenceTask: "Cost per Intelligence Index Task",
   cost: "Cost to Run Artificial Analysis Intelligence Index",
   tokens: "Output Tokens Used to Run Artificial Analysis Intelligence Index",
   pricing: "Pricing: Cache Hit, Input, and Output",
@@ -154,6 +156,7 @@ function mergeDatasets(datasets, frontierModels) {
       ),
       intelligenceRunInputCost: numberOrUndefined(model.intelligence_index_cost?.input_cost),
       intelligenceRunTotalCost: numberOrUndefined(model.intelligence_index_cost?.total_cost),
+      intelligenceCostPerTask: numberOrUndefined(model.costPerIntelligenceIndexTask),
       intelligenceRunAnswerTokens: numberOrUndefined(
         model.intelligence_index_token_counts?.answer_tokens,
       ),
@@ -169,6 +172,26 @@ function mergeDatasets(datasets, frontierModels) {
   for (const item of datasets.get(DATASETS.intelligence) ?? []) {
     upsert(bySlug, item, {
       intelligenceIndex: numberOrUndefined(item.intelligenceIndex),
+    }, false);
+  }
+
+  for (const item of datasets.get(DATASETS.costPerIntelligenceTask) ?? []) {
+    upsert(bySlug, item, {
+      intelligenceCostPerTask: sumDefined([
+        numberOrUndefined(item.answer),
+        numberOrUndefined(item.reasoning),
+        numberOrUndefined(item.cacheWrite),
+        numberOrUndefined(item.cacheHit),
+        numberOrUndefined(item.input),
+      ]),
+    }, false);
+  }
+
+  for (const item of datasets.get(DATASETS.costPerTask) ?? []) {
+    upsert(bySlug, item, {
+      intelligenceCostPerTask: numberOrUndefined(
+        item.costPerIntelligenceIndexTask,
+      ),
     }, false);
   }
 
@@ -234,6 +257,7 @@ function mergeDatasets(datasets, frontierModels) {
         record.ifbench !== undefined ||
         record.tau2 !== undefined ||
         record.intelligenceRunTotalCost !== undefined ||
+        record.intelligenceCostPerTask !== undefined ||
         record.intelligenceRunOutputTokens !== undefined,
     );
 }

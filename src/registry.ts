@@ -575,6 +575,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     ...(maxContextWindow !== undefined ? { maxContextWindow } : {}),
     includeItsBenchmark:
+      params.get("includeItsEval") !== "false" &&
       params.get("includeItsBenchmark") !== "false" &&
       params.get("includeITSBenchmark") !== "false",
     allowPreview: params.get("allowPreview") === "true",

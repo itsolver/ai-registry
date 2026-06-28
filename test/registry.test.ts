@@ -136,6 +136,10 @@ describe("filter parsing", () => {
       allowPreview: true,
     });
     expect(
+      parseFilters(new URLSearchParams("includeItsEval=false"))
+        .includeItsBenchmark,
+    ).toBe(false);
+    expect(
       parseFilters(new URLSearchParams("includeItsBenchmark=false"))
         .includeItsBenchmark,
     ).toBe(false);

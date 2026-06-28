@@ -1,5 +1,5 @@
 import { HOME_HTML } from "./html";
-import { ITS_BENCHMARK_HTML } from "./its-benchmark";
+import { ITS_EVAL_HTML } from "./its-eval";
 import { WEBDEV_BENCHMARK_HTML } from "./webdev-benchmark";
 import {
   asProvider,
@@ -73,8 +73,12 @@ export async function handleRequest(
     return htmlResponse(HOME_HTML);
   }
 
+  if (route === "/its-eval") {
+    return htmlResponse(ITS_EVAL_HTML);
+  }
+
   if (route === "/its") {
-    return htmlResponse(ITS_BENCHMARK_HTML);
+    return redirectResponse("/its-eval", 301);
   }
 
   if (route === "/webdev") {
@@ -386,6 +390,17 @@ function htmlResponse(html: string): Response {
     headers: {
       ...commonHeaders(),
       "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=300",
+    },
+  });
+}
+
+function redirectResponse(location: string, status = 302): Response {
+  return new Response(null, {
+    status,
+    headers: {
+      ...commonHeaders(),
+      location,
       "cache-control": "public, max-age=300",
     },
   });

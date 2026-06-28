@@ -1,4 +1,4 @@
-type ItsBenchmarkRow = {
+type ItsEvalRow = {
   displayName: string;
   modelKey: string;
   status: "complete";
@@ -18,9 +18,9 @@ type ItsBenchmarkRow = {
   deprecated?: boolean;
 };
 
-const ITS_BENCHMARK_GENERATED_AT = "2026-06-07T15:46:56.835389+00:00";
+const ITS_EVAL_GENERATED_AT = "2026-06-07T15:46:56.835389+00:00";
 
-const ITS_BENCHMARK_ROWS: ItsBenchmarkRow[] = [
+const ITS_EVAL_ROWS: ItsEvalRow[] = [
   {
     displayName: "Gemma 4 26B A4B IT",
     modelKey: "gemini:gemma-4-26b-a4b-it",
@@ -292,12 +292,12 @@ const ITS_BENCHMARK_ROWS: ItsBenchmarkRow[] = [
   }
 ];
 
-export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
+export const ITS_EVAL_HTML = String.raw`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ITS Auto-Close Benchmark</title>
+  <title>ITS Eval</title>
   <style>
     :root {
       color-scheme: light;
@@ -459,15 +459,15 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
   <main>
     <div class="topline">
       <a href="/">ai.itsolver.au</a>
-      <span class="sub">Generated ${escapeHtml(formatDate(ITS_BENCHMARK_GENERATED_AT))}</span>
+      <span class="sub">Generated ${escapeHtml(formatDate(ITS_EVAL_GENERATED_AT))}</span>
     </div>
     <header>
-      <h1>ITS Auto-Close Benchmark</h1>
-      <p>Aggregate reopened-ticket classifier replay results for models with potential low false-positive behavior. Public rows exclude ticket IDs, customer text, and raw model outputs.</p>
+      <h1>ITS Eval</h1>
+      <p>Aggregate reopened-ticket classifier replay results for a narrow auto-close FP/FN eval. This is not a general model benchmark. Public rows exclude ticket IDs, customer text, and raw model outputs.</p>
     </header>
 
-    <section class="summary" aria-label="Benchmark summary">
-      <div class="metric"><strong>${activeBenchmarkRows().length}</strong><span>active model rows</span></div>
+    <section class="summary" aria-label="ITS Eval summary">
+      <div class="metric"><strong>${activeEvalRows().length}</strong><span>active model rows</span></div>
       <div class="metric"><strong>${countRowsWithLowFalsePositive()}</strong><span>active rows with 0-1 false positives</span></div>
       <div class="metric"><strong>${countRowsWithoutInvalids()}</strong><span>active rows with no invalid output</span></div>
       <div class="metric"><strong>${escapeHtml(bestAccuracyLabel())}</strong><span>best accuracy in this table</span></div>
@@ -499,14 +499,14 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
           </tr>
         </thead>
         <tbody>
-          ${ITS_BENCHMARK_ROWS.map(renderRow).join("\n")}
+          ${ITS_EVAL_ROWS.map(renderRow).join("\n")}
         </tbody>
       </table>
     </div>
 
-    <section class="info" aria-label="Benchmark notes">
+    <section class="info" aria-label="ITS Eval notes">
       <p><strong>Invalids are contract failures.</strong> They are cases where the model did not return a parseable final intent. Invalid and error outputs fail closed to <code>Needs Help</code> and are not counted as false positives.</p>
-      <p><strong>False positives matter most.</strong> A false positive is an unresolved ticket predicted as resolved, so the production recommendation path ranks ITS benchmarked candidates by false-positive risk before accuracy.</p>
+      <p><strong>False positives matter most.</strong> A false positive is an unresolved ticket predicted as resolved, so the production recommendation path ranks ITS Eval candidates by false-positive risk before accuracy.</p>
       <p><strong>Gemini result.</strong> No Gemini candidate in this run met the production-safety gate: zero false positives, at least 95% accuracy, at least 98% parse success, and no provider errors.</p>
     </section>
   </main>
@@ -569,7 +569,7 @@ export const ITS_BENCHMARK_HTML = String.raw`<!doctype html>
 </body>
 </html>`;
 
-function renderRow(row: ItsBenchmarkRow): string {
+function renderRow(row: ItsEvalRow): string {
   const note = [row.invalidSummary, row.note].filter(Boolean).join("; ");
   const attributes = [
     row.highlight ? 'class="highlight"' : "",
@@ -597,22 +597,22 @@ function renderRow(row: ItsBenchmarkRow): string {
 }
 
 function countRowsWithLowFalsePositive(): number {
-  return activeBenchmarkRows().filter((row) => row.falsePositive <= 1).length;
+  return activeEvalRows().filter((row) => row.falsePositive <= 1).length;
 }
 
 function countRowsWithoutInvalids(): number {
-  return activeBenchmarkRows().filter((row) => row.invalid === 0).length;
+  return activeEvalRows().filter((row) => row.invalid === 0).length;
 }
 
 function bestAccuracyLabel(): string {
-  const best = activeBenchmarkRows().reduce((left, right) =>
+  const best = activeEvalRows().reduce((left, right) =>
     right.accuracy > left.accuracy ? right : left,
   );
   return `${formatPercent(best.accuracy)} ${best.displayName}`;
 }
 
-function activeBenchmarkRows(): ItsBenchmarkRow[] {
-  return ITS_BENCHMARK_ROWS.filter((row) => row.deprecated !== true);
+function activeEvalRows(): ItsEvalRow[] {
+  return ITS_EVAL_ROWS.filter((row) => row.deprecated !== true);
 }
 
 function formatPercent(value: number): string {

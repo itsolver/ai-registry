@@ -443,7 +443,7 @@ export const WEBDEV_BENCHMARK_HTML = String.raw`<!doctype html>
       <a class="brand" href="/">ai.itsolver.au</a>
       <nav class="nav" aria-label="Pages">
         <a href="/">Model registry</a>
-        <a href="/its">ITS benchmark</a>
+        <a href="/its-eval">ITS Eval</a>
         <a href="/webdev" aria-current="page">Web dev winners</a>
       </nav>
     </header>

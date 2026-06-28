@@ -9,10 +9,11 @@ describe("homepage copy", () => {
     expect(HOME_HTML).toContain("lowest false-positive risk");
     expect(HOME_HTML).toContain("highest AA support fit");
     expect(HOME_HTML).toContain("AA Support Score");
-    expect(HOME_HTML).toContain("It is not an ITS safety score.");
+    expect(HOME_HTML).toContain("It is not an ITS Eval safety score.");
     expect(HOME_HTML).toContain(
-      '<a href="/its">Our reopened-ticket classifier replay</a>',
+      '<a href="/its-eval">Our reopened-ticket classifier replay</a>',
     );
+    expect(HOME_HTML).toContain("params.set('includeItsEval', 'false')");
     expect(HOME_HTML).toContain(
       '<a href="/webdev">Our web app development benchmark composite</a>',
     );

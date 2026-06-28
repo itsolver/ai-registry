@@ -794,7 +794,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           <label for="b-includeits">Benchmark source</label>
           <label class="check-row">
             <input type="checkbox" id="b-includeits" checked>
-            <span>Include ITS benchmark</span>
+            <span>Include ITS Eval</span>
           </label>
         </div>
         <div class="b-field" data-filter-scope="voice">
@@ -987,7 +987,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         </table>
       </div>
     </div>
-      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Intelligence Index Task AUD.</p>
+      <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus ITS Eval results where available. Live recommendations sort false positives first, then accuracy, then Intelligence Index Task AUD.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
       <div class="voice-bench">
@@ -1056,9 +1056,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>balanced</dt>
       <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dd>For customer support, lowest false-positive risk prioritizes lower ITS Eval false-positive rate, then ITS Eval accuracy. With ITS Eval excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
       <dt>AA Support Score</dt>
-      <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS safety score.</dd>
+      <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS Eval safety score.</dd>
       <dt>cost caps</dt>
       <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
       <dt>AUD/MTok</dt>
@@ -1071,14 +1071,14 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dd>Australian dollars per 1,000 minutes of speech-to-text audio, converted from Artificial Analysis provider pricing where available.</dd>
       <dt>benchmark table</dt>
       <dd>The live recommendation for customer support, voice, or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
-      <dt>IT Solver auto-close benchmark</dt>
-      <dd><a href="/its">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
+      <dt>ITS Eval</dt>
+      <dd><a href="/its-eval">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this eval where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
       <dt>web development benchmark composite</dt>
       <dd><a href="/webdev">Our web app development benchmark composite</a>. Use it to compare frontier-provider signals across frontend, backend, full-stack, browser, repository, cost, and latency dimensions.</dd>
       <dt>false positives / accuracy</dt>
       <dd>False positives are unresolved tickets predicted as resolved. Accuracy is overall classifier correctness on the auto-close replay set.</dd>
       <dt>ITS columns</dt>
-      <dd><code>ITS</code> marks IT Solver auto-close benchmark fields. <code>ITS FP</code>, <code>ITS Acc</code>, and <code>ITS Notes</code> come from our Zendesk ticket-classification replay, not Artificial Analysis.</dd>
+      <dd><code>ITS</code> marks ITS Eval fields. <code>ITS FP</code>, <code>ITS Acc</code>, and <code>ITS Notes</code> come from our Zendesk ticket-classification replay, not Artificial Analysis.</dd>
       <dt>IFBench / Agentic / Bench Telecom / τ-Voice / TTFA</dt>
       <dd>IFBench measures instruction following, Agentic measures multi-step task performance, Bench Telecom is the AA τ2 telecom benchmark, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
       <dt>AA-WER / Speed</dt>
@@ -1168,7 +1168,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     <li>OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq are exposed.</li>
     <li>Each model includes AUD pricing and benchmark costs converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
-    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
+    <li>Customer support recommendations use ITS Eval metrics first, then Artificial Analysis cost-efficiency signals. Voice and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
     <li>For customer support, try <code>recommendation</code> first, then <code>failovers[0]</code>, then <code>failovers[1]</code> when a provider or model is overloaded.</li>
   </ul>
 
@@ -1439,7 +1439,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       return {
         title: 'Customer Support Benchmark',
         hint: includeItsBenchmark()
-          ? 'Customer support priorities are explicit: fast and cheap sorts by Task AUD, lowest false-positive risk sorts by ITS false-positive rate then accuracy, and balanced highlights the middle filtered false-positive risk row.'
+          ? 'Customer support priorities are explicit: fast and cheap sorts by Task AUD, lowest false-positive risk sorts by ITS Eval false-positive rate then accuracy, and balanced highlights the middle filtered false-positive risk row.'
           : 'Customer support priorities are explicit: fast and cheap sorts by Task AUD, highest AA support fit sorts by AA support score, and balanced highlights the middle filtered AA support-score row.'
       };
     }
@@ -1771,7 +1771,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function autoCloseNote(row) {
       var signals = autoCloseSignals(row);
-      if (!signals.source) return 'No auto-close benchmark yet';
+      if (!signals.source) return 'No ITS Eval yet';
       var bits = [];
       if (typeof signals.parseSuccessRate === 'number') bits.push('parse ' + Math.round(signals.parseSuccessRate * 1000) / 10 + '%');
       if (typeof signals.invalidCount === 'number' && signals.invalidCount > 0) bits.push(String(signals.invalidCount) + ' invalid');
@@ -2249,7 +2249,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         supportSort.compare
       );
 
-      var label = support.length ? (includeIts ? 'AA + ITS auto-close' : 'AA LLM extract') : 'unavailable';
+      var label = support.length ? (includeIts ? 'AA + ITS Eval' : 'AA LLM extract') : 'unavailable';
       setText('supportSource', label);
     }
 
@@ -2258,7 +2258,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       params.set('useCase', 'customer-support');
       if (fields.provider.value) params.set('provider', fields.provider.value);
       if (fields.capability.value) params.set('capability', fields.capability.value);
-      if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
+      if (!includeItsBenchmark()) params.set('includeItsEval', 'false');
       if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
       if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
       if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
@@ -2357,18 +2357,18 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'Which model should customer support use?',
           a: includeIts && autoCloseSupport[0]
-            ? modelName(autoCloseSupport[0].model) + ' is the current highest-safety recommendation from the IT Solver auto-close benchmark: ' + autoCloseSummary(autoCloseSupport[0]) + '.'
+            ? modelName(autoCloseSupport[0].model) + ' is the current highest-safety recommendation from ITS Eval: ' + autoCloseSummary(autoCloseSupport[0]) + '.'
             : support[0]
-              ? modelName(support[0].model) + ' is the current recommendation using Artificial Analysis customer-support signals without ITS auto-close ranking.'
-              : 'No customer support benchmark data is currently available.'
+              ? modelName(support[0].model) + ' is the current recommendation using Artificial Analysis customer-support signals without ITS Eval ranking.'
+              : 'No customer support eval data is currently available.'
         },
         {
           q: 'What are the top customer support models?',
           a: includeIts && autoCloseSupport.length
-            ? 'Using the auto-close benchmark ordering, the top customer support models are: ' + topAutoCloseList(autoCloseSupport) + '.'
+            ? 'Using ITS Eval ordering, the top customer support models are: ' + topAutoCloseList(autoCloseSupport) + '.'
             : support.length
               ? 'Using Artificial Analysis customer-support signals, the top customer support models are: ' + topList(support, function (row) { return row.score; }, score) + '.'
-              : 'No customer support benchmark data is currently available.'
+              : 'No customer support eval data is currently available.'
         },
         {
           q: 'Which voice model is strongest overall?',
@@ -2395,7 +2395,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'How are recommendations compared here?',
           a: includeIts
-            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
+            ? 'Customer support uses ITS Eval results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
             : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
         }
       ];
@@ -2466,7 +2466,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     Promise.all([
       fetch('/v1/benchmarks?useCase=customer-support', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); }),
-      fetch('/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false', { cache: 'no-store' })
+      fetch('/v1/benchmarks?useCase=customer-support&includeItsEval=false', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
     ])
       .then(function (responses) {
@@ -2552,7 +2552,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         if (fields.maxtranscriptioncost.value) params.set('maxTranscriptionCostPer1kMinutes', fields.maxtranscriptioncost.value);
         if (fields.maxaawer.value) params.set('maxAaWer', fields.maxaawer.value);
       } else {
-        if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
+        if (!includeItsBenchmark()) params.set('includeItsEval', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
         if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
         if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
@@ -2605,7 +2605,12 @@ export const HOME_HTML = String.raw`<!doctype html>
       setSelectValue(fields.provider, params.get('provider'));
       setSelectValue(fields.capability, params.get('capability'));
       setSelectValue(fields.usecase, params.get('useCase'));
-      if (fields.includeits && params.get('includeItsBenchmark') === 'false') {
+      if (
+        fields.includeits &&
+        (params.get('includeItsEval') === 'false' ||
+          params.get('includeItsBenchmark') === 'false' ||
+          params.get('includeITSBenchmark') === 'false')
+      ) {
         fields.includeits.checked = false;
       }
       setInputValue(fields.inputminrange, params.get('minInputCostPerMTok') || params.get('minCostPerMTok'));

@@ -10,7 +10,7 @@ https://ai.itsolver.au
 
 The Worker uses Artificial Analysis data for OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq benchmark candidates, then exposes a small `/v1/...` API with recommendation tiers.
 
-Recommendations are tuned for IT Solver customer support, voice-agent API work, and speech-to-text transcription. For customer support, recommendations require real token pricing, a local auto-close benchmark result, and default-production availability. Ranking is safety-first: false positives sort first, accuracy second, and Artificial Analysis Intelligence Index Task AUD third. Deprecated and retired models are excluded from public model, benchmark, and recommendation results. Preview-only, experimental, latest-alias, and near-retirement text models are not default production recommendations. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
+Recommendations are tuned for IT Solver customer support, voice-agent API work, and speech-to-text transcription. For customer support, recommendations require real token pricing, a local ITS Eval result, and default-production availability. Ranking is safety-first: false positives sort first, accuracy second, and Artificial Analysis Intelligence Index Task AUD third. Deprecated and retired models are excluded from public model, benchmark, and recommendation results. Preview-only, experimental, latest-alias, and near-retirement text models are not default production recommendations. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
 
 Model pricing and benchmark costs from Artificial Analysis are stored from source USD data and converted to AUD using the current catalog USD to AUD rate from Frankfurter. The API only returns AUD pricing and includes the exchange-rate metadata used for that catalog view.
 
@@ -37,8 +37,8 @@ curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=f
 
 Recommendation responses keep the primary model in `recommendation` and include
 up to two `failovers` for customer-support overload handling. Failovers are
-ranked with the same production filters and require IT Solver auto-close
-benchmark data; when fewer than two are available, `failoverStatus.reason` is
+ranked with the same production filters and require ITS Eval data; when fewer
+than two are available, `failoverStatus.reason` is
 `insufficient_its_autoclose_benchmarks`.
 
 Supported filters:
@@ -63,7 +63,8 @@ maxAaWer=4.6                        # max speech-to-text AA-WER error rate
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
 useCase=customer-support|voice|speech-to-text  # stt is accepted as an alias
-includeItsBenchmark=false              # omit IT Solver auto-close ranking for customer support
+includeItsEval=false                   # omit ITS Eval ranking for customer support
+includeItsBenchmark=false              # legacy alias for includeItsEval=false
 allowPreview=true                      # allow preview models in customer-support recommendations
 ```
 
@@ -86,8 +87,8 @@ npm run refresh:aa-stt
 npm run refresh:aa-voice
 ```
 
-Do not run a new Anthropic customer-support auto-close benchmark from this repo
-without a manual approval checkpoint. A benchmark proposal may list candidate
+Do not run a new Anthropic customer-support auto-close eval from this repo
+without a manual approval checkpoint. An eval proposal may list candidate
 Anthropic model names and estimated cost, but execution requires explicit human
 approval before any API calls are made.
 

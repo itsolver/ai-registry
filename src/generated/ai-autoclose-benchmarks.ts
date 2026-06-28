@@ -307,7 +307,7 @@ export const AI_AUTOCLOSE_BENCHMARKS = [
       status: "production",
       acceptedRisk: false,
       reason:
-        "Aggregate ITS auto-close benchmark result from the 36-case replay; high invalid rate means invalid outputs fail closed to Needs Help.",
+        "Aggregate ITS Eval result from the 36-case replay; high invalid rate means invalid outputs fail closed to Needs Help.",
     },
   },
   {
@@ -344,7 +344,7 @@ export const AI_AUTOCLOSE_BENCHMARKS = [
       status: "production",
       acceptedRisk: false,
       reason:
-        "Aggregate ITS auto-close benchmark result from the 36-case replay; high invalid rate means invalid outputs fail closed to Needs Help.",
+        "Aggregate ITS Eval result from the 36-case replay; high invalid rate means invalid outputs fail closed to Needs Help.",
     },
   },
   {
@@ -381,7 +381,7 @@ export const AI_AUTOCLOSE_BENCHMARKS = [
       status: "production",
       acceptedRisk: false,
       reason:
-        "Aggregate ITS auto-close benchmark result from the 36-case replay; high invalid rate means invalid outputs fail closed to Needs Help.",
+        "Aggregate ITS Eval result from the 36-case replay; high invalid rate means invalid outputs fail closed to Needs Help.",
     },
   },
   {

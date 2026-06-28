@@ -169,8 +169,8 @@ describe("worker routes", () => {
     );
   });
 
-  it("serves the ITS auto-close benchmark page without catalog access", async () => {
-    for (const path of ["/its", "/its/"]) {
+  it("serves the ITS Eval page without catalog access", async () => {
+    for (const path of ["/its-eval", "/its-eval/"]) {
       const response = await handleRequest(
         new Request(`https://ai.itsolver.au${path}`),
         {},
@@ -179,7 +179,8 @@ describe("worker routes", () => {
 
       expect(response.status).toBe(200);
       const html = await response.text();
-      expect(html).toContain("ITS Auto-Close Benchmark");
+      expect(html).toContain("ITS Eval");
+      expect(html).toContain("This is not a general model benchmark.");
       expect(html).toContain("gemini:gemini-3-flash-preview");
       expect(html).toContain("No Gemini candidate");
       expect(html).toContain("Invalids are contract failures.");
@@ -191,9 +192,22 @@ describe("worker routes", () => {
     }
   });
 
-  it("keeps public ITS benchmark rows aggregate-only", async () => {
+  it("redirects legacy ITS page routes to ITS Eval", async () => {
+    for (const path of ["/its", "/its/"]) {
+      const response = await handleRequest(
+        new Request(`https://ai.itsolver.au${path}`),
+        {},
+        ctx,
+      );
+
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe("/its-eval");
+    }
+  });
+
+  it("keeps public ITS Eval rows aggregate-only", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/its"),
+      new Request("https://ai.itsolver.au/its-eval"),
       {},
       ctx,
     );
@@ -359,7 +373,7 @@ describe("worker routes", () => {
   it("hard-filters customer support rows by Run AUD range", async () => {
     const response = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false&minRunCostAud=100&maxRunCostAud=1500",
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsEval=false&minRunCostAud=100&maxRunCostAud=1500",
       ),
       env(),
       ctx,

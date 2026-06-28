@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Replaced customer-support Run AUD emphasis with Intelligence Index Task AUD while keeping legacy Run AUD filters supported.
+- Increased the homepage Task AUD range to $5 so expensive benchmark rows like Claude Fable can be selected.
 - Refocused the `/webdev` page around winner models, benchmark breakdown, cost, and execution-time context.
 - Hid deprecated ITS auto-close benchmark rows by default while keeping them available behind an explicit toggle.
 - Populated customer-support model table rows with the curated ITS auto-close benchmark results where the registry already has matching models.

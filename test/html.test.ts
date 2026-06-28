@@ -34,5 +34,9 @@ describe("homepage copy", () => {
       "if (fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();",
     );
     expect(HOME_HTML).toContain("currentBrowseModels = data.models || [];");
+    expect(HOME_HTML).toContain(
+      'id="b-run-max-range" min="0" max="5" step="0.01" value="5"',
+    );
+    expect(HOME_HTML).toContain("max: 5,\n      minRange: fields.runminrange");
   });
 });

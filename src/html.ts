@@ -921,12 +921,12 @@ export const HOME_HTML = String.raw`<!doctype html>
               <button type="button" id="b-runcost-any">Any</button>
             </div>
             <div class="range-stack">
-              <input type="range" id="b-run-min-range" min="0" max="2.5" step="0.01" value="0" aria-label="Minimum Intelligence Index task AUD">
-              <input type="range" id="b-run-max-range" min="0" max="2.5" step="0.01" value="2.5" aria-label="Maximum Intelligence Index task AUD">
+              <input type="range" id="b-run-min-range" min="0" max="5" step="0.01" value="0" aria-label="Minimum Intelligence Index task AUD">
+              <input type="range" id="b-run-max-range" min="0" max="5" step="0.01" value="5" aria-label="Maximum Intelligence Index task AUD">
             </div>
             <div class="price-filter-scale">
               <span>$0</span>
-              <span>$2.50+</span>
+              <span>$5+</span>
             </div>
           </div>
         </div>
@@ -2731,7 +2731,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     };
     runCostRange = {
       min: 0,
-      max: 8000,
+      max: 5,
       minRange: fields.runminrange,
       maxRange: fields.runmaxrange,
       hiddenMin: fields.minruncost,

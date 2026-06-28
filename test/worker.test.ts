@@ -63,12 +63,13 @@ function supportCandidate(
     provider: "openai",
     name: id,
     source: "artificialanalysis",
-    benchmarks: {
-      llm: {
-        instructionFollowing: 80,
-        intelligence: 80,
-        intelligenceRunTotalCost: runCost,
-        autoClose: {
+  benchmarks: {
+    llm: {
+      instructionFollowing: 80,
+      intelligence: 80,
+      intelligenceRunTotalCost: runCost,
+      intelligenceCostPerTask: runCost / 1000,
+      autoClose: {
           source: "itsolver-autoclose",
           modelKey: `test:${id}`,
           apiModel: id,
@@ -442,6 +443,29 @@ describe("worker routes", () => {
     });
   });
 
+  it("hard-filters customer support rows by Intelligence Index Task AUD", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false&maxIntelligenceCostPerTaskAud=1",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarks.length).toBeGreaterThan(0);
+    expect(
+      body.benchmarks.every(
+        (row: {
+          benchmarks: { llm?: { intelligenceCostPerTask?: number } };
+        }) =>
+          (row.benchmarks.llm?.intelligenceCostPerTask ??
+            Number.POSITIVE_INFINITY) <= 1,
+      ),
+    ).toBe(true);
+  });
+
   it("hard-filters customer support rows by Run AUD and intelligence", async () => {
     const response = await handleRequest(
       new Request(
@@ -468,12 +492,6 @@ describe("worker routes", () => {
             30 &&
           (row.benchmarks.llm?.intelligenceRunTotalCost ??
             Number.POSITIVE_INFINITY) <= 1300,
-      ),
-    ).toBe(true);
-    expect(
-      body.benchmarks.some(
-        (row: { benchmarks: { llm?: { tauTelecom?: number } } }) =>
-          typeof row.benchmarks.llm?.tauTelecom === "number",
       ),
     ).toBe(true);
   });
@@ -653,15 +671,16 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation).toMatchObject({
-      id: "gpt-5-4-mini-medium",
+      id: "gpt-5-5-low",
       provider: "openai",
       pricing: expect.objectContaining({
-        inputPerMTok: 1.125,
-        outputPerMTok: 6.75,
+        inputPerMTok: 7.5,
+        outputPerMTok: 45,
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 1,
+          customerSupportRank: 6,
+          intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
             falsePositiveCount: 5,
             verifiedOn: "2026-06-06",
@@ -707,14 +726,15 @@ describe("worker routes", () => {
       provider: "openai",
       benchmarks: {
         llm: expect.objectContaining({
+          intelligenceCostPerTask: expect.any(Number),
           intelligenceRunTotalCost: expect.any(Number),
         }),
       },
     });
     expect(
-      fastBody.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+      fastBody.recommendation.benchmarks.llm.intelligenceCostPerTask,
     ).toBeLessThanOrEqual(
-      body.recommendation.benchmarks.llm.intelligenceRunTotalCost,
+      body.recommendation.benchmarks.llm.intelligenceCostPerTask,
     );
   });
 

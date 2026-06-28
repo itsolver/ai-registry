@@ -1,16 +1,31 @@
 #!/usr/bin/env node
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const SOURCE_URL = "https://artificialanalysis.ai/models";
 const OUT_PATH = resolve("src/generated/aa-llm-efficiency.ts");
+const CUSTOMER_SUPPORT_RECOMMENDATIONS_PATH = resolve(
+  "src/generated/aa-customer-support-recommendations.ts",
+);
+const COMPARISON_PROVIDERS = new Set([
+  "anthropic",
+  "elevenlabs",
+  "google",
+  "groq",
+  "nvidia",
+  "openai",
+  "xai",
+]);
 const DATASETS = {
   intelligence: "Artificial Analysis Intelligence Index",
+  costPerTask: "Cost per Task",
+  costPerIntelligenceTask: "Cost per Intelligence Index Task",
   cost: "Cost to Run Artificial Analysis Intelligence Index",
-  tokens: "Output Tokens Used to Run Artificial Analysis Intelligence Index",
+  tokens: "Output Tokens per Intelligence Index Task",
+  tokensLegacy: "Output Tokens Used to Run Artificial Analysis Intelligence Index",
   pricing: "Pricing: Cache Hit, Input, and Output",
   speed: "Output Speed",
   omniscience: "AA-Omniscience Index",
@@ -32,9 +47,12 @@ async function main() {
   }
 
   const html = await response.text();
-  const records = extractLlmEfficiencyRecords(html).sort((left, right) =>
-    left.slug.localeCompare(right.slug),
-  );
+  const initialRecords = extractLlmEfficiencyRecords(html);
+  const comparisonPages = await fetchComparisonPages(html, initialRecords);
+  const records = extractLlmEfficiencyRecordsFromPages([
+    html,
+    ...comparisonPages,
+  ]).sort((left, right) => left.slug.localeCompare(right.slug));
 
   if (!records.length) {
     throw new Error("No Artificial Analysis frontier LLM records found");
@@ -51,16 +69,99 @@ export const AA_LLM_EFFICIENCY_MODELS = ${JSON.stringify(records, null, 2)} as c
   console.log(`Wrote ${records.length} LLM efficiency records to ${OUT_PATH}`);
 }
 
+async function fetchComparisonPages(sourceHtml, initialRecords) {
+  const allModels = extractNextFlightModelRecords(sourceHtml);
+  const existingTaskSlugs = new Set(
+    initialRecords
+      .filter((record) => record.intelligenceCostPerTask !== undefined)
+      .map((record) => record.slug),
+  );
+  const comparisonSlugs = comparisonCandidateSlugs(allModels).filter(
+    (slug) => !existingTaskSlugs.has(slug),
+  );
+  const pages = [];
+
+  for (const slug of comparisonSlugs) {
+    const url = comparisonUrl(slug);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "user-agent": "IT Solver AI Registry weekly extractor",
+        },
+      });
+      if (!response.ok) {
+        console.warn(
+          `Skipping ${url}: Artificial Analysis returned ${response.status}`,
+        );
+        continue;
+      }
+      pages.push(await response.text());
+    } catch (error) {
+      console.warn(
+        `Skipping ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (comparisonSlugs.length) {
+    console.log(
+      `Fetched ${pages.length}/${comparisonSlugs.length} Artificial Analysis comparison pages`,
+    );
+  }
+
+  return pages;
+}
+
+function comparisonCandidateSlugs(allModels) {
+  const slugs = new Set(readCustomerSupportRecommendationSlugs());
+  for (const model of allModels) {
+    if (!COMPARISON_PROVIDERS.has(model.model_creators?.slug)) continue;
+    if (model.frontier_model !== true && model.frontier_model !== false)
+      continue;
+    slugs.add(model.slug);
+  }
+  const knownSlugs = new Set(allModels.map((model) => model.slug));
+  return [...slugs]
+    .filter((slug) => knownSlugs.has(slug))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function readCustomerSupportRecommendationSlugs() {
+  try {
+    const source = readFileSync(CUSTOMER_SUPPORT_RECOMMENDATIONS_PATH, "utf8");
+    return [...source.matchAll(/slug:\s*"([^"]+)"/g)].map((match) => match[1]);
+  } catch {
+    return [];
+  }
+}
+
+function comparisonUrl(slug) {
+  const encodedSlug = encodeURIComponent(slug);
+  return `https://artificialanalysis.ai/models/${encodedSlug}?models=${encodedSlug}`;
+}
+
 export function extractLlmEfficiencyRecords(html) {
-  const frontierModels = extractNextFlightModelRecords(html).filter(
+  return extractLlmEfficiencyRecordsFromPages([html]);
+}
+
+export function extractLlmEfficiencyRecordsFromPages(htmlPages) {
+  const allModelsBySlug = new Map();
+  for (const html of htmlPages) {
+    for (const model of extractNextFlightModelRecords(html)) {
+      if (!allModelsBySlug.has(model.slug))
+        allModelsBySlug.set(model.slug, model);
+    }
+  }
+  const allModels = [...allModelsBySlug.values()];
+  const frontierModels = allModels.filter(
     (record) => record.frontier_model === true,
   );
   if (!frontierModels.length) {
     throw new Error("No Artificial Analysis frontier model records found in Next Flight data");
   }
 
-  const datasets = extractJsonLdDatasets(html);
-  return mergeDatasets(datasets, frontierModels);
+  const datasets = mergeJsonLdDatasets(htmlPages.map(extractJsonLdDatasets));
+  return mergeDatasets(datasets, frontierModels, allModels);
 }
 
 export function extractJsonLdDatasets(html) {
@@ -81,6 +182,16 @@ export function extractJsonLdDatasets(html) {
   }
 
   return datasets;
+}
+
+function mergeJsonLdDatasets(datasetMaps) {
+  const merged = new Map();
+  for (const datasets of datasetMaps) {
+    for (const [name, data] of datasets) {
+      merged.set(name, [...(merged.get(name) ?? []), ...data]);
+    }
+  }
+  return merged;
 }
 
 export function extractNextFlightModelRecords(html) {
@@ -119,49 +230,30 @@ export function extractNextFlightModelRecords(html) {
     .filter((record) => record && typeof record === "object" && typeof record.slug === "string");
 }
 
-function mergeDatasets(datasets, frontierModels) {
+function mergeDatasets(datasets, frontierModels, allModels = frontierModels) {
   const bySlug = new Map();
+  const allModelsBySlug = new Map(allModels.map((model) => [model.slug, model]));
 
   for (const model of frontierModels) {
-    upsert(bySlug, nextFlightItem(model), {
-      provider: stringOrUndefined(model.model_creators?.slug),
-      contextWindowTokens: numberOrUndefined(model.context_window_tokens),
-      intelligenceIndex: numberOrUndefined(model.intelligence_index),
-      agenticIndex: numberOrUndefined(model.agentic_index),
-      ifbench: numberOrUndefined(model.ifbench),
-      tau2: numberOrUndefined(model.tau2),
-      gdpval: numberOrUndefined(model.gdpval),
-      gdpvalNormalized: normalizedGdpval(model.gdpval_normalized ?? model.gdpval),
-      terminalBenchHard: numberOrUndefined(model.terminalbench_hard),
-      sciCode: numberOrUndefined(model.scicode),
-      codingIndex: numberOrUndefined(model.coding_index),
-      lcr: numberOrUndefined(model.lcr),
-      hle: numberOrUndefined(model.hle),
-      gpqa: numberOrUndefined(model.gpqa),
-      critpt: numberOrUndefined(model.critpt),
-      omniscienceIndex: numberOrUndefined(model.omniscience?.omniscienceIndex ?? model.omniscience),
-      outputSpeed: numberOrUndefined(model.timescaleData?.median_output_speed),
-      latency: numberOrUndefined(
-        model.time_to_first_answer_token_metrics?.total_time ??
-          model.timescaleData?.median_time_to_first_chunk,
-      ),
-      inputPrice: numberOrUndefined(model.price_1m_input_tokens),
-      outputPrice: numberOrUndefined(model.price_1m_output_tokens),
-      cacheHitPrice: numberOrUndefined(model.cache_hit_price),
-      intelligenceRunAnswerCost: numberOrUndefined(model.intelligence_index_cost?.answer_cost),
-      intelligenceRunReasoningCost: numberOrUndefined(
-        model.intelligence_index_cost?.reasoning_cost,
-      ),
-      intelligenceRunInputCost: numberOrUndefined(model.intelligence_index_cost?.input_cost),
-      intelligenceRunTotalCost: numberOrUndefined(model.intelligence_index_cost?.total_cost),
-      intelligenceRunAnswerTokens: numberOrUndefined(
-        model.intelligence_index_token_counts?.answer_tokens,
-      ),
-      intelligenceRunReasoningTokens: numberOrUndefined(
-        model.intelligence_index_token_counts?.reasoning_tokens,
-      ),
-      intelligenceRunOutputTokens: numberOrUndefined(
-        model.intelligence_index_token_counts?.output_tokens,
+    upsert(bySlug, nextFlightItem(model), nextFlightValues(model));
+  }
+
+  for (const item of datasets.get(DATASETS.costPerIntelligenceTask) ?? []) {
+    upsertModelBacked(bySlug, allModelsBySlug, item, {
+      intelligenceCostPerTask: sumDefined([
+        numberOrUndefined(item.answer),
+        numberOrUndefined(item.reasoning),
+        numberOrUndefined(item.cacheWrite),
+        numberOrUndefined(item.cacheHit),
+        numberOrUndefined(item.input),
+      ]),
+    });
+  }
+
+  for (const item of datasets.get(DATASETS.costPerTask) ?? []) {
+    upsertModelBacked(bySlug, allModelsBySlug, item, {
+      intelligenceCostPerTask: numberOrUndefined(
+        item.costPerIntelligenceIndexTask,
       ),
     });
   }
@@ -180,11 +272,18 @@ function mergeDatasets(datasets, frontierModels) {
     }, false);
   }
 
-  for (const item of datasets.get(DATASETS.tokens) ?? []) {
-    upsert(bySlug, item, {
-      intelligenceRunAnswerTokens: numberOrUndefined(item.answerTokens),
-      intelligenceRunReasoningTokens: numberOrUndefined(item.reasoningTokens),
-    }, false);
+  for (const item of [
+    ...(datasets.get(DATASETS.tokensLegacy) ?? []),
+    ...(datasets.get(DATASETS.tokens) ?? []),
+  ]) {
+    upsertModelBacked(bySlug, allModelsBySlug, item, {
+      intelligenceRunAnswerTokens: numberOrUndefined(
+        item.answerTokens ?? item.answer,
+      ),
+      intelligenceRunReasoningTokens: numberOrUndefined(
+        item.reasoningTokens ?? item.reasoning,
+      ),
+    });
   }
 
   for (const item of datasets.get(DATASETS.pricing) ?? []) {
@@ -234,6 +333,7 @@ function mergeDatasets(datasets, frontierModels) {
         record.ifbench !== undefined ||
         record.tau2 !== undefined ||
         record.intelligenceRunTotalCost !== undefined ||
+        record.intelligenceCostPerTask !== undefined ||
         record.intelligenceRunOutputTokens !== undefined,
     );
 }
@@ -245,9 +345,72 @@ function nextFlightItem(model) {
   };
 }
 
+function nextFlightValues(model) {
+  return {
+    provider: stringOrUndefined(model.model_creators?.slug),
+    contextWindowTokens: numberOrUndefined(model.context_window_tokens),
+    intelligenceIndex: numberOrUndefined(model.intelligence_index),
+    agenticIndex: numberOrUndefined(model.agentic_index),
+    ifbench: numberOrUndefined(model.ifbench),
+    tau2: numberOrUndefined(model.tau2),
+    gdpval: numberOrUndefined(model.gdpval),
+    gdpvalNormalized: normalizedGdpval(model.gdpval_normalized ?? model.gdpval),
+    terminalBenchHard: numberOrUndefined(model.terminalbench_hard),
+    sciCode: numberOrUndefined(model.scicode),
+    codingIndex: numberOrUndefined(model.coding_index),
+    lcr: numberOrUndefined(model.lcr),
+    hle: numberOrUndefined(model.hle),
+    gpqa: numberOrUndefined(model.gpqa),
+    critpt: numberOrUndefined(model.critpt),
+    omniscienceIndex: numberOrUndefined(model.omniscience?.omniscienceIndex ?? model.omniscience),
+    outputSpeed: numberOrUndefined(model.timescaleData?.median_output_speed),
+    latency: numberOrUndefined(
+      model.time_to_first_answer_token_metrics?.total_time ??
+        model.timescaleData?.median_time_to_first_chunk,
+    ),
+    inputPrice: numberOrUndefined(model.price_1m_input_tokens),
+    outputPrice: numberOrUndefined(model.price_1m_output_tokens),
+    cacheHitPrice: numberOrUndefined(model.cache_hit_price),
+    intelligenceRunAnswerCost: numberOrUndefined(model.intelligence_index_cost?.answer_cost),
+    intelligenceRunReasoningCost: numberOrUndefined(
+      model.intelligence_index_cost?.reasoning_cost,
+    ),
+    intelligenceRunInputCost: numberOrUndefined(model.intelligence_index_cost?.input_cost),
+    intelligenceRunTotalCost: numberOrUndefined(model.intelligence_index_cost?.total_cost),
+    intelligenceCostPerTask: numberOrUndefined(model.costPerIntelligenceIndexTask),
+    intelligenceRunAnswerTokens: numberOrUndefined(
+      model.intelligence_index_token_counts?.answer_tokens,
+    ),
+    intelligenceRunReasoningTokens: numberOrUndefined(
+      model.intelligence_index_token_counts?.reasoning_tokens,
+    ),
+    intelligenceRunOutputTokens: numberOrUndefined(
+      model.intelligence_index_token_counts?.output_tokens,
+    ),
+  };
+}
+
+function upsertModelBacked(bySlug, allModelsBySlug, item, values) {
+  const slug = slugFromItem(item);
+  const model = slug ? allModelsBySlug.get(slug) : undefined;
+  if (slug && bySlug.has(slug)) {
+    upsert(bySlug, item, values, false);
+    return;
+  }
+  if (!model) {
+    upsert(bySlug, item, values, false);
+    return;
+  }
+
+  upsert(bySlug, nextFlightItem(model), {
+    ...nextFlightValues(model),
+    ...values,
+  });
+}
+
 function upsert(bySlug, item, values, create = true) {
   const detailsUrl = stringOrUndefined(item.detailsUrl);
-  const slug = detailsUrl?.split("/").filter(Boolean).at(-1);
+  const slug = slugFromItem(item);
   if (!detailsUrl || !slug || (!create && !bySlug.has(slug))) return;
 
   const existing = bySlug.get(slug) ?? {
@@ -262,6 +425,11 @@ function upsert(bySlug, item, values, create = true) {
       Object.entries(values).filter(([, value]) => value !== undefined),
     ),
   });
+}
+
+function slugFromItem(item) {
+  const detailsUrl = stringOrUndefined(item.detailsUrl);
+  return detailsUrl?.split("/").filter(Boolean).at(-1);
 }
 
 function extractNamedJsonArrays(value, name) {

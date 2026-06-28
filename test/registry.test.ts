@@ -39,21 +39,15 @@ function aaSupportScore(candidate: BenchmarkCandidate): number {
     (candidate.pricing.outputPerMTok ?? 100) * 0.6;
   const priceScore =
     100 - Math.min(Math.log1p(blendedPrice) / Math.log1p(100), 1) * 100;
+  const benchmarkCost = signals.intelligenceCostPerTask;
   const runCostScore =
-    typeof signals.intelligenceRunTotalCost === "number"
+    typeof benchmarkCost === "number"
+      ? 100 -
+        Math.min(Math.log1p(benchmarkCost) / Math.log1p(2), 1) * 100
+      : typeof signals.intelligenceRunTotalCost === "number"
       ? 100 -
         Math.min(
           Math.log1p(signals.intelligenceRunTotalCost) / Math.log1p(100_000),
-          1,
-        ) *
-          100
-      : undefined;
-  const outputCostScore =
-    typeof signals.intelligenceRunOutputTokens === "number"
-      ? 100 -
-        Math.min(
-          Math.log1p(signals.intelligenceRunOutputTokens) /
-            Math.log1p(1_000_000),
           1,
         ) *
           100
@@ -62,12 +56,16 @@ function aaSupportScore(candidate: BenchmarkCandidate): number {
     [
       [runCostScore, 0.55],
       [priceScore, 0.2],
-      [outputCostScore, 0.25],
     ],
     priceScore,
   );
   const runCostValue =
-    typeof signals.intelligenceRunTotalCost === "number"
+    typeof benchmarkCost === "number"
+      ? Math.max(
+          0,
+          100 - Math.min(Math.log1p(benchmarkCost) / Math.log1p(2), 1) * 100,
+        )
+      : typeof signals.intelligenceRunTotalCost === "number"
       ? Math.max(
           0,
           100 -
@@ -78,26 +76,7 @@ function aaSupportScore(candidate: BenchmarkCandidate): number {
               100,
         )
       : undefined;
-  const outputTokenValue =
-    typeof signals.intelligenceRunOutputTokens === "number"
-      ? Math.max(
-          0,
-          100 -
-            Math.min(
-              Math.log1p(signals.intelligenceRunOutputTokens) /
-                Math.log1p(250_000_000),
-              1,
-            ) *
-              100,
-        )
-      : undefined;
-  const efficiencyScore = weightedSignal(
-    [
-      [runCostValue, 0.45],
-      [outputTokenValue, 0.55],
-    ],
-    50,
-  );
+  const efficiencyScore = runCostValue ?? 50;
   const quality = weightedSignal(
     [
       [signals.agentic ?? signals.tauTelecom, 0.25],
@@ -146,12 +125,14 @@ describe("filter parsing", () => {
     expect(
       parseFilters(
         new URLSearchParams(
-          "useCase=customer-support&maxRunCostUsd=900&allowPreview=true",
+          "useCase=customer-support&maxRunCostUsd=900&minIntelligenceCostPerTaskAud=0.1&maxIntelligenceCostPerTaskUsd=0.5&allowPreview=true",
         ),
       ),
     ).toMatchObject({
       useCase: "customer-support",
       maxRunCostUsd: 900,
+      minIntelligenceCostPerTaskAud: 0.1,
+      maxIntelligenceCostPerTaskUsd: 0.5,
       allowPreview: true,
     });
     expect(
@@ -189,6 +170,11 @@ describe("filter parsing", () => {
 });
 
 describe("Artificial Analysis catalog", () => {
+  const customerSupportCost = (candidate: BenchmarkCandidate | undefined) =>
+    candidate?.benchmarks.llm?.intelligenceCostPerTask ??
+    candidate?.benchmarks.llm?.intelligenceRunTotalCost ??
+    Number.POSITIVE_INFINITY;
+
   it("builds an AA-only catalog without registry models", () => {
     const catalog = normalizeArtificialAnalysisCatalog(
       "2026-05-19T00:00:00Z",
@@ -333,11 +319,9 @@ describe("Artificial Analysis catalog", () => {
       fastRecommendation?.id,
     );
     expect(
-      fastRecommendation?.benchmarks?.llm?.intelligenceRunTotalCost ??
-        Number.POSITIVE_INFINITY,
+      customerSupportCost(fastRecommendation as BenchmarkCandidate | undefined),
     ).toBeLessThanOrEqual(
-      bestRecommendation?.benchmarks?.llm?.intelligenceRunTotalCost ??
-        Number.POSITIVE_INFINITY,
+      customerSupportCost(bestRecommendation as BenchmarkCandidate | undefined),
     );
     const falsePositiveRate = (
       candidate:
@@ -359,15 +343,16 @@ describe("Artificial Analysis catalog", () => {
     );
     expect(filteredGoogleBestRecommendation).toBeUndefined();
     expect(openaiRecommendation).toMatchObject({
-      id: "gpt-5-4-mini-medium",
+      id: "gpt-5-5-low",
       provider: "openai",
       recommendable: true,
       pricing: {
-        inputPerMTok: 0.75,
-        outputPerMTok: 4.5,
+        inputPerMTok: 5,
+        outputPerMTok: 30,
       },
       benchmarks: {
         llm: {
+          intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
             falsePositiveCount: 5,
             accuracy: expect.any(Number),
@@ -515,6 +500,7 @@ describe("Artificial Analysis catalog", () => {
       accuracy: number,
       runCost: number,
       outputPerMTok: number,
+      taskCost: number,
     ): BenchmarkCandidate => ({
       id,
       provider: "openai",
@@ -525,6 +511,7 @@ describe("Artificial Analysis catalog", () => {
           instructionFollowing: 80,
           intelligence: 80,
           intelligenceRunTotalCost: runCost,
+          intelligenceCostPerTask: taskCost,
           autoClose: autoClose(falsePositiveCount, accuracy),
         },
       },
@@ -547,11 +534,11 @@ describe("Artificial Analysis catalog", () => {
       providers: [{ provider: "openai", total: 5, active: 5 }],
       models: [],
       benchmarkCandidates: [
-        candidate("safest", 0, 0.91, 500, 20),
-        candidate("safe", 1, 0.92, 400, 20),
-        candidate("middle", 2, 0.93, 300, 20),
-        candidate("risky", 3, 0.99, 200, 20),
-        candidate("cheapest", 4, 0.99, 50, 1),
+        candidate("safest", 0, 0.91, 500, 20, 0.5),
+        candidate("safe", 1, 0.92, 400, 20, 0.4),
+        candidate("middle", 2, 0.93, 300, 20, 0.3),
+        candidate("risky", 3, 0.99, 50, 20, 0.2),
+        candidate("cheapest", 4, 0.99, 450, 1, 0.05),
       ],
     };
 
@@ -587,6 +574,13 @@ describe("Artificial Analysis catalog", () => {
         useCase: "customer-support",
         tier: "fast",
         maxRunCostAud: 250,
+      })?.id,
+    ).toBe("risky");
+    expect(
+      recommendModel(catalog, {
+        useCase: "customer-support",
+        tier: "fast",
+        maxIntelligenceCostPerTaskAud: 0.1,
       })?.id,
     ).toBe("cheapest");
   });
@@ -1310,6 +1304,17 @@ describe("Artificial Analysis catalog", () => {
     expect(
       benchmarkCandidates(catalog, {
         useCase: "customer-support",
+        includeItsBenchmark: false,
+        maxIntelligenceCostPerTaskAud: 0.5,
+      }).every(
+        (row) =>
+          (row.benchmarks.llm?.intelligenceCostPerTask ??
+            Number.POSITIVE_INFINITY) <= 0.5,
+      ),
+    ).toBe(true);
+    expect(
+      benchmarkCandidates(catalog, {
+        useCase: "customer-support",
         minRunCostAud: 100,
         maxRunCostAud: 500,
       }).every(
@@ -1344,6 +1349,29 @@ describe("Artificial Analysis catalog", () => {
         (row) =>
           (row.benchmarks.llm?.intelligenceRunTotalCost ??
             Number.POSITIVE_INFINITY) <= 1800,
+      ),
+    ).toBe(true);
+  });
+
+  it("converts USD Intelligence Index task-cost caps with the catalog exchange rate", () => {
+    const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 2,
+      source: "test",
+    });
+    const rows = benchmarkCandidates(catalog, {
+      useCase: "customer-support",
+      includeItsBenchmark: false,
+      maxIntelligenceCostPerTaskUsd: 1,
+    });
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(
+      rows.every(
+        (row) =>
+          (row.benchmarks.llm?.intelligenceCostPerTask ??
+            Number.POSITIVE_INFINITY) <= 2,
       ),
     ).toBe(true);
   });
@@ -1387,10 +1415,7 @@ describe("Artificial Analysis catalog", () => {
         maxRunCostAud: 1300,
         minIntelligence: 30,
       }),
-    ).toMatchObject({
-      id: "gemini-2-5-pro",
-      provider: "google",
-    });
+    ).toBeUndefined();
     const xaiFast = recommendModel(catalog, {
       provider: "xai",
       useCase: "customer-support",
@@ -1534,11 +1559,12 @@ describe("Artificial Analysis catalog", () => {
       useCase: "customer-support",
     }).find((item) => item.id === "gpt-5-5");
 
-    expect(row?.benchmarks.llm?.intelligenceRunOutputTokens).toBe(
-      sourceRecord?.intelligenceRunOutputTokens,
-    );
     expect(row?.benchmarks.llm?.intelligenceRunTotalCost).toBeCloseTo(
       (sourceRecord?.intelligenceRunTotalCost ?? 0) * 2,
+    );
+    expect(sourceRecord?.intelligenceCostPerTask).toEqual(expect.any(Number));
+    expect(row?.benchmarks.llm?.intelligenceCostPerTask).toBeCloseTo(
+      (sourceRecord?.intelligenceCostPerTask ?? 0) * 2,
     );
   });
 
@@ -1574,8 +1600,6 @@ describe("Artificial Analysis catalog", () => {
           coding: sourceRecord?.codingIndex,
           lcr: sourceRecord?.lcr,
           gpqa: sourceRecord?.gpqa,
-          intelligenceRunOutputTokens:
-            sourceRecord?.intelligenceRunOutputTokens,
         },
       },
     });

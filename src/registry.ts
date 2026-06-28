@@ -259,6 +259,10 @@ export interface ModelFilters {
   maxRunCostAud?: number;
   minRunCostUsd?: number;
   maxRunCostUsd?: number;
+  minIntelligenceCostPerTaskAud?: number;
+  maxIntelligenceCostPerTaskAud?: number;
+  minIntelligenceCostPerTaskUsd?: number;
+  maxIntelligenceCostPerTaskUsd?: number;
   minIntelligence?: number;
   maxAudioInputCostPerHour?: number;
   maxAudioOutputCostPerHour?: number;
@@ -335,9 +339,7 @@ export interface BenchmarkSignals {
   intelligenceRunReasoningCost?: number;
   intelligenceRunInputCost?: number;
   intelligenceRunTotalCost?: number;
-  intelligenceRunAnswerTokens?: number;
-  intelligenceRunReasoningTokens?: number;
-  intelligenceRunOutputTokens?: number;
+  intelligenceCostPerTask?: number;
   customerSupportRank?: number;
 }
 
@@ -391,9 +393,7 @@ interface ArtificialAnalysisLlmEfficiencyModel {
   intelligenceRunReasoningCost?: number;
   intelligenceRunInputCost?: number;
   intelligenceRunTotalCost?: number;
-  intelligenceRunAnswerTokens?: number;
-  intelligenceRunReasoningTokens?: number;
-  intelligenceRunOutputTokens?: number;
+  intelligenceCostPerTask?: number;
 }
 
 interface ArtificialAnalysisLlmPricingModel {
@@ -509,6 +509,18 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     asFiniteNumber(params.get("maxRunCostUsd")) ??
     asFiniteNumber(params.get("maxRunUsd")) ??
     asFiniteNumber(params.get("maxBenchmarkRunCostUsd"));
+  const minIntelligenceCostPerTaskAud = asFiniteNumber(
+    params.get("minIntelligenceCostPerTaskAud"),
+  );
+  const maxIntelligenceCostPerTaskAud = asFiniteNumber(
+    params.get("maxIntelligenceCostPerTaskAud"),
+  );
+  const minIntelligenceCostPerTaskUsd = asFiniteNumber(
+    params.get("minIntelligenceCostPerTaskUsd"),
+  );
+  const maxIntelligenceCostPerTaskUsd = asFiniteNumber(
+    params.get("maxIntelligenceCostPerTaskUsd"),
+  );
   const minIntelligence = asFiniteNumber(params.get("minIntelligence"));
   const maxAudioInputCostPerHour =
     asFiniteNumber(params.get("maxAudioInputCostPerHour")) ??
@@ -537,6 +549,18 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(maxRunCostAud !== undefined ? { maxRunCostAud } : {}),
     ...(minRunCostUsd !== undefined ? { minRunCostUsd } : {}),
     ...(maxRunCostUsd !== undefined ? { maxRunCostUsd } : {}),
+    ...(minIntelligenceCostPerTaskAud !== undefined
+      ? { minIntelligenceCostPerTaskAud }
+      : {}),
+    ...(maxIntelligenceCostPerTaskAud !== undefined
+      ? { maxIntelligenceCostPerTaskAud }
+      : {}),
+    ...(minIntelligenceCostPerTaskUsd !== undefined
+      ? { minIntelligenceCostPerTaskUsd }
+      : {}),
+    ...(maxIntelligenceCostPerTaskUsd !== undefined
+      ? { maxIntelligenceCostPerTaskUsd }
+      : {}),
     ...(minIntelligence !== undefined ? { minIntelligence } : {}),
     ...(maxAudioInputCostPerHour !== undefined
       ? { maxAudioInputCostPerHour }
@@ -899,13 +923,35 @@ function filtersWithUsdRunCost(
     filters.maxRunCostUsd === undefined
       ? undefined
       : filters.maxRunCostUsd * rate;
+  const minTaskCostUsdAud =
+    filters.minIntelligenceCostPerTaskUsd === undefined
+      ? undefined
+      : filters.minIntelligenceCostPerTaskUsd * rate;
+  const maxTaskCostUsdAud =
+    filters.maxIntelligenceCostPerTaskUsd === undefined
+      ? undefined
+      : filters.maxIntelligenceCostPerTaskUsd * rate;
   const minRunCostAud = maxDefined(filters.minRunCostAud, minRunCostUsdAud);
   const maxRunCostAud = minDefined(filters.maxRunCostAud, maxRunCostUsdAud);
+  const minIntelligenceCostPerTaskAud = maxDefined(
+    filters.minIntelligenceCostPerTaskAud,
+    minTaskCostUsdAud,
+  );
+  const maxIntelligenceCostPerTaskAud = minDefined(
+    filters.maxIntelligenceCostPerTaskAud,
+    maxTaskCostUsdAud,
+  );
 
   return {
     ...filters,
     ...(minRunCostAud !== undefined ? { minRunCostAud } : {}),
     ...(maxRunCostAud !== undefined ? { maxRunCostAud } : {}),
+    ...(minIntelligenceCostPerTaskAud !== undefined
+      ? { minIntelligenceCostPerTaskAud }
+      : {}),
+    ...(maxIntelligenceCostPerTaskAud !== undefined
+      ? { maxIntelligenceCostPerTaskAud }
+      : {}),
   };
 }
 
@@ -952,6 +998,22 @@ function passesCostFilters(
     filters.maxRunCostAud !== undefined &&
     (candidate.benchmarks.llm?.intelligenceRunTotalCost === undefined ||
       candidate.benchmarks.llm.intelligenceRunTotalCost > filters.maxRunCostAud)
+  ) {
+    return false;
+  }
+  if (
+    filters.minIntelligenceCostPerTaskAud !== undefined &&
+    (candidate.benchmarks.llm?.intelligenceCostPerTask === undefined ||
+      candidate.benchmarks.llm.intelligenceCostPerTask <
+        filters.minIntelligenceCostPerTaskAud)
+  ) {
+    return false;
+  }
+  if (
+    filters.maxIntelligenceCostPerTaskAud !== undefined &&
+    (candidate.benchmarks.llm?.intelligenceCostPerTask === undefined ||
+      candidate.benchmarks.llm.intelligenceCostPerTask >
+        filters.maxIntelligenceCostPerTaskAud)
   ) {
     return false;
   }
@@ -2193,17 +2255,8 @@ function benchmarkSignalsFromArtificialAnalysisEfficiency(
   if (inputCost !== undefined) signals.intelligenceRunInputCost = inputCost;
   const totalCost = audValueOrUndefined(model.intelligenceRunTotalCost, rate);
   if (totalCost !== undefined) signals.intelligenceRunTotalCost = totalCost;
-
-  if (model.intelligenceRunAnswerTokens !== undefined) {
-    signals.intelligenceRunAnswerTokens = model.intelligenceRunAnswerTokens;
-  }
-  if (model.intelligenceRunReasoningTokens !== undefined) {
-    signals.intelligenceRunReasoningTokens =
-      model.intelligenceRunReasoningTokens;
-  }
-  if (model.intelligenceRunOutputTokens !== undefined) {
-    signals.intelligenceRunOutputTokens = model.intelligenceRunOutputTokens;
-  }
+  const costPerTask = audValueOrUndefined(model.intelligenceCostPerTask, rate);
+  if (costPerTask !== undefined) signals.intelligenceCostPerTask = costPerTask;
 
   return signals;
 }
@@ -2502,7 +2555,7 @@ function compareBenchmarkCandidates(
 
   if (filters.useCase === "customer-support" && tier === "fast") {
     return (
-      compareCustomerSupportRunCost(left, right) ||
+      compareCustomerSupportTaskCost(left, right) ||
       compareOptionalAsc(
         left.pricing.outputPerMTok,
         right.pricing.outputPerMTok,
@@ -2656,11 +2709,7 @@ function compareCustomerSupportBenchmarkCandidates(
 ): number {
   if (tier === "fast") {
     return (
-      compareCustomerSupportRunCost(left, right) ||
-      compareOptionalAsc(
-        left.pricing.outputPerMTok,
-        right.pricing.outputPerMTok,
-      ) ||
+      compareCustomerSupportTaskCost(left, right) ||
       compareCustomerSupportSafetyOrder(left, right, {
         useCase: "customer-support",
       })
@@ -2689,7 +2738,7 @@ function compareCustomerSupportSafetyOrder(
         autoCloseFalsePositiveRate(rightAutoClose),
       ) ||
       compareOptionalDesc(leftAutoClose.accuracy, rightAutoClose.accuracy) ||
-      compareCustomerSupportRunCost(left, right) ||
+      compareCustomerSupportTaskCost(left, right) ||
       compareOptionalAsc(
         leftAutoClose.invalidCount,
         rightAutoClose.invalidCount,
@@ -2758,46 +2807,18 @@ function customerSupportAaSupportScore(candidate: BenchmarkCandidate): number {
 function customerSupportEfficiencyScore(
   signals: BenchmarkSignals | undefined,
 ): number {
-  const runCostValue =
-    signals?.intelligenceRunTotalCost !== undefined
-      ? Math.max(
-          0,
-          100 -
-            Math.min(
-              Math.log1p(signals.intelligenceRunTotalCost) / Math.log1p(8000),
-              1,
-            ) *
-              100,
-        )
-      : undefined;
-  const outputTokenValue =
-    signals?.intelligenceRunOutputTokens !== undefined
-      ? Math.max(
-          0,
-          100 -
-            Math.min(
-              Math.log1p(signals.intelligenceRunOutputTokens) /
-                Math.log1p(250_000_000),
-              1,
-            ) *
-              100,
-        )
-      : undefined;
-
-  return weightedAverage(
-    [
-      [runCostValue, 0.45],
-      [outputTokenValue, 0.55],
-    ],
-    50,
-  );
+  return intelligenceTaskCostScore(signals) ?? 50;
 }
 
-function compareCustomerSupportRunCost(
+function compareCustomerSupportTaskCost(
   left: BenchmarkCandidate,
   right: BenchmarkCandidate,
 ): number {
   return (
+    compareOptionalAsc(
+      left.benchmarks.llm?.intelligenceCostPerTask,
+      right.benchmarks.llm?.intelligenceCostPerTask,
+    ) ||
     compareOptionalAsc(
       left.benchmarks.llm?.intelligenceRunTotalCost,
       right.benchmarks.llm?.intelligenceRunTotalCost,
@@ -3219,7 +3240,6 @@ function costScore(
   const priceScore =
     100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100;
   const runCostScore = benchmarkRunCostScore(signals);
-  const outputTokenScore = benchmarkOutputTokenScore(signals);
 
   if (useCase === "customer-support") {
     if (tier === "fast") {
@@ -3227,7 +3247,6 @@ function costScore(
         [
           [runCostScore, 0.75],
           [priceScore, 0.15],
-          [outputTokenScore, 0.1],
         ],
         priceScore,
       );
@@ -3238,7 +3257,6 @@ function costScore(
         [
           [runCostScore, 0.45],
           [priceScore, 0.25],
-          [outputTokenScore, 0.3],
         ],
         priceScore,
       );
@@ -3248,7 +3266,6 @@ function costScore(
       [
         [runCostScore, 0.55],
         [priceScore, 0.2],
-        [outputTokenScore, 0.25],
       ],
       priceScore,
     );
@@ -3260,17 +3277,20 @@ function costScore(
 function benchmarkRunCostScore(
   signals: BenchmarkSignals | undefined,
 ): number | undefined {
+  return intelligenceTaskCostScore(signals);
+}
+
+function intelligenceTaskCostScore(
+  signals: BenchmarkSignals | undefined,
+): number | undefined {
+  const taskCost = signals?.intelligenceCostPerTask;
+  if (taskCost !== undefined) {
+    return 100 - Math.min(Math.log1p(taskCost) / Math.log1p(2), 1) * 100;
+  }
+
   const cost = signals?.intelligenceRunTotalCost;
   if (cost === undefined) return undefined;
   return 100 - Math.min(Math.log1p(cost) / Math.log1p(8_000), 1) * 100;
-}
-
-function benchmarkOutputTokenScore(
-  signals: BenchmarkSignals | undefined,
-): number | undefined {
-  const tokens = signals?.intelligenceRunOutputTokens;
-  if (tokens === undefined) return undefined;
-  return 100 - Math.min(Math.log1p(tokens) / Math.log1p(250_000_000), 1) * 100;
 }
 
 function weightedAverage(

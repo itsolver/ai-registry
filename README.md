@@ -10,9 +10,9 @@ https://ai.itsolver.au
 
 The Worker uses Artificial Analysis data for OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq benchmark candidates, then exposes a small `/v1/...` API with recommendation tiers.
 
-Recommendations are tuned for IT Solver customer support, voice-agent API work, and speech-to-text transcription. For customer support, recommendations require real token pricing, a local auto-close benchmark result, and default-production availability. Ranking is safety-first: false positives sort first, accuracy second, and expected Run AUD/token efficiency third. Deprecated and retired models are excluded from public model, benchmark, and recommendation results. Preview-only, experimental, latest-alias, and near-retirement text models are not default production recommendations. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
+Recommendations are tuned for IT Solver customer support, voice-agent API work, and speech-to-text transcription. For customer support, recommendations require real token pricing, a local auto-close benchmark result, and default-production availability. Ranking is safety-first: false positives sort first, accuracy second, and Artificial Analysis Intelligence Index Task AUD third. Deprecated and retired models are excluded from public model, benchmark, and recommendation results. Preview-only, experimental, latest-alias, and near-retirement text models are not default production recommendations. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
 
-Model pricing from Artificial Analysis is converted to AUD using the daily USD to AUD rate from Frankfurter. The API only returns AUD pricing.
+Model pricing and benchmark costs from Artificial Analysis are stored from source USD data and converted to AUD using the current catalog USD to AUD rate from Frankfurter. The API only returns AUD pricing and includes the exchange-rate metadata used for that catalog view.
 
 ## Endpoints
 
@@ -49,9 +49,12 @@ tier=fast|balanced|best          # customer-support priorities: fast, balanced, 
 capability=vision|pdf|reasoning|toolCalling|structuredOutput
 maxInputCostPerMTok=2               # max input AUD per million tokens
 maxOutputCostPerMTok=10             # max output AUD per million tokens
-minRunCostAud=100                   # min AA benchmark Run AUD
-maxRunCostAud=500                   # max AA benchmark Run AUD
-maxRunCostUsd=900                   # max AA benchmark Run USD, converted with the catalog FX rate
+minIntelligenceCostPerTaskAud=0.1   # min AA Intelligence Index Task AUD
+maxIntelligenceCostPerTaskAud=1     # max AA Intelligence Index Task AUD
+maxIntelligenceCostPerTaskUsd=0.7   # max AA Intelligence Index Task USD, converted with the catalog FX rate
+minRunCostAud=100                   # legacy min AA benchmark total Run AUD
+maxRunCostAud=500                   # legacy max AA benchmark total Run AUD
+maxRunCostUsd=900                   # legacy max AA benchmark total Run USD, converted with the catalog FX rate
 minIntelligence=30                  # min AA Intelligence Index for benchmark-backed text rows
 maxAudioInputCostPerHour=5          # max voice input/cost-to-run AUD per hour
 maxAudioOutputCostPerHour=5         # max voice output AUD per hour

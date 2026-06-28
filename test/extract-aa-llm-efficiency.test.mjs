@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { extractLlmEfficiencyRecords } from "../scripts/extract-aa-llm-efficiency.mjs";
+import {
+  extractLlmEfficiencyRecords,
+  extractLlmEfficiencyRecordsFromPages,
+} from "../scripts/extract-aa-llm-efficiency.mjs";
 
 describe("AA LLM efficiency extractor", () => {
   it("merges JSON-LD chart fields with Next Flight frontier evaluations", () => {
@@ -277,6 +280,69 @@ describe("AA LLM efficiency extractor", () => {
       intelligenceIndex: 50,
       ifbench: 0.75,
       intelligenceRunOutputTokens: 46000,
+    });
+  });
+
+  it("merges model comparison pages for missing task costs", () => {
+    const flight = `35:${JSON.stringify({
+      defaultData: [
+        {
+          slug: "frontier-seed",
+          name: "Frontier Seed",
+          model_url: "/models/frontier-seed",
+          frontier_model: true,
+          model_creators: { slug: "openai" },
+        },
+        {
+          slug: "gpt-variant",
+          name: "GPT Variant",
+          model_url: "/models/gpt-variant",
+          frontier_model: false,
+          model_creators: { slug: "openai" },
+          intelligence_index: 47,
+          price_1m_input_tokens: 5,
+          price_1m_output_tokens: 30,
+        },
+      ],
+    })}`;
+    const sourceHtml = [
+      dataset("Artificial Analysis Intelligence Index", [
+        {
+          label: "Frontier Seed",
+          intelligenceIndex: 60,
+          detailsUrl: "/models/frontier-seed",
+        },
+      ]),
+      `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script>`,
+    ].join("");
+    const comparisonHtml = [
+      dataset("Cost per Intelligence Index Task", [
+        {
+          label: "GPT Variant",
+          answer: 0.1,
+          reasoning: 0.2,
+          cacheWrite: 0.3,
+          cacheHit: 0.4,
+          input: 0.5,
+          detailsUrl: "/models/gpt-variant",
+        },
+      ]),
+      `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script>`,
+    ].join("");
+
+    const records = extractLlmEfficiencyRecordsFromPages([
+      sourceHtml,
+      comparisonHtml,
+    ]);
+
+    expect(
+      records.find((record) => record.slug === "gpt-variant"),
+    ).toMatchObject({
+      provider: "openai",
+      intelligenceIndex: 47,
+      intelligenceCostPerTask: 1.5,
+      inputPrice: 5,
+      outputPrice: 30,
     });
   });
 });

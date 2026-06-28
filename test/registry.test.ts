@@ -373,18 +373,18 @@ describe("Artificial Analysis catalog", () => {
     );
     expect(filteredGoogleBestRecommendation).toBeUndefined();
     expect(openaiRecommendation).toMatchObject({
-      id: "gpt-5-4-mini",
+      id: "gpt-5-5-low",
       provider: "openai",
       recommendable: true,
       pricing: {
-        inputPerMTok: 0.75,
-        outputPerMTok: 4.5,
+        inputPerMTok: 5,
+        outputPerMTok: 30,
       },
       benchmarks: {
         llm: {
           intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
-            falsePositiveCount: 6,
+            falsePositiveCount: 5,
             accuracy: expect.any(Number),
             sourceUrl: expect.any(String),
             verifiedOn: "2026-06-06",
@@ -1445,10 +1445,7 @@ describe("Artificial Analysis catalog", () => {
         maxRunCostAud: 1300,
         minIntelligence: 30,
       }),
-    ).toMatchObject({
-      id: "gemini-2-5-pro",
-      provider: "google",
-    });
+    ).toBeUndefined();
     const xaiFast = recommendModel(catalog, {
       provider: "xai",
       useCase: "customer-support",

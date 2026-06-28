@@ -1,12 +1,24 @@
 #!/usr/bin/env node
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const SOURCE_URL = "https://artificialanalysis.ai/models";
 const OUT_PATH = resolve("src/generated/aa-llm-efficiency.ts");
+const CUSTOMER_SUPPORT_RECOMMENDATIONS_PATH = resolve(
+  "src/generated/aa-customer-support-recommendations.ts",
+);
+const COMPARISON_PROVIDERS = new Set([
+  "anthropic",
+  "elevenlabs",
+  "google",
+  "groq",
+  "nvidia",
+  "openai",
+  "xai",
+]);
 const DATASETS = {
   intelligence: "Artificial Analysis Intelligence Index",
   costPerTask: "Cost per Task",
@@ -35,9 +47,12 @@ async function main() {
   }
 
   const html = await response.text();
-  const records = extractLlmEfficiencyRecords(html).sort((left, right) =>
-    left.slug.localeCompare(right.slug),
-  );
+  const initialRecords = extractLlmEfficiencyRecords(html);
+  const comparisonPages = await fetchComparisonPages(html, initialRecords);
+  const records = extractLlmEfficiencyRecordsFromPages([
+    html,
+    ...comparisonPages,
+  ]).sort((left, right) => left.slug.localeCompare(right.slug));
 
   if (!records.length) {
     throw new Error("No Artificial Analysis frontier LLM records found");
@@ -54,8 +69,90 @@ export const AA_LLM_EFFICIENCY_MODELS = ${JSON.stringify(records, null, 2)} as c
   console.log(`Wrote ${records.length} LLM efficiency records to ${OUT_PATH}`);
 }
 
+async function fetchComparisonPages(sourceHtml, initialRecords) {
+  const allModels = extractNextFlightModelRecords(sourceHtml);
+  const existingTaskSlugs = new Set(
+    initialRecords
+      .filter((record) => record.intelligenceCostPerTask !== undefined)
+      .map((record) => record.slug),
+  );
+  const comparisonSlugs = comparisonCandidateSlugs(allModels).filter(
+    (slug) => !existingTaskSlugs.has(slug),
+  );
+  const pages = [];
+
+  for (const slug of comparisonSlugs) {
+    const url = comparisonUrl(slug);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "user-agent": "IT Solver AI Registry weekly extractor",
+        },
+      });
+      if (!response.ok) {
+        console.warn(
+          `Skipping ${url}: Artificial Analysis returned ${response.status}`,
+        );
+        continue;
+      }
+      pages.push(await response.text());
+    } catch (error) {
+      console.warn(
+        `Skipping ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (comparisonSlugs.length) {
+    console.log(
+      `Fetched ${pages.length}/${comparisonSlugs.length} Artificial Analysis comparison pages`,
+    );
+  }
+
+  return pages;
+}
+
+function comparisonCandidateSlugs(allModels) {
+  const slugs = new Set(readCustomerSupportRecommendationSlugs());
+  for (const model of allModels) {
+    if (!COMPARISON_PROVIDERS.has(model.model_creators?.slug)) continue;
+    if (model.frontier_model !== true && model.frontier_model !== false)
+      continue;
+    slugs.add(model.slug);
+  }
+  const knownSlugs = new Set(allModels.map((model) => model.slug));
+  return [...slugs]
+    .filter((slug) => knownSlugs.has(slug))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function readCustomerSupportRecommendationSlugs() {
+  try {
+    const source = readFileSync(CUSTOMER_SUPPORT_RECOMMENDATIONS_PATH, "utf8");
+    return [...source.matchAll(/slug:\s*"([^"]+)"/g)].map((match) => match[1]);
+  } catch {
+    return [];
+  }
+}
+
+function comparisonUrl(slug) {
+  const encodedSlug = encodeURIComponent(slug);
+  return `https://artificialanalysis.ai/models/${encodedSlug}?models=${encodedSlug}`;
+}
+
 export function extractLlmEfficiencyRecords(html) {
-  const allModels = extractNextFlightModelRecords(html);
+  return extractLlmEfficiencyRecordsFromPages([html]);
+}
+
+export function extractLlmEfficiencyRecordsFromPages(htmlPages) {
+  const allModelsBySlug = new Map();
+  for (const html of htmlPages) {
+    for (const model of extractNextFlightModelRecords(html)) {
+      if (!allModelsBySlug.has(model.slug))
+        allModelsBySlug.set(model.slug, model);
+    }
+  }
+  const allModels = [...allModelsBySlug.values()];
   const frontierModels = allModels.filter(
     (record) => record.frontier_model === true,
   );
@@ -63,7 +160,7 @@ export function extractLlmEfficiencyRecords(html) {
     throw new Error("No Artificial Analysis frontier model records found in Next Flight data");
   }
 
-  const datasets = extractJsonLdDatasets(html);
+  const datasets = mergeJsonLdDatasets(htmlPages.map(extractJsonLdDatasets));
   return mergeDatasets(datasets, frontierModels, allModels);
 }
 
@@ -85,6 +182,16 @@ export function extractJsonLdDatasets(html) {
   }
 
   return datasets;
+}
+
+function mergeJsonLdDatasets(datasetMaps) {
+  const merged = new Map();
+  for (const datasets of datasetMaps) {
+    for (const [name, data] of datasets) {
+      merged.set(name, [...(merged.get(name) ?? []), ...data]);
+    }
+  }
+  return merged;
 }
 
 export function extractNextFlightModelRecords(html) {

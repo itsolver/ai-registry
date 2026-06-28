@@ -2728,6 +2728,10 @@ function compareCustomerSupportBenchmarkCandidates(
     return (
       compareCustomerSupportTaskCost(left, right) ||
       compareOptionalAsc(
+        left.benchmarks.llm?.intelligenceRunOutputTokens,
+        right.benchmarks.llm?.intelligenceRunOutputTokens,
+      ) ||
+      compareOptionalAsc(
         left.pricing.outputPerMTok,
         right.pricing.outputPerMTok,
       ) ||

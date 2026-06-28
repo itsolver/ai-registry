@@ -87,11 +87,11 @@ describe("AA LLM efficiency extractor", () => {
           detailsUrl: "/models/claude-frontier",
         },
       ]),
-      dataset("Output Tokens Used to Run Artificial Analysis Intelligence Index", [
+      dataset("Output Tokens per Intelligence Index Task", [
         {
           label: "Claude Frontier",
-          answerTokens: 110,
-          reasoningTokens: 220,
+          answer: 110,
+          reasoning: 220,
           detailsUrl: "/models/claude-frontier",
         },
       ]),
@@ -230,6 +230,53 @@ describe("AA LLM efficiency extractor", () => {
       inputPrice: 2,
       outputPrice: 10,
       intelligenceCostPerTask: 0.42,
+    });
+  });
+
+  it("keeps non-frontier models when output-token chart data exists", () => {
+    const flight = `35:${JSON.stringify({
+      defaultData: [
+        {
+          slug: "frontier-seed",
+          name: "Frontier Seed",
+          model_url: "/models/frontier-seed",
+          frontier_model: true,
+          model_creators: { slug: "openai" },
+        },
+        {
+          slug: "token-chart-row",
+          name: "Token Chart Row",
+          model_url: "/models/token-chart-row",
+          frontier_model: false,
+          model_creators: { slug: "google" },
+          intelligence_index: 50,
+          ifbench: 0.75,
+          price_1m_input_tokens: 1,
+          price_1m_output_tokens: 6,
+        },
+      ],
+    })}`;
+    const html = [
+      dataset("Output Tokens per Intelligence Index Task", [
+        {
+          label: "Token Chart Row",
+          answer: 12000,
+          reasoning: 34000,
+          detailsUrl: "/models/token-chart-row",
+        },
+      ]),
+      `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script>`,
+    ].join("");
+
+    const records = extractLlmEfficiencyRecords(html);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      slug: "token-chart-row",
+      provider: "google",
+      intelligenceIndex: 50,
+      ifbench: 0.75,
+      intelligenceRunOutputTokens: 46000,
     });
   });
 });

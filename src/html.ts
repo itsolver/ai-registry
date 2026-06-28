@@ -977,7 +977,7 @@ export const HOME_HTML = String.raw`<!doctype html>
               <th data-table="supportRows" data-sort="agentic">Agentic</th>
               <th data-table="supportRows" data-sort="benchTelecom">Bench Telecom</th>
               <th data-table="supportRows" data-sort="intelligence">Intel</th>
-              <th data-table="supportRows" data-sort="outputCost">Output AUD/MTok</th>
+              <th data-table="supportRows" data-sort="outputTokens">Output tokens/task</th>
               <th data-table="supportRows" data-sort="runCost">Task AUD</th>
               <th data-table="supportRows" data-sort="note">ITS Notes</th>
             </tr>
@@ -1053,7 +1053,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then lower output cost, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then lower output tokens per Intelligence Index task, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
       <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
@@ -1066,6 +1066,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
       <dt>Task AUD</dt>
       <dd>Australian dollars per weighted average Artificial Analysis Intelligence Index task. Source benchmark cost is stored in USD and converted with the current catalog exchange rate.</dd>
+      <dt>Output tokens/task</dt>
+      <dd>Weighted average output tokens used to run one Artificial Analysis Intelligence Index task. Lower means the model completes the benchmark with fewer generated tokens.</dd>
       <dt>voice AUD/hr</dt>
       <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
       <dt>STT AUD/1k min</dt>
@@ -1258,6 +1260,12 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function money(value) {
       return typeof value === 'number' && Number.isFinite(value) ? '$' + value.toFixed(2) : '-';
+    }
+
+    function tokenCount(value) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+      if (value >= 1000) return Math.round(value / 1000) + 'k';
+      return String(Math.round(value));
     }
 
     function seconds(value) {
@@ -1690,6 +1698,10 @@ export const HOME_HTML = String.raw`<!doctype html>
       return ((row.model || row || {}).pricing || {}).outputPerMTok;
     }
 
+    function outputTokens(row) {
+      return llmSignals(row).intelligenceRunOutputTokens;
+    }
+
     function runCost(row) {
       return llmSignals(row).intelligenceCostPerTask;
     }
@@ -1742,6 +1754,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     function customerSupportFastRowCompare(left, right) {
       return (
         compareNumberAsc(supportCostSortValue(left), supportCostSortValue(right)) ||
+        compareNumberAsc(outputTokens(left), outputTokens(right)) ||
         compareNumberAsc(outputCost(left), outputCost(right)) ||
         customerSupportSafetyRowCompare(left, right)
       );
@@ -2233,7 +2246,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         { key: 'intelligence', label: 'Intel', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
       );
       base.push(
-        { key: 'outputCost', label: 'Output AUD/MTok', value: outputCost, render: function (row) { return money(outputCost(row)); } },
+        { key: 'outputTokens', label: 'Output tokens/task', value: outputTokens, render: function (row) { return tokenCount(outputTokens(row)); } },
         { key: 'runCost', label: 'Task AUD', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } }
       );
       if (includeIts) {
@@ -2355,11 +2368,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       var support = topBy(textRows(models, 'customer-support'), function (row) { return row.score; });
       var voice = topBy(voiceBenchmarkModels(models), voiceScore);
       var cheapestVoice = topBy(voiceBenchmarkModels(models), voiceCost, 'asc');
-      var cheapestOutput = topBy(
+      var fewestOutputTokens = topBy(
         textRows(models, 'customer-support').filter(function (row) {
-          return typeof outputCost(row) === 'number';
+          return typeof outputTokens(row) === 'number';
         }),
-        function (row) { return outputCost(row); },
+        function (row) { return outputTokens(row); },
         'asc'
       );
       var lowestLatency = topBy(
@@ -2402,10 +2415,10 @@ export const HOME_HTML = String.raw`<!doctype html>
           a: 'Use the speech-to-text priority and price cap to trade off accuracy, speed, and price. Highest accuracy prioritizes lower AA-WER, fast and cheap prioritizes lower AUD/1k min, and balanced picks the middle filtered accuracy candidate.'
         },
         {
-          q: 'Which text model has the lowest output price?',
-          a: cheapestOutput[0]
-            ? modelName(cheapestOutput[0].model) + ' has the lowest output price among benchmarked text candidates at ' + money(outputCost(cheapestOutput[0])) + ' AUD/MTok.'
-            : 'No text output pricing is currently available.'
+          q: 'Which text model uses the fewest output tokens?',
+          a: fewestOutputTokens[0]
+            ? modelName(fewestOutputTokens[0].model) + ' uses the fewest output tokens among benchmarked text candidates at ' + tokenCount(outputTokens(fewestOutputTokens[0])) + ' tokens per Intelligence Index task.'
+            : 'No text output-token benchmark data is currently available.'
         },
         {
           q: 'Which benchmarked text model has the lowest latency?',

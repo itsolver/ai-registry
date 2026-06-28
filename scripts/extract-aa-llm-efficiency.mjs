@@ -12,7 +12,8 @@ const DATASETS = {
   costPerTask: "Cost per Task",
   costPerIntelligenceTask: "Cost per Intelligence Index Task",
   cost: "Cost to Run Artificial Analysis Intelligence Index",
-  tokens: "Output Tokens Used to Run Artificial Analysis Intelligence Index",
+  tokens: "Output Tokens per Intelligence Index Task",
+  tokensLegacy: "Output Tokens Used to Run Artificial Analysis Intelligence Index",
   pricing: "Pricing: Cache Hit, Input, and Output",
   speed: "Output Speed",
   omniscience: "AA-Omniscience Index",
@@ -164,11 +165,18 @@ function mergeDatasets(datasets, frontierModels, allModels = frontierModels) {
     }, false);
   }
 
-  for (const item of datasets.get(DATASETS.tokens) ?? []) {
-    upsert(bySlug, item, {
-      intelligenceRunAnswerTokens: numberOrUndefined(item.answerTokens),
-      intelligenceRunReasoningTokens: numberOrUndefined(item.reasoningTokens),
-    }, false);
+  for (const item of [
+    ...(datasets.get(DATASETS.tokensLegacy) ?? []),
+    ...(datasets.get(DATASETS.tokens) ?? []),
+  ]) {
+    upsertModelBacked(bySlug, allModelsBySlug, item, {
+      intelligenceRunAnswerTokens: numberOrUndefined(
+        item.answerTokens ?? item.answer,
+      ),
+      intelligenceRunReasoningTokens: numberOrUndefined(
+        item.reasoningTokens ?? item.reasoning,
+      ),
+    });
   }
 
   for (const item of datasets.get(DATASETS.pricing) ?? []) {
@@ -278,6 +286,10 @@ function nextFlightValues(model) {
 function upsertModelBacked(bySlug, allModelsBySlug, item, values) {
   const slug = slugFromItem(item);
   const model = slug ? allModelsBySlug.get(slug) : undefined;
+  if (slug && bySlug.has(slug)) {
+    upsert(bySlug, item, values, false);
+    return;
+  }
   if (!model) {
     upsert(bySlug, item, values, false);
     return;

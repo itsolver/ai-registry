@@ -340,9 +340,6 @@ export interface BenchmarkSignals {
   intelligenceRunInputCost?: number;
   intelligenceRunTotalCost?: number;
   intelligenceCostPerTask?: number;
-  intelligenceRunAnswerTokens?: number;
-  intelligenceRunReasoningTokens?: number;
-  intelligenceRunOutputTokens?: number;
   customerSupportRank?: number;
 }
 
@@ -397,9 +394,6 @@ interface ArtificialAnalysisLlmEfficiencyModel {
   intelligenceRunInputCost?: number;
   intelligenceRunTotalCost?: number;
   intelligenceCostPerTask?: number;
-  intelligenceRunAnswerTokens?: number;
-  intelligenceRunReasoningTokens?: number;
-  intelligenceRunOutputTokens?: number;
 }
 
 interface ArtificialAnalysisLlmPricingModel {
@@ -2264,17 +2258,6 @@ function benchmarkSignalsFromArtificialAnalysisEfficiency(
   const costPerTask = audValueOrUndefined(model.intelligenceCostPerTask, rate);
   if (costPerTask !== undefined) signals.intelligenceCostPerTask = costPerTask;
 
-  if (model.intelligenceRunAnswerTokens !== undefined) {
-    signals.intelligenceRunAnswerTokens = model.intelligenceRunAnswerTokens;
-  }
-  if (model.intelligenceRunReasoningTokens !== undefined) {
-    signals.intelligenceRunReasoningTokens =
-      model.intelligenceRunReasoningTokens;
-  }
-  if (model.intelligenceRunOutputTokens !== undefined) {
-    signals.intelligenceRunOutputTokens = model.intelligenceRunOutputTokens;
-  }
-
   return signals;
 }
 
@@ -2727,14 +2710,6 @@ function compareCustomerSupportBenchmarkCandidates(
   if (tier === "fast") {
     return (
       compareCustomerSupportTaskCost(left, right) ||
-      compareOptionalAsc(
-        left.benchmarks.llm?.intelligenceRunOutputTokens,
-        right.benchmarks.llm?.intelligenceRunOutputTokens,
-      ) ||
-      compareOptionalAsc(
-        left.pricing.outputPerMTok,
-        right.pricing.outputPerMTok,
-      ) ||
       compareCustomerSupportSafetyOrder(left, right, {
         useCase: "customer-support",
       })
@@ -2832,28 +2807,7 @@ function customerSupportAaSupportScore(candidate: BenchmarkCandidate): number {
 function customerSupportEfficiencyScore(
   signals: BenchmarkSignals | undefined,
 ): number {
-  const taskCostValue = intelligenceTaskCostScore(signals);
-  const outputTokenValue =
-    signals?.intelligenceRunOutputTokens !== undefined
-      ? Math.max(
-          0,
-          100 -
-            Math.min(
-              Math.log1p(signals.intelligenceRunOutputTokens) /
-                Math.log1p(250_000_000),
-              1,
-            ) *
-              100,
-        )
-      : undefined;
-
-  return weightedAverage(
-    [
-      [taskCostValue, 0.45],
-      [outputTokenValue, 0.55],
-    ],
-    50,
-  );
+  return intelligenceTaskCostScore(signals) ?? 50;
 }
 
 function compareCustomerSupportTaskCost(
@@ -3286,7 +3240,6 @@ function costScore(
   const priceScore =
     100 - Math.min(Math.log1p(blended) / Math.log1p(100), 1) * 100;
   const runCostScore = benchmarkRunCostScore(signals);
-  const outputTokenScore = benchmarkOutputTokenScore(signals);
 
   if (useCase === "customer-support") {
     if (tier === "fast") {
@@ -3294,7 +3247,6 @@ function costScore(
         [
           [runCostScore, 0.75],
           [priceScore, 0.15],
-          [outputTokenScore, 0.1],
         ],
         priceScore,
       );
@@ -3305,7 +3257,6 @@ function costScore(
         [
           [runCostScore, 0.45],
           [priceScore, 0.25],
-          [outputTokenScore, 0.3],
         ],
         priceScore,
       );
@@ -3315,7 +3266,6 @@ function costScore(
       [
         [runCostScore, 0.55],
         [priceScore, 0.2],
-        [outputTokenScore, 0.25],
       ],
       priceScore,
     );
@@ -3341,14 +3291,6 @@ function intelligenceTaskCostScore(
   const cost = signals?.intelligenceRunTotalCost;
   if (cost === undefined) return undefined;
   return 100 - Math.min(Math.log1p(cost) / Math.log1p(8_000), 1) * 100;
-}
-
-function benchmarkOutputTokenScore(
-  signals: BenchmarkSignals | undefined,
-): number | undefined {
-  const tokens = signals?.intelligenceRunOutputTokens;
-  if (tokens === undefined) return undefined;
-  return 100 - Math.min(Math.log1p(tokens) / Math.log1p(250_000_000), 1) * 100;
 }
 
 function weightedAverage(

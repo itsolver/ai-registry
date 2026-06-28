@@ -977,13 +977,12 @@ export const HOME_HTML = String.raw`<!doctype html>
               <th data-table="supportRows" data-sort="agentic">Agentic</th>
               <th data-table="supportRows" data-sort="benchTelecom">Bench Telecom</th>
               <th data-table="supportRows" data-sort="intelligence">Intel</th>
-              <th data-table="supportRows" data-sort="outputTokens">Output tokens/task</th>
               <th data-table="supportRows" data-sort="runCost">Task AUD</th>
               <th data-table="supportRows" data-sort="note">ITS Notes</th>
             </tr>
           </thead>
           <tbody id="supportRows">
-            <tr><td class="empty" colspan="11">loading...</td></tr>
+            <tr><td class="empty" colspan="10">loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -1043,7 +1042,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       <p class="bench-note">Speech-to-text models are ranked from Artificial Analysis STT rows. Lower AA-WER is better; price is normalized to AUD per 1,000 minutes of audio.</p>
     </div>
   </div>
-  <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, output-token efficiency, and AUD output cost.</p>
+  <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, and Intelligence Index Task AUD.</p>
   </section>
   </div>
 
@@ -1053,7 +1052,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then lower output tokens per Intelligence Index task, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
       <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
@@ -1066,8 +1065,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
       <dt>Task AUD</dt>
       <dd>Australian dollars per weighted average Artificial Analysis Intelligence Index task. Source benchmark cost is stored in USD and converted with the current catalog exchange rate.</dd>
-      <dt>Output tokens/task</dt>
-      <dd>Weighted average output tokens used to run one Artificial Analysis Intelligence Index task. Lower means the model completes the benchmark with fewer generated tokens.</dd>
       <dt>voice AUD/hr</dt>
       <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
       <dt>STT AUD/1k min</dt>
@@ -1694,14 +1691,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       return (((row.model || row || {}).benchmarks || {}).llm || {});
     }
 
-    function outputCost(row) {
-      return ((row.model || row || {}).pricing || {}).outputPerMTok;
-    }
-
-    function outputTokens(row) {
-      return llmSignals(row).intelligenceRunOutputTokens;
-    }
-
     function runCost(row) {
       return llmSignals(row).intelligenceCostPerTask;
     }
@@ -1754,8 +1743,6 @@ export const HOME_HTML = String.raw`<!doctype html>
     function customerSupportFastRowCompare(left, right) {
       return (
         compareNumberAsc(supportCostSortValue(left), supportCostSortValue(right)) ||
-        compareNumberAsc(outputTokens(left), outputTokens(right)) ||
-        compareNumberAsc(outputCost(left), outputCost(right)) ||
         customerSupportSafetyRowCompare(left, right)
       );
     }
@@ -2082,14 +2069,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         : typeof signals.intelligenceRunTotalCost === 'number'
         ? Math.max(0, 100 - Math.min(Math.log1p(signals.intelligenceRunTotalCost) / Math.log1p(8000), 1) * 100)
         : undefined;
-      var outputTokenValue = typeof signals.intelligenceRunOutputTokens === 'number'
-        ? Math.max(0, 100 - Math.min(Math.log1p(signals.intelligenceRunOutputTokens) / Math.log1p(250000000), 1) * 100)
-        : undefined;
-      return weightedSignal(
-        { runCostValue: runCostValue, outputTokenValue: outputTokenValue },
-        [['runCostValue', 0.45], ['outputTokenValue', 0.55]],
-        50
-      );
+      return typeof runCostValue === 'number' ? runCostValue : 50;
     }
 
     function weightedSignal(signals, values, fallback) {
@@ -2246,7 +2226,6 @@ export const HOME_HTML = String.raw`<!doctype html>
         { key: 'intelligence', label: 'Intel', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } }
       );
       base.push(
-        { key: 'outputTokens', label: 'Output tokens/task', value: outputTokens, render: function (row) { return tokenCount(outputTokens(row)); } },
         { key: 'runCost', label: 'Task AUD', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } }
       );
       if (includeIts) {
@@ -2307,7 +2286,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         .catch(function () {
           if (requestId !== textBenchmarkRequest) return;
           var rows = document.getElementById('supportRows');
-          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="11">Benchmark data unavailable.</td></tr>';
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
           setText('supportSource', 'unavailable');
         });
     }
@@ -2368,13 +2347,6 @@ export const HOME_HTML = String.raw`<!doctype html>
       var support = topBy(textRows(models, 'customer-support'), function (row) { return row.score; });
       var voice = topBy(voiceBenchmarkModels(models), voiceScore);
       var cheapestVoice = topBy(voiceBenchmarkModels(models), voiceCost, 'asc');
-      var fewestOutputTokens = topBy(
-        textRows(models, 'customer-support').filter(function (row) {
-          return typeof outputTokens(row) === 'number';
-        }),
-        function (row) { return outputTokens(row); },
-        'asc'
-      );
       var lowestLatency = topBy(
         textRows(models, 'customer-support').filter(function (row) { return typeof llmSignals(row).latency === 'number'; }),
         function (row) { return llmSignals(row).latency; },
@@ -2413,12 +2385,6 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'How do I choose the best speech to text model?',
           a: 'Use the speech-to-text priority and price cap to trade off accuracy, speed, and price. Highest accuracy prioritizes lower AA-WER, fast and cheap prioritizes lower AUD/1k min, and balanced picks the middle filtered accuracy candidate.'
-        },
-        {
-          q: 'Which text model uses the fewest output tokens?',
-          a: fewestOutputTokens[0]
-            ? modelName(fewestOutputTokens[0].model) + ' uses the fewest output tokens among benchmarked text candidates at ' + tokenCount(outputTokens(fewestOutputTokens[0])) + ' tokens per Intelligence Index task.'
-            : 'No text output-token benchmark data is currently available.'
         },
         {
           q: 'Which benchmarked text model has the lowest latency?',
@@ -2511,7 +2477,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       .catch(function () {
         ['supportRows'].forEach(function (id) {
           var rows = document.getElementById(id);
-          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="11">Benchmark data unavailable.</td></tr>';
+          if (rows) rows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
         });
         setText('supportSource', 'unavailable');
         var faq = document.getElementById('faqRows');

@@ -52,21 +52,10 @@ function aaSupportScore(candidate: BenchmarkCandidate): number {
         ) *
           100
       : undefined;
-  const outputCostScore =
-    typeof signals.intelligenceRunOutputTokens === "number"
-      ? 100 -
-        Math.min(
-          Math.log1p(signals.intelligenceRunOutputTokens) /
-            Math.log1p(1_000_000),
-          1,
-        ) *
-          100
-      : undefined;
   const textCostScore = weightedSignal(
     [
       [runCostScore, 0.55],
       [priceScore, 0.2],
-      [outputCostScore, 0.25],
     ],
     priceScore,
   );
@@ -87,26 +76,7 @@ function aaSupportScore(candidate: BenchmarkCandidate): number {
               100,
         )
       : undefined;
-  const outputTokenValue =
-    typeof signals.intelligenceRunOutputTokens === "number"
-      ? Math.max(
-          0,
-          100 -
-            Math.min(
-              Math.log1p(signals.intelligenceRunOutputTokens) /
-                Math.log1p(250_000_000),
-              1,
-            ) *
-              100,
-        )
-      : undefined;
-  const efficiencyScore = weightedSignal(
-    [
-      [runCostValue, 0.45],
-      [outputTokenValue, 0.55],
-    ],
-    50,
-  );
+  const efficiencyScore = runCostValue ?? 50;
   const quality = weightedSignal(
     [
       [signals.agentic ?? signals.tauTelecom, 0.25],

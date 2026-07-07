@@ -15,6 +15,7 @@ import {
   type ArtificialAnalysisSpeechToTextModel,
   type Catalog,
   type ExchangeRate,
+  type ProviderId,
   type RecommendedModel,
 } from "./registry";
 
@@ -133,6 +134,15 @@ function withNestedFailover(
   };
 }
 
+function nextRecommendedFailover(
+  recommendations: RecommendedModel[],
+  provider?: ProviderId,
+): RecommendedModel | undefined {
+  return recommendations
+    .slice(1)
+    .find((candidate) => !provider || candidate.provider === provider);
+}
+
 async function routeApi(
   route: string,
   params: URLSearchParams,
@@ -171,7 +181,7 @@ async function routeApi(
     }
     const recommendationWithFailover = withNestedFailover(
       recommendation,
-      rankedRecommendations[1],
+      nextRecommendedFailover(rankedRecommendations, filters.provider),
     );
 
     const requestedFailovers = 2;

@@ -723,6 +723,23 @@ describe("worker routes", () => {
     ).toBeLessThanOrEqual(10);
   });
 
+  it("keeps nested recommendation failover within the requested provider", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=document-processing&provider=google&tier=best&minVisualReasoning=70",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.provider).toBe("google");
+    expect(body.recommendation.failover).toMatchObject({
+      provider: "google",
+    });
+  });
+
   it("applies Run AUD and intelligence filters to recommendations", async () => {
     const response = await handleRequest(
       new Request(
@@ -1283,6 +1300,7 @@ describe("worker routes", () => {
       id: "groq-whisper-large-v3-turbo",
       provider: "groq",
     });
+    expect(cappedGroqVisibleBody.recommendation.failover).toBeNull();
     expect(fastCheapResponse.status).toBe(200);
     expect(fastCheapBody.recommendation).toMatchObject({
       id: "groq-whisper-large-v3-turbo",

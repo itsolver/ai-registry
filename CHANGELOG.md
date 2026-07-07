@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made homepage query-builder filters use explicit use-case profiles so document processing, customer support, speech-to-speech (voice), and speech-to-text only serialize their active controls.
 - Renamed the public `voice` use-case label to `speech to speech (voice)` while keeping `useCase=voice` compatible and accepting `speech-to-speech` aliases.
 - Added `includeItsEval=false` as the public customer-support benchmark-source alias while preserving legacy `includeItsBenchmark=false`.
+- Limited nested `recommendation.failover` to the requested provider when `provider` is supplied.
 
 ## 2026-06-06
 

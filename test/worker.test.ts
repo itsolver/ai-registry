@@ -172,6 +172,7 @@ describe("worker routes", () => {
     );
     expect(html).toContain('<option value="benchmarks">browse benchmark rows</option>');
     expect(html).toContain('<option value="document-processing">document processing (OCR)</option>');
+    expect(html).toContain('<option value="voice">speech to speech (voice)</option>');
   });
 
   it("serves the ITS auto-close benchmark page without catalog access", async () => {

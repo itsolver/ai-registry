@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Split homepage query builder endpoint choices into recommendations, benchmark rows, and raw registry models so copied/opened URLs match the visible table source.
-- Made homepage query-builder filters use explicit use-case profiles so document processing, customer support, voice, and speech-to-text only serialize their active controls.
+- Made homepage query-builder filters use explicit use-case profiles so document processing, customer support, speech-to-speech (voice), and speech-to-text only serialize their active controls.
+- Renamed the public `voice` use-case label to `speech to speech (voice)` while keeping `useCase=voice` compatible and accepting `speech-to-speech` aliases.
 - Added `includeItsEval=false` as the public customer-support benchmark-source alias while preserving legacy `includeItsBenchmark=false`.
 
 ## 2026-06-06

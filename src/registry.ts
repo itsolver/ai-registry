@@ -1300,6 +1300,9 @@ function asTier(value: string | null): Tier | undefined {
 function asUseCase(value: string | null): UseCase | undefined {
   if (value === "support") return "customer-support";
   if (value === "stt") return "speech-to-text";
+  if (value === "speech-to-speech" || value === "speech-to-speech-voice") {
+    return "voice";
+  }
   if (value === "ocr" || value === "document-ocr") {
     return "document-processing";
   }

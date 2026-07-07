@@ -756,7 +756,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           <select id="b-usecase">
             <option value="customer-support" selected>customer support</option>
             <option value="document-processing">document processing (OCR)</option>
-            <option value="voice">voice</option>
+            <option value="voice">speech to speech (voice)</option>
             <option value="speech-to-text">speech to text</option>
           </select>
         </div>
@@ -818,7 +818,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         </div>
         <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudiooutputcost">Max output audio AUD/hr</label>
-          <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="voice only">
+          <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="speech-to-speech only">
         </div>
         <div class="b-field" data-filter-scope="speech-to-text">
           <label for="b-transcription-max-range">Max STT AUD/1k min</label>
@@ -1058,7 +1058,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
       <div class="voice-bench">
         <div class="voice-head">
-          <strong>Current voice candidates</strong>
+          <strong>Current speech-to-speech (voice) candidates</strong>
           <span id="voiceSource">loading...</span>
         </div>
         <div class="voice-table-wrap">
@@ -1080,7 +1080,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           </table>
         </div>
       </div>
-      <p class="bench-note">Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
+      <p class="bench-note">Speech-to-speech (voice) models are ranked from the cached Artificial Analysis extract. The useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="speech-to-text" hidden>
       <div class="voice-bench">
@@ -1118,11 +1118,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. For document processing, fast and cheap prioritizes image/input/output cost and latency after usable visual reasoning. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. For document processing, fast and cheap prioritizes image/input/output cost and latency after usable visual reasoning. For speech to speech (voice), fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Document processing blends visual reasoning, image/text cost, and latency. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Document processing blends visual reasoning, image/text cost, and latency. Speech to speech (voice) picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For document processing, highest accuracy prioritizes AA visual reasoning, then instruction following and intelligence. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For document processing, highest accuracy prioritizes AA visual reasoning, then instruction following and intelligence. For speech to speech (voice), highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
       <dt>AA Support Score</dt>
       <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS safety score.</dd>
       <dt>cost caps</dt>
@@ -1133,12 +1133,12 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dd>Australian dollars per weighted average Artificial Analysis Intelligence Index task. Source benchmark cost is stored in USD and converted with the current catalog exchange rate.</dd>
       <dt>Image AUD/1k</dt>
       <dd>Australian dollars per 1,000 one-megapixel image inputs where Artificial Analysis exposes image pricing.</dd>
-      <dt>voice AUD/hr</dt>
+      <dt>speech-to-speech (voice) AUD/hr</dt>
       <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
       <dt>STT AUD/1k min</dt>
       <dd>Australian dollars per 1,000 minutes of speech-to-text audio, converted from Artificial Analysis provider pricing where available.</dd>
       <dt>benchmark table</dt>
-      <dd>The live recommendation for customer support, document processing, voice, or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
+      <dd>The live recommendation for customer support, document processing, speech to speech (voice), or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
       <dt>IT Solver auto-close benchmark</dt>
       <dd><a href="/its-eval">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
       <dt>web development benchmark composite</dt>
@@ -1172,7 +1172,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   </div>
   <div class="endpoint">
     <code>GET /v1/benchmarks</code>
-    <p>Benchmark-backed rows for customer support, document processing, voice, and speech to text. Filter by provider, capability, cost caps, and minimum intelligence where relevant.</p>
+    <p>Benchmark-backed rows for customer support, document processing, speech to speech (voice), and speech to text. Filter by provider, capability, cost caps, and minimum intelligence where relevant.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
@@ -1240,7 +1240,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     <li>OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq are exposed.</li>
     <li>Each model includes AUD pricing and benchmark costs converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
-    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Document processing, voice, and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
+    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Document processing, speech-to-speech (voice), and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
     <li>For customer support, try <code>recommendation</code> first, then <code>failovers[0]</code>, then <code>failovers[1]</code> when a provider or model is overloaded.</li>
   </ul>
 
@@ -1514,8 +1514,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
       if (useCase === 'voice') {
         return {
-          title: 'Voice Benchmark',
-          hint: 'Voice priorities are explicit: fast and cheap sorts by input AUD/hr, output AUD/hr, then TTFA; highest quality sorts by τ-Voice, speech reasoning, and telecom score; balanced highlights the middle filtered quality row.'
+          title: 'Speech-To-Speech (Voice) Benchmark',
+          hint: 'Speech-to-speech (voice) priorities are explicit: fast and cheap sorts by input AUD/hr, output AUD/hr, then TTFA; highest quality sorts by τ-Voice, speech reasoning, and telecom score; balanced highlights the middle filtered quality row.'
         };
       }
       if (useCase === 'speech-to-text') {
@@ -2648,16 +2648,16 @@ export const HOME_HTML = String.raw`<!doctype html>
               : 'No customer support benchmark data is currently available.'
         },
         {
-          q: 'Which voice model is strongest overall?',
+          q: 'Which speech-to-speech (voice) model is strongest overall?',
           a: voice[0]
-            ? modelName(voice[0]) + ' currently ranks highest for voice in this registry based on τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
-            : 'No voice benchmark data is currently available.'
+            ? modelName(voice[0]) + ' currently ranks highest for speech-to-speech (voice) in this registry based on τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
+            : 'No speech-to-speech (voice) benchmark data is currently available.'
         },
         {
-          q: 'Which voice model is cheapest on benchmark input audio?',
+          q: 'Which speech-to-speech (voice) model is cheapest on benchmark input audio?',
           a: cheapestVoice[0]
-            ? modelName(cheapestVoice[0]) + ' is the cheapest voice candidate on AA benchmark input-audio cost at ' + money(voiceCost(cheapestVoice[0])) + ' AUD/hr.'
-            : 'No voice benchmark pricing is currently available.'
+            ? modelName(cheapestVoice[0]) + ' is the cheapest speech-to-speech (voice) candidate on AA benchmark input-audio cost at ' + money(voiceCost(cheapestVoice[0])) + ' AUD/hr.'
+            : 'No speech-to-speech (voice) benchmark pricing is currently available.'
         },
         {
           q: 'How do I choose the best speech to text model?',
@@ -2672,8 +2672,8 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'How are recommendations compared here?',
           a: includeIts
-            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
-            : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
+            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Speech-to-speech (voice) uses AA speech-to-speech benchmark pricing and latency.'
+            : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Speech-to-speech (voice) uses AA speech-to-speech benchmark pricing and latency.'
         }
       ];
 
@@ -2709,7 +2709,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       })
       .catch(function () {
         var rows = document.getElementById('voiceRows');
-        if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Voice benchmarks unavailable.</td></tr>';
+        if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Speech-to-speech (voice) benchmarks unavailable.</td></tr>';
         setText('voiceSource', 'unavailable');
       });
 

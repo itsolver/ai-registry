@@ -164,6 +164,16 @@ describe("filter parsing", () => {
       useCase: "speech-to-text",
     });
     expect(
+      parseFilters(new URLSearchParams("useCase=speech-to-speech")),
+    ).toMatchObject({
+      useCase: "voice",
+    });
+    expect(
+      parseFilters(new URLSearchParams("useCase=speech-to-speech-voice")),
+    ).toMatchObject({
+      useCase: "voice",
+    });
+    expect(
       parseFilters(
         new URLSearchParams(
           "provider=groq&maxTranscriptionCostPer1kMinutes=5&maxAaWer=3",

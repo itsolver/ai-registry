@@ -44,6 +44,13 @@ describe("homepage copy", () => {
       '<option value="document-processing">document processing (OCR)</option>',
     );
     expect(HOME_HTML).toContain(
+      '<option value="voice">speech to speech (voice)</option>',
+    );
+    expect(HOME_HTML).toContain("Speech-To-Speech (Voice) Benchmark");
+    expect(HOME_HTML).toContain(
+      "Current speech-to-speech (voice) candidates",
+    );
+    expect(HOME_HTML).toContain(
       '<div class="b-field" data-filter-scope="customer-support">\n          <label for="b-capability">Must have</label>',
     );
     expect(HOME_HTML).toContain(

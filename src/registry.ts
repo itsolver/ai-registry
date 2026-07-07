@@ -29,6 +29,7 @@ export const CAPABILITIES = [
 export const TIERS = ["fast", "balanced", "best"] as const;
 export const USE_CASES = [
   "customer-support",
+  "document-processing",
   "voice",
   "speech-to-text",
 ] as const;
@@ -87,6 +88,7 @@ export interface ModelPricing {
   benchmarkInputAudioPerHour?: number;
   benchmarkCostPerTask?: number;
   transcriptionCostPer1kMinutes?: number;
+  imageInputPer1kImages?: number;
 }
 
 export interface VoiceBenchmarks {
@@ -328,6 +330,9 @@ export interface BenchmarkSignals {
   terminalBench?: number;
   tauTelecom?: number;
   professional?: number;
+  visualReasoning?: number;
+  visualLatency?: number;
+  visualOutputSpeed?: number;
   lcr?: number;
   hle?: number;
   gpqa?: number;
@@ -380,6 +385,9 @@ interface ArtificialAnalysisLlmEfficiencyModel {
   sciCode?: number;
   codingIndex?: number;
   lcr?: number;
+  visualReasoning?: number;
+  visualLatency?: number;
+  visualOutputSpeed?: number;
   hle?: number;
   gpqa?: number;
   critpt?: number;
@@ -389,6 +397,9 @@ interface ArtificialAnalysisLlmEfficiencyModel {
   cacheHitPrice?: number;
   inputPrice?: number;
   outputPrice?: number;
+  imageInputPrice?: number;
+  imageInput?: boolean;
+  reasoning?: boolean;
   intelligenceRunAnswerCost?: number;
   intelligenceRunReasoningCost?: number;
   intelligenceRunInputCost?: number;
@@ -575,6 +586,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     ...(maxContextWindow !== undefined ? { maxContextWindow } : {}),
     includeItsBenchmark:
+      params.get("includeItsEval") !== "false" &&
       params.get("includeItsBenchmark") !== "false" &&
       params.get("includeITSBenchmark") !== "false",
     allowPreview: params.get("allowPreview") === "true",
@@ -889,6 +901,22 @@ function isUseCaseRecommendationCandidate(
   candidate: BenchmarkCandidate,
   filters: ModelFilters,
 ): boolean {
+  if (filters.useCase === "document-processing") {
+    return (
+      candidate.capabilities?.vision === true &&
+      candidate.capabilities?.reasoning === true &&
+      isProductionAvailabilityAllowed(
+        candidate.availability ??
+          productionAvailabilityForTextModel(
+            candidate.id,
+            candidate.name,
+            candidate.benchmarks.llm,
+          ),
+        filters,
+      )
+    );
+  }
+
   if (filters.useCase !== "customer-support") return true;
   if (isDeprecatedBenchmarkCandidate(candidate)) return false;
 
@@ -1125,6 +1153,14 @@ function useCaseQualitySignals(
     ];
   }
 
+  if (useCase === "document-processing") {
+    return [
+      signals.visualReasoning,
+      signals.instructionFollowing,
+      signals.intelligence,
+    ];
+  }
+
   return [];
 }
 
@@ -1183,6 +1219,8 @@ function asTier(value: string | null): Tier | undefined {
 function asUseCase(value: string | null): UseCase | undefined {
   if (value === "support") return "customer-support";
   if (value === "stt") return "speech-to-text";
+  if (value === "ocr" || value === "document-ocr")
+    return "document-processing";
   if (
     value === "billing" ||
     value === "billing-routine" ||

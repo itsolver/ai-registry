@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const SOURCE_URL = "https://artificialanalysis.ai/models";
+const VISION_SOURCE_URL = "https://artificialanalysis.ai/models/multimodal/vision";
 const OUT_PATH = resolve("src/generated/aa-llm-efficiency.ts");
 const CUSTOMER_SUPPORT_RECOMMENDATIONS_PATH = resolve(
   "src/generated/aa-customer-support-recommendations.ts",
@@ -29,6 +30,10 @@ const DATASETS = {
   pricing: "Pricing: Cache Hit, Input, and Output",
   speed: "Output Speed",
   omniscience: "AA-Omniscience Index",
+  visualReasoning: "Visual Reasoning Intelligence (MMMU Pro evaluation)",
+  imageInputPricing: "Image Input Pricing",
+  visionLatency: "Latency (Single Image & 1,000 Language Tokens Input)",
+  visionOutputSpeed: "Output Speed (Single Image & 1,000 Language Tokens Input)",
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -48,9 +53,11 @@ async function main() {
 
   const html = await response.text();
   const initialRecords = extractLlmEfficiencyRecords(html);
+  const visionHtml = await fetchOptionalPage(VISION_SOURCE_URL);
   const comparisonPages = await fetchComparisonPages(html, initialRecords);
   const records = extractLlmEfficiencyRecordsFromPages([
     html,
+    ...(visionHtml ? [visionHtml] : []),
     ...comparisonPages,
   ]).sort((left, right) => left.slug.localeCompare(right.slug));
 
@@ -67,6 +74,26 @@ export const AA_LLM_EFFICIENCY_MODELS = ${JSON.stringify(records, null, 2)} as c
   mkdirSync(dirname(OUT_PATH), { recursive: true });
   writeFileSync(OUT_PATH, content);
   console.log(`Wrote ${records.length} LLM efficiency records to ${OUT_PATH}`);
+}
+
+async function fetchOptionalPage(url) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "user-agent": "IT Solver AI Registry weekly extractor",
+      },
+    });
+    if (!response.ok) {
+      console.warn(`Skipping ${url}: Artificial Analysis returned ${response.status}`);
+      return undefined;
+    }
+    return await response.text();
+  } catch (error) {
+    console.warn(
+      `Skipping ${url}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
 }
 
 async function fetchComparisonPages(sourceHtml, initialRecords) {
@@ -307,6 +334,30 @@ function mergeDatasets(datasets, frontierModels, allModels = frontierModels) {
     }, false);
   }
 
+  for (const item of datasets.get(DATASETS.visualReasoning) ?? []) {
+    upsert(bySlug, item, {
+      visualReasoning: numberOrUndefined(item.visualReasoning),
+    }, false);
+  }
+
+  for (const item of datasets.get(DATASETS.imageInputPricing) ?? []) {
+    upsert(bySlug, item, {
+      imageInputPrice: numberOrUndefined(item.imageInputPrice),
+    }, false);
+  }
+
+  for (const item of datasets.get(DATASETS.visionLatency) ?? []) {
+    upsert(bySlug, item, {
+      visualLatency: numberOrUndefined(item.latency),
+    }, false);
+  }
+
+  for (const item of datasets.get(DATASETS.visionOutputSpeed) ?? []) {
+    upsert(bySlug, item, {
+      visualOutputSpeed: numberOrUndefined(item.outputSpeed),
+    }, false);
+  }
+
   return [...bySlug.values()]
     .map((record) => ({
       ...record,
@@ -334,7 +385,8 @@ function mergeDatasets(datasets, frontierModels, allModels = frontierModels) {
         record.tau2 !== undefined ||
         record.intelligenceRunTotalCost !== undefined ||
         record.intelligenceCostPerTask !== undefined ||
-        record.intelligenceRunOutputTokens !== undefined,
+        record.intelligenceRunOutputTokens !== undefined ||
+        record.visualReasoning !== undefined,
     );
 }
 
@@ -359,18 +411,27 @@ function nextFlightValues(model) {
     sciCode: numberOrUndefined(model.scicode),
     codingIndex: numberOrUndefined(model.coding_index),
     lcr: numberOrUndefined(model.lcr),
+    visualReasoning: numberOrUndefined(model.mmmu_pro),
     hle: numberOrUndefined(model.hle),
     gpqa: numberOrUndefined(model.gpqa),
     critpt: numberOrUndefined(model.critpt),
     omniscienceIndex: numberOrUndefined(model.omniscience?.omniscienceIndex ?? model.omniscience),
     outputSpeed: numberOrUndefined(model.timescaleData?.median_output_speed),
+    visualOutputSpeed: numberOrUndefined(model.timescaleData?.median_output_speed),
     latency: numberOrUndefined(
+      model.time_to_first_answer_token_metrics?.total_time ??
+        model.timescaleData?.median_time_to_first_chunk,
+    ),
+    visualLatency: numberOrUndefined(
       model.time_to_first_answer_token_metrics?.total_time ??
         model.timescaleData?.median_time_to_first_chunk,
     ),
     inputPrice: numberOrUndefined(model.price_1m_input_tokens),
     outputPrice: numberOrUndefined(model.price_1m_output_tokens),
+    imageInputPrice: numberOrUndefined(model.price_per_1k_1mp_images),
     cacheHitPrice: numberOrUndefined(model.cache_hit_price),
+    imageInput: booleanOrUndefined(model.input_modality_image),
+    reasoning: booleanOrUndefined(model.reasoning_model),
     intelligenceRunAnswerCost: numberOrUndefined(model.intelligence_index_cost?.answer_cost),
     intelligenceRunReasoningCost: numberOrUndefined(
       model.intelligence_index_cost?.reasoning_cost,
@@ -388,6 +449,10 @@ function nextFlightValues(model) {
       model.intelligence_index_token_counts?.output_tokens,
     ),
   };
+}
+
+function booleanOrUndefined(value) {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function upsertModelBacked(bySlug, allModelsBySlug, item, values) {

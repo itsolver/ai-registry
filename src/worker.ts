@@ -138,9 +138,34 @@ function nextRecommendedFailover(
   recommendations: RecommendedModel[],
   provider?: ProviderId,
 ): RecommendedModel | undefined {
+  const recommendation = recommendations[0];
+  if (!recommendation) return undefined;
+  const recommendationFamily = failoverFamilyKey(recommendation);
+
   return recommendations
     .slice(1)
-    .find((candidate) => !provider || candidate.provider === provider);
+    .find(
+      (candidate) =>
+        (!provider || candidate.provider === provider) &&
+        failoverFamilyKey(candidate) !== recommendationFamily,
+    );
+}
+
+function failoverFamilyKey(model: RecommendedModel): string {
+  const nameKey = normalizedFailoverFamily(model.name);
+  return `${model.provider}:${nameKey || normalizedFailoverFamily(model.id)}`;
+}
+
+function normalizedFailoverFamily(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(
+      /\s*\((?:minimal|low|medium|high|xhigh|reasoning|non-reasoning|thinking|adaptive reasoning|high effort|max effort)\)\s*/g,
+      " ",
+    )
+    .replace(/\b(?:minimal|low|medium|high|xhigh)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 async function routeApi(

@@ -695,6 +695,16 @@ describe("worker routes", () => {
       (await recommendationResponse.json()) as JsonObject;
     const normalized = (value: number | undefined) =>
       typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
+    const failoverFamily = (row: JsonObject) =>
+      `${row.provider}:${String(row.name)
+        .toLowerCase()
+        .replace(
+          /\s*\((?:minimal|low|medium|high|xhigh|reasoning|non-reasoning|thinking|adaptive reasoning|high effort|max effort)\)\s*/g,
+          " ",
+        )
+        .replace(/\b(?:minimal|low|medium|high|xhigh)\b/g, " ")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()}`;
     const eligible = rowsBody.benchmarks
       .filter((row: JsonObject) => row.recommendable)
       .sort(
@@ -706,12 +716,17 @@ describe("worker routes", () => {
           (right.benchmarks.llm.intelligence ?? -Infinity) -
             (left.benchmarks.llm.intelligence ?? -Infinity),
       );
+    const failover = eligible
+      .slice(1)
+      .find(
+        (row: JsonObject) => failoverFamily(row) !== failoverFamily(eligible[0]),
+      );
 
     expect(rowsResponse.status).toBe(200);
     expect(recommendationResponse.status).toBe(200);
     expect(eligible.length).toBeGreaterThan(1);
     expect(recommendationBody.recommendation.id).toBe(eligible[0].id);
-    expect(recommendationBody.recommendation.failover.id).toBe(eligible[1].id);
+    expect(recommendationBody.recommendation.failover.id).toBe(failover?.id);
     expect(recommendationBody.recommendation.failover).not.toHaveProperty(
       "failover",
     );
@@ -726,7 +741,7 @@ describe("worker routes", () => {
   it("keeps nested recommendation failover within the requested provider", async () => {
     const response = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/models/recommend?useCase=document-processing&provider=google&tier=best&minVisualReasoning=70",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=document-processing&provider=openai&tier=fast&minIntelligence=30",
       ),
       env(),
       ctx,
@@ -734,10 +749,25 @@ describe("worker routes", () => {
     const body = (await response.json()) as JsonObject;
 
     expect(response.status).toBe(200);
-    expect(body.recommendation.provider).toBe("google");
+    expect(body.recommendation.provider).toBe("openai");
     expect(body.recommendation.failover).toMatchObject({
-      provider: "google",
+      provider: "openai",
     });
+  });
+
+  it("does not use a same-family variant as a nested recommendation failover", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=document-processing&provider=google&tier=fast&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("gemini-3-5-flash");
+    expect(body.recommendation.failover).toBeNull();
   });
 
   it("applies Run AUD and intelligence filters to recommendations", async () => {

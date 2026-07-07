@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed the public `voice` use-case label to `speech to speech (voice)` while keeping `useCase=voice` compatible and accepting `speech-to-speech` aliases.
 - Added `includeItsEval=false` as the public customer-support benchmark-source alias while preserving legacy `includeItsBenchmark=false`.
 - Limited nested `recommendation.failover` to the requested provider when `provider` is supplied.
+- Skipped same-family variants when choosing nested `recommendation.failover` so same-provider fallbacks remain operationally distinct.
 
 ## 2026-06-06
 

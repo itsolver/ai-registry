@@ -29,6 +29,7 @@ export const CAPABILITIES = [
 export const TIERS = ["fast", "balanced", "best"] as const;
 export const USE_CASES = [
   "customer-support",
+  "document-processing",
   "voice",
   "speech-to-text",
 ] as const;
@@ -87,6 +88,7 @@ export interface ModelPricing {
   benchmarkInputAudioPerHour?: number;
   benchmarkCostPerTask?: number;
   transcriptionCostPer1kMinutes?: number;
+  imageInputPer1kImages?: number;
 }
 
 export interface VoiceBenchmarks {
@@ -264,6 +266,8 @@ export interface ModelFilters {
   minIntelligenceCostPerTaskUsd?: number;
   maxIntelligenceCostPerTaskUsd?: number;
   minIntelligence?: number;
+  minVisualReasoning?: number;
+  maxImageInputCostPer1kImagesAud?: number;
   maxAudioInputCostPerHour?: number;
   maxAudioOutputCostPerHour?: number;
   maxTranscriptionCostPer1kMinutes?: number;
@@ -300,6 +304,7 @@ export interface ArtificialAnalysisModel {
   price_1m_output_tokens?: unknown;
   input_cost_per_million_tokens?: unknown;
   output_cost_per_million_tokens?: unknown;
+  price_per_1k_1mp_images?: unknown;
 }
 
 export interface ArtificialAnalysisSpeechToTextModel {
@@ -335,6 +340,9 @@ export interface BenchmarkSignals {
   omniscience?: number;
   speed?: number;
   latency?: number;
+  visualReasoning?: number;
+  visualLatency?: number;
+  visualOutputSpeed?: number;
   intelligenceRunAnswerCost?: number;
   intelligenceRunReasoningCost?: number;
   intelligenceRunInputCost?: number;
@@ -386,6 +394,12 @@ interface ArtificialAnalysisLlmEfficiencyModel {
   omniscienceIndex?: number;
   outputSpeed?: number;
   latency?: number;
+  visualReasoning?: number;
+  visualLatency?: number;
+  visualOutputSpeed?: number;
+  imageInputPrice?: number;
+  imageInput?: boolean;
+  reasoning?: boolean;
   cacheHitPrice?: number;
   inputPrice?: number;
   outputPrice?: number;
@@ -522,6 +536,10 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     params.get("maxIntelligenceCostPerTaskUsd"),
   );
   const minIntelligence = asFiniteNumber(params.get("minIntelligence"));
+  const minVisualReasoning = asFiniteNumber(params.get("minVisualReasoning"));
+  const maxImageInputCostPer1kImagesAud =
+    asFiniteNumber(params.get("maxImageInputCostPer1kImagesAud")) ??
+    asFiniteNumber(params.get("maxImageInputCostPer1kImages"));
   const maxAudioInputCostPerHour =
     asFiniteNumber(params.get("maxAudioInputCostPerHour")) ??
     asFiniteNumber(params.get("maxAudioCostPerHour"));
@@ -562,6 +580,10 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
       ? { maxIntelligenceCostPerTaskUsd }
       : {}),
     ...(minIntelligence !== undefined ? { minIntelligence } : {}),
+    ...(minVisualReasoning !== undefined ? { minVisualReasoning } : {}),
+    ...(maxImageInputCostPer1kImagesAud !== undefined
+      ? { maxImageInputCostPer1kImagesAud }
+      : {}),
     ...(maxAudioInputCostPerHour !== undefined
       ? { maxAudioInputCostPerHour }
       : {}),
@@ -575,6 +597,7 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     ...(minContextWindow !== undefined ? { minContextWindow } : {}),
     ...(maxContextWindow !== undefined ? { maxContextWindow } : {}),
     includeItsBenchmark:
+      params.get("includeItsEval") !== "false" &&
       params.get("includeItsBenchmark") !== "false" &&
       params.get("includeITSBenchmark") !== "false",
     allowPreview: params.get("allowPreview") === "true",
@@ -635,6 +658,12 @@ export function filterModels(
     if (filters.useCase === "speech-to-text" && !isSpeechToTextModel(model)) {
       return false;
     }
+    if (
+      filters.useCase === "document-processing" &&
+      !isDocumentProcessingModel(model)
+    ) {
+      return false;
+    }
     if (filters.tier && model.tier !== filters.tier) return false;
     if (filters.capability && model.capabilities[filters.capability] !== true) {
       return false;
@@ -671,6 +700,21 @@ export function filterModels(
       filters.minIntelligence !== undefined &&
       (model.benchmarks?.llm?.intelligence === undefined ||
         model.benchmarks.llm.intelligence < filters.minIntelligence)
+    ) {
+      return false;
+    }
+    if (
+      filters.minVisualReasoning !== undefined &&
+      ((normalizedBenchmarkScore(model.benchmarks?.llm?.visualReasoning) ??
+        Number.NEGATIVE_INFINITY) < filters.minVisualReasoning)
+    ) {
+      return false;
+    }
+    if (
+      filters.maxImageInputCostPer1kImagesAud !== undefined &&
+      (model.pricing.imageInputPer1kImages === undefined ||
+        model.pricing.imageInputPer1kImages >
+          filters.maxImageInputCostPer1kImagesAud)
     ) {
       return false;
     }
@@ -791,6 +835,12 @@ export function benchmarkCandidates(
     ) {
       return false;
     }
+    if (
+      useCase === "document-processing" &&
+      !hasDocumentProcessingBenchmarkSignals(candidate.benchmarks.llm)
+    ) {
+      return false;
+    }
     return passesCostFilters(candidate, effectiveFilters);
   });
 }
@@ -835,6 +885,10 @@ function rankedBenchmarkRecommendations(
     return rankBalancedCustomerSupportCandidates(matches, effectiveFilters);
   }
 
+  if (effectiveFilters.useCase === "document-processing" && tier === "balanced") {
+    return rankBalancedDocumentProcessingCandidates(matches, effectiveFilters);
+  }
+
   return [...matches].sort((left, right) =>
     compareBenchmarkCandidates(left, right, tier, effectiveFilters),
   );
@@ -873,6 +927,18 @@ function rankBalancedCustomerSupportCandidates(
   return moveMiddleCandidateFirst(safetyOrdered);
 }
 
+function rankBalancedDocumentProcessingCandidates(
+  matches: BenchmarkCandidate[],
+  filters: ModelFilters,
+): BenchmarkCandidate[] {
+  return [...matches].sort(
+    (left, right) =>
+      scoreBenchmarkCandidate(right, filters, "balanced") -
+        scoreBenchmarkCandidate(left, filters, "balanced") ||
+      compareDocumentProcessingAccuracyCandidates(left, right),
+  );
+}
+
 function moveMiddleCandidateFirst(
   matches: BenchmarkCandidate[],
 ): BenchmarkCandidate[] {
@@ -889,6 +955,22 @@ function isUseCaseRecommendationCandidate(
   candidate: BenchmarkCandidate,
   filters: ModelFilters,
 ): boolean {
+  if (filters.useCase === "document-processing") {
+    return (
+      candidate.capabilities?.vision === true &&
+      candidate.capabilities?.reasoning === true &&
+      isProductionAvailabilityAllowed(
+        candidate.availability ??
+          productionAvailabilityForTextModel(
+            candidate.id,
+            candidate.name,
+            candidate.benchmarks.llm,
+          ),
+        filters,
+      )
+    );
+  }
+
   if (filters.useCase !== "customer-support") return true;
   if (isDeprecatedBenchmarkCandidate(candidate)) return false;
 
@@ -1025,6 +1107,21 @@ function passesCostFilters(
     return false;
   }
   if (
+    filters.minVisualReasoning !== undefined &&
+    ((normalizedBenchmarkScore(candidate.benchmarks.llm?.visualReasoning) ??
+      Number.NEGATIVE_INFINITY) < filters.minVisualReasoning)
+  ) {
+    return false;
+  }
+  if (
+    filters.maxImageInputCostPer1kImagesAud !== undefined &&
+    (candidate.pricing.imageInputPer1kImages === undefined ||
+      candidate.pricing.imageInputPer1kImages >
+        filters.maxImageInputCostPer1kImagesAud)
+  ) {
+    return false;
+  }
+  if (
     filters.maxAudioInputCostPerHour !== undefined &&
     (candidate.pricing.benchmarkInputAudioPerHour === undefined ||
       candidate.pricing.benchmarkInputAudioPerHour >
@@ -1125,6 +1222,14 @@ function useCaseQualitySignals(
     ];
   }
 
+  if (useCase === "document-processing") {
+    return [
+      normalizedBenchmarkScore(signals.visualReasoning),
+      signals.instructionFollowing,
+      signals.intelligence,
+    ];
+  }
+
   return [];
 }
 
@@ -1150,6 +1255,18 @@ function isSpeechToTextModel(model: RegistryModel): boolean {
     isNumber(model.benchmarks?.speechToText?.aaWer) &&
     model.pricing.transcriptionCostPer1kMinutes !== undefined &&
     model.pricing.transcriptionCostPer1kMinutes > 0
+  );
+}
+
+function isDocumentProcessingModel(model: RegistryModel): boolean {
+  return (
+    !model.deprecated &&
+    !model.openWeights &&
+    model.modalities.input.includes("text") &&
+    model.modalities.output.includes("text") &&
+    model.capabilities.vision === true &&
+    model.capabilities.reasoning === true &&
+    providerFamilyAllowed(model)
   );
 }
 
@@ -1183,6 +1300,12 @@ function asTier(value: string | null): Tier | undefined {
 function asUseCase(value: string | null): UseCase | undefined {
   if (value === "support") return "customer-support";
   if (value === "stt") return "speech-to-text";
+  if (value === "speech-to-speech" || value === "speech-to-speech-voice") {
+    return "voice";
+  }
+  if (value === "ocr" || value === "document-ocr") {
+    return "document-processing";
+  }
   if (
     value === "billing" ||
     value === "billing-routine" ||
@@ -1373,6 +1496,10 @@ function buildBenchmarkCandidates(
       pricing,
       contextWindow:
         existing?.contextWindow ?? efficiencyModel.contextWindowTokens,
+      capabilities: capabilitiesFromLlmEfficiency(
+        efficiencyModel,
+        existing?.capabilities,
+      ),
     });
     candidates.set(candidate.id, candidate);
   }
@@ -1637,6 +1764,23 @@ function capabilitiesFromCustomerSupportRecommendation(
   };
 }
 
+function capabilitiesFromLlmEfficiency(
+  model: ArtificialAnalysisLlmEfficiencyModel,
+  existing?: Record<Capability, boolean> | null,
+): Record<Capability, boolean> | null {
+  if (model.imageInput === undefined && model.reasoning === undefined) {
+    return existing ?? null;
+  }
+
+  return {
+    vision: model.imageInput ?? existing?.vision ?? false,
+    reasoning: model.reasoning ?? existing?.reasoning ?? false,
+    pdf: existing?.pdf ?? false,
+    toolCalling: existing?.toolCalling ?? false,
+    structuredOutput: existing?.structuredOutput ?? false,
+  };
+}
+
 function inferredTextCapabilities(
   id: string,
   name: string,
@@ -1876,6 +2020,7 @@ function hasAnyTextQualitySignal(signals: BenchmarkSignals): boolean {
     signals.terminalBench,
     signals.tauTelecom,
     signals.professional,
+    signals.visualReasoning,
   ].some(isNumber);
 }
 
@@ -1889,6 +2034,12 @@ function hasCustomerSupportBenchmarkSignals(
     isNumber(signals.instructionFollowing) &&
     [signals.agentic, signals.tauTelecom, signals.professional].some(isNumber)
   );
+}
+
+function hasDocumentProcessingBenchmarkSignals(
+  signals: BenchmarkSignals | undefined,
+): boolean {
+  return isNumber(signals?.visualReasoning);
 }
 
 function findRegistryModel(
@@ -1995,6 +2146,14 @@ function pricingFromArtificialAnalysis(
   const pricing: ModelPricing = {
     ...optionalTokenPrice("inputPerMTok", input),
     ...optionalTokenPrice("outputPerMTok", output),
+    ...optionalNumberPrice(
+      "imageInputPer1kImages",
+      positiveNumberOrUndefined(
+        numberOrUndefined(
+          (model as Record<string, unknown>).price_per_1k_1mp_images,
+        ),
+      ),
+    ),
   };
 
   return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
@@ -2023,6 +2182,7 @@ function pricingFromArtificialAnalysisEfficiency(
     ...optionalTokenPrice("inputPerMTok", model.inputPrice),
     ...optionalTokenPrice("outputPerMTok", model.outputPrice),
     ...optionalTokenPrice("cacheReadPerMTok", model.cacheHitPrice),
+    ...optionalNumberPrice("imageInputPer1kImages", model.imageInputPrice),
   };
 
   return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
@@ -2237,11 +2397,17 @@ function benchmarkSignalsFromArtificialAnalysisEfficiency(
   if (model.critpt !== undefined) signals.critpt = model.critpt;
   if (model.omniscienceIndex !== undefined)
     signals.omniscience = model.omniscienceIndex;
+  if (model.visualReasoning !== undefined)
+    signals.visualReasoning = model.visualReasoning;
 
   const speed = positiveNumberOrUndefined(model.outputSpeed);
   if (speed !== undefined) signals.speed = speed;
   const latency = positiveNumberOrUndefined(model.latency);
   if (latency !== undefined) signals.latency = latency;
+  const visualSpeed = positiveNumberOrUndefined(model.visualOutputSpeed);
+  if (visualSpeed !== undefined) signals.visualOutputSpeed = visualSpeed;
+  const visualLatency = positiveNumberOrUndefined(model.visualLatency);
+  if (visualLatency !== undefined) signals.visualLatency = visualLatency;
 
   const answerCost = audValueOrUndefined(model.intelligenceRunAnswerCost, rate);
   if (answerCost !== undefined) signals.intelligenceRunAnswerCost = answerCost;
@@ -2413,6 +2579,10 @@ function normalizeBenchmarkScore(value: unknown): number | undefined {
   return score;
 }
 
+function normalizedBenchmarkScore(value: number | undefined): number | undefined {
+  return normalizeBenchmarkScore(value);
+}
+
 function optionalSignal<K extends keyof BenchmarkSignals>(
   key: K,
   value: number | undefined,
@@ -2572,6 +2742,13 @@ function compareBenchmarkCandidates(
     );
   }
 
+  if (filters.useCase === "document-processing") {
+    if (tier === "fast") {
+      return compareDocumentProcessingFastCandidates(left, right);
+    }
+    return compareDocumentProcessingAccuracyCandidates(left, right);
+  }
+
   if (filters.useCase === "speech-to-text") {
     return compareSpeechToTextBenchmarkCandidates(left, right, tier);
   }
@@ -2660,6 +2837,64 @@ function compareVoiceBenchmarkCandidates(
   }
 
   return compareVoiceQualityOrder(left, right);
+}
+
+function compareDocumentProcessingAccuracyCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+): number {
+  return (
+    compareOptionalDesc(
+      normalizedBenchmarkScore(left.benchmarks.llm?.visualReasoning),
+      normalizedBenchmarkScore(right.benchmarks.llm?.visualReasoning),
+    ) ||
+    compareOptionalDesc(
+      normalizedBenchmarkScore(left.benchmarks.llm?.instructionFollowing),
+      normalizedBenchmarkScore(right.benchmarks.llm?.instructionFollowing),
+    ) ||
+    compareOptionalDesc(
+      left.benchmarks.llm?.intelligence,
+      right.benchmarks.llm?.intelligence,
+    ) ||
+    compareOptionalDesc(
+      normalizedBenchmarkScore(left.benchmarks.llm?.lcr),
+      normalizedBenchmarkScore(right.benchmarks.llm?.lcr),
+    ) ||
+    compareOptionalAsc(
+      left.pricing.imageInputPer1kImages,
+      right.pricing.imageInputPer1kImages,
+    ) ||
+    compareOptionalAsc(
+      left.pricing.outputPerMTok,
+      right.pricing.outputPerMTok,
+    ) ||
+    compareBenchmarkCandidateForTier(left, right, "best")
+  );
+}
+
+function compareDocumentProcessingFastCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+): number {
+  return (
+    compareOptionalAsc(
+      left.pricing.imageInputPer1kImages,
+      right.pricing.imageInputPer1kImages,
+    ) ||
+    compareOptionalAsc(
+      left.pricing.inputPerMTok,
+      right.pricing.inputPerMTok,
+    ) ||
+    compareOptionalAsc(
+      left.pricing.outputPerMTok,
+      right.pricing.outputPerMTok,
+    ) ||
+    compareOptionalAsc(
+      left.benchmarks.llm?.visualLatency ?? left.benchmarks.llm?.latency,
+      right.benchmarks.llm?.visualLatency ?? right.benchmarks.llm?.latency,
+    ) ||
+    compareDocumentProcessingAccuracyCandidates(left, right)
+  );
 }
 
 function compareVoiceQualityOrder(
@@ -2992,6 +3227,18 @@ function benchmarkCandidateQualityScore(
     );
   }
 
+  if (useCase === "document-processing") {
+    return weightedAverage(
+      [
+        [normalizedBenchmarkScore(signals?.visualReasoning), 0.7],
+        [normalizedBenchmarkScore(signals?.instructionFollowing), 0.15],
+        [signals?.intelligence, 0.1],
+        [normalizedBenchmarkScore(signals?.lcr), 0.05],
+      ],
+      60,
+    );
+  }
+
   return weightedAverage(
     [
       [signals?.instructionFollowing, 0.3],
@@ -3019,7 +3266,11 @@ function benchmarkCandidateLatencyScore(
     });
   }
 
-  const latency = candidate.benchmarks.llm?.latency;
+  const latency =
+    useCase === "document-processing"
+      ? (candidate.benchmarks.llm?.visualLatency ??
+        candidate.benchmarks.llm?.latency)
+      : candidate.benchmarks.llm?.latency;
   if (latency === undefined) return 50;
   return 100 - Math.min(latency / 20, 1) * 100;
 }
@@ -3097,6 +3348,9 @@ function scoringWeights(
     if (useCase === "speech-to-text") {
       return { quality: 0.2, latency: 0, speed: 0.35, context: 0, cost: 0.45 };
     }
+    if (useCase === "document-processing") {
+      return { quality: 0.3, latency: 0.18, speed: 0.02, context: 0, cost: 0.5 };
+    }
     return { quality: 0.2, latency: 0.04, speed: 0.04, context: 0, cost: 0.72 };
   }
 
@@ -3107,6 +3361,9 @@ function scoringWeights(
     if (useCase === "speech-to-text") {
       return { quality: 0.85, latency: 0, speed: 0.1, context: 0, cost: 0.05 };
     }
+    if (useCase === "document-processing") {
+      return { quality: 0.9, latency: 0.05, speed: 0, context: 0, cost: 0.05 };
+    }
     return { quality: 0.9, latency: 0.02, speed: 0.02, context: 0, cost: 0.06 };
   }
 
@@ -3115,6 +3372,9 @@ function scoringWeights(
   }
   if (useCase === "speech-to-text") {
     return { quality: 0.65, latency: 0, speed: 0.1, context: 0, cost: 0.25 };
+  }
+  if (useCase === "document-processing") {
+    return { quality: 0.62, latency: 0.12, speed: 0.06, context: 0, cost: 0.2 };
   }
 
   return { quality: 0.54, latency: 0.04, speed: 0.04, context: 0, cost: 0.38 };
@@ -3153,6 +3413,18 @@ function qualityScore(
         [signals.instructionFollowing, 0.3],
         [signals.intelligence, 0.25],
         [signals.professional, 0.1],
+      ],
+      fallback,
+    );
+  }
+
+  if (useCase === "document-processing") {
+    return weightedAverage(
+      [
+        [normalizedBenchmarkScore(signals.visualReasoning), 0.7],
+        [normalizedBenchmarkScore(signals.instructionFollowing), 0.15],
+        [signals.intelligence, 0.1],
+        [normalizedBenchmarkScore(signals.lcr), 0.05],
       ],
       fallback,
     );
@@ -3199,13 +3471,18 @@ function latencyScore(
     return speedScore({ speed: model?.benchmarks?.speechToText?.speedFactor });
   }
 
-  if (signals?.latency === undefined) return 50;
-  return 100 - Math.min(signals.latency / 20, 1) * 100;
+  const latency =
+    useCase === "document-processing"
+      ? (signals?.visualLatency ?? signals?.latency)
+      : signals?.latency;
+  if (latency === undefined) return 50;
+  return 100 - Math.min(latency / 20, 1) * 100;
 }
 
 function speedScore(signals: BenchmarkSignals | undefined): number {
-  if (signals?.speed === undefined) return 50;
-  return Math.min(signals.speed / 220, 1) * 100;
+  const speed = signals?.visualOutputSpeed ?? signals?.speed;
+  if (speed === undefined) return 50;
+  return Math.min(speed / 220, 1) * 100;
 }
 
 function contextScore(model: RegistryModel): number {
@@ -3266,6 +3543,22 @@ function costScore(
       [
         [runCostScore, 0.55],
         [priceScore, 0.2],
+      ],
+      priceScore,
+    );
+  }
+
+  if (useCase === "document-processing") {
+    const imageCost = model.pricing.imageInputPer1kImages;
+    const imageScore =
+      imageCost === undefined
+        ? undefined
+        : 100 - Math.min(Math.log1p(imageCost) / Math.log1p(10), 1) * 100;
+    return weightedAverage(
+      [
+        [imageScore, 0.45],
+        [priceScore, 0.35],
+        [runCostScore, tier === "fast" ? 0.2 : 0.1],
       ],
       priceScore,
     );
@@ -3335,6 +3628,7 @@ function compareCheapest(left: RegistryModel, right: RegistryModel): number {
 function cheapestPrice(model: RegistryModel): number {
   return (
     model.pricing.inputPerMTok ??
+    model.pricing.imageInputPer1kImages ??
     voiceCost(model) ??
     transcriptionCost(model) ??
     model.pricing.outputPerMTok ??
@@ -3404,6 +3698,7 @@ function candidateTranscriptionCost(
 function candidateCheapestPrice(candidate: BenchmarkCandidate): number {
   return (
     candidate.pricing.inputPerMTok ??
+    candidate.pricing.imageInputPer1kImages ??
     candidateVoiceCost(candidate) ??
     candidateTranscriptionCost(candidate) ??
     candidate.pricing.outputPerMTok ??
@@ -3474,7 +3769,8 @@ function optionalNumberPrice(
     | "audioOutputPerHour"
     | "benchmarkInputAudioPerHour"
     | "benchmarkCostPerTask"
-    | "transcriptionCostPer1kMinutes",
+    | "transcriptionCostPer1kMinutes"
+    | "imageInputPer1kImages",
   value: number | undefined,
 ): Partial<ModelPricing> {
   return value === undefined ? {} : { [key]: value };
@@ -3578,6 +3874,11 @@ function convertPricing(
     ...optionalAudPrice(
       "transcriptionCostPer1kMinutes",
       pricing.transcriptionCostPer1kMinutes,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "imageInputPer1kImages",
+      pricing.imageInputPer1kImages,
       exchangeRate.rate,
     ),
   };

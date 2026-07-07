@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-07-07
+
+### Added
+
+- Added document-processing OCR recommendations using Artificial Analysis visual reasoning, image pricing, latency, instruction following, intelligence, and Task AUD signals.
+- Added `document-processing`, `ocr`, and `document-ocr` use-case parsing.
+- Added document-processing filters for `minVisualReasoning` and `maxImageInputCostPer1kImagesAud`, with `maxImageInputCostPer1kImages` accepted as a compatibility alias.
+- Added `recommendation.failover` to recommendation responses for the next-best model under the same filters.
+
+### Changed
+
+- Split homepage query builder endpoint choices into recommendations, benchmark rows, and raw registry models so copied/opened URLs match the visible table source.
+- Made homepage query-builder filters use explicit use-case profiles so document processing, customer support, speech-to-speech (voice), and speech-to-text only serialize their active controls.
+- Renamed the public `voice` use-case label to `speech to speech (voice)` while keeping `useCase=voice` compatible and accepting `speech-to-speech` aliases.
+- Added `includeItsEval=false` as the public customer-support benchmark-source alias while preserving legacy `includeItsBenchmark=false`.
+- Limited nested `recommendation.failover` to the requested provider when `provider` is supplied.
+- Skipped same-family variants when choosing nested `recommendation.failover` so same-provider fallbacks remain operationally distinct.
+
 ## 2026-06-06
 
 ### Added

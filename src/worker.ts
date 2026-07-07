@@ -9,15 +9,17 @@ import {
   latestForProvider,
   normalizeArtificialAnalysisCatalog,
   parseFilters,
-  recommendModel,
   recommendModelFailovers,
+  rankedRecommendedModels,
   type ArtificialAnalysisModel,
   type ArtificialAnalysisSpeechToTextModel,
   type Catalog,
   type ExchangeRate,
+  type ProviderId,
+  type RecommendedModel,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v25";
+const CACHE_KEY = "catalog:v26";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
 const DEFAULT_FX_RATE_URL =
@@ -74,6 +76,10 @@ export async function handleRequest(
   }
 
   if (route === "/its") {
+    return Response.redirect(new URL("/its-eval", request.url), 301);
+  }
+
+  if (route === "/its-eval") {
     return htmlResponse(ITS_BENCHMARK_HTML);
   }
 
@@ -112,6 +118,56 @@ export async function refreshCatalog(env: Env): Promise<Catalog> {
   return catalog;
 }
 
+function withoutNestedFailover(model: RecommendedModel): RecommendedModel {
+  const { failover: _failover, ...modelWithoutFailover } =
+    model as RecommendedModel & { failover?: unknown };
+  return modelWithoutFailover as RecommendedModel;
+}
+
+function withNestedFailover(
+  recommendation: RecommendedModel,
+  failover: RecommendedModel | undefined,
+): RecommendedModel & { failover: RecommendedModel | null } {
+  return {
+    ...withoutNestedFailover(recommendation),
+    failover: failover ? withoutNestedFailover(failover) : null,
+  };
+}
+
+function nextRecommendedFailover(
+  recommendations: RecommendedModel[],
+  provider?: ProviderId,
+): RecommendedModel | undefined {
+  const recommendation = recommendations[0];
+  if (!recommendation) return undefined;
+  const recommendationFamily = failoverFamilyKey(recommendation);
+
+  return recommendations
+    .slice(1)
+    .find(
+      (candidate) =>
+        (!provider || candidate.provider === provider) &&
+        failoverFamilyKey(candidate) !== recommendationFamily,
+    );
+}
+
+function failoverFamilyKey(model: RecommendedModel): string {
+  const nameKey = normalizedFailoverFamily(model.name);
+  return `${model.provider}:${nameKey || normalizedFailoverFamily(model.id)}`;
+}
+
+function normalizedFailoverFamily(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(
+      /\s*\((?:minimal|low|medium|high|xhigh|reasoning|non-reasoning|thinking|adaptive reasoning|high effort|max effort)\)\s*/g,
+      " ",
+    )
+    .replace(/\b(?:minimal|low|medium|high|xhigh)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 async function routeApi(
   route: string,
   params: URLSearchParams,
@@ -137,7 +193,8 @@ async function routeApi(
 
   if (route === "/models/recommend") {
     const filters = parseFilters(params);
-    const recommendation = recommendModel(catalog, filters);
+    const rankedRecommendations = rankedRecommendedModels(catalog, filters);
+    const recommendation = rankedRecommendations[0];
     if (!recommendation) {
       return jsonResponse(
         {
@@ -147,6 +204,10 @@ async function routeApi(
         404,
       );
     }
+    const recommendationWithFailover = withNestedFailover(
+      recommendation,
+      nextRecommendedFailover(rankedRecommendations, filters.provider),
+    );
 
     const requestedFailovers = 2;
     const failovers = recommendModelFailovers(
@@ -165,7 +226,7 @@ async function routeApi(
 
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
-      recommendation,
+      recommendation: recommendationWithFailover,
       failovers,
       failoverStatus,
     });
@@ -173,14 +234,23 @@ async function routeApi(
 
   if (route === "/benchmarks") {
     const filters = parseFilters(params);
+    const candidateRows = benchmarkCandidates(catalog, filters);
     const rows =
       filters.useCase === "customer-support"
-        ? benchmarkCandidates(catalog, filters)
-        : benchmarkCandidates(catalog, filters).filter(
-            (row) =>
-              !filters.useCase ||
-              isBenchmarkCandidateRecommendedForFilters(row, filters),
-          );
+        ? candidateRows
+        : filters.useCase === "document-processing"
+          ? candidateRows.map((row) => ({
+              ...row,
+              recommendable: isBenchmarkCandidateRecommendedForFilters(
+                row,
+                filters,
+              ),
+            }))
+          : candidateRows.filter(
+              (row) =>
+                !filters.useCase ||
+                isBenchmarkCandidateRecommendedForFilters(row, filters),
+            );
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
       benchmarkCount: rows.length,

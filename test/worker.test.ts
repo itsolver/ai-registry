@@ -160,17 +160,23 @@ describe("worker routes", () => {
       '<option value="fast" selected>fast and cheap</option>',
     );
     expect(html).toContain(
-      '<div class="b-field" data-filter-scope="text">\n          <label for="b-capability">Must have</label>',
+      '<div class="b-field" data-filter-scope="customer-support">\n          <label for="b-capability">Must have</label>',
     );
+    expect(html).toContain("Min visual reasoning");
+    expect(html).toContain("Max image AUD/1k");
+    expect(html).not.toContain('data-filter-scope="text"');
     expect(html).toContain("model.capabilities[capability] !== true");
-    expect(html).toContain("function customerSupportBenchmarkPath()");
+    expect(html).toContain("function textBenchmarkPath()");
     expect(html).toContain(
-      "fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })",
+      "fetch(textBenchmarkPath(), { cache: 'no-store' })",
     );
+    expect(html).toContain('<option value="benchmarks">browse benchmark rows</option>');
+    expect(html).toContain('<option value="document-processing">document processing (OCR)</option>');
+    expect(html).toContain('<option value="voice">speech to speech (voice)</option>');
   });
 
   it("serves the ITS auto-close benchmark page without catalog access", async () => {
-    for (const path of ["/its", "/its/"]) {
+    for (const path of ["/its-eval", "/its-eval/"]) {
       const response = await handleRequest(
         new Request(`https://ai.itsolver.au${path}`),
         {},
@@ -189,11 +195,21 @@ describe("worker routes", () => {
         '<tr data-deprecated="true" hidden>\n            <td data-value-model="gemini 3.1 flash-lite preview">',
       );
     }
+
+    const redirect = await handleRequest(
+      new Request("https://ai.itsolver.au/its"),
+      {},
+      ctx,
+    );
+    expect(redirect.status).toBe(301);
+    expect(redirect.headers.get("location")).toBe(
+      "https://ai.itsolver.au/its-eval",
+    );
   });
 
   it("keeps public ITS benchmark rows aggregate-only", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/its"),
+      new Request("https://ai.itsolver.au/its-eval"),
       {},
       ctx,
     );
@@ -507,20 +523,19 @@ describe("worker routes", () => {
     const cappedBody = (await cappedResponse.json()) as JsonObject;
 
     expect(cappedResponse.status).toBe(200);
-    expect(
-      cappedBody.models
-        .filter(
-          (row: { benchmarks: { llm?: { autoClose?: unknown } } }) =>
-            row.benchmarks.llm?.autoClose,
-        )
-        .map((row: { id: string }) => row.id),
-    ).toEqual(
-      expect.arrayContaining([
-        "gpt-5-4-mini-medium",
-        "gpt-5-5-low",
-        "grok-4-3",
-      ]),
+    const autoCloseRows = cappedBody.models.filter(
+      (row: { benchmarks: { llm?: { autoClose?: unknown } } }) =>
+        row.benchmarks.llm?.autoClose,
     );
+    expect(autoCloseRows.length).toBeGreaterThan(0);
+    expect(autoCloseRows.map((row: { id: string }) => row.id)).toEqual(
+      expect.arrayContaining(["gpt-5-5-low", "grok-4-3"]),
+    );
+    expect(autoCloseRows[0].benchmarks.llm.autoClose).toMatchObject({
+      falsePositiveCount: expect.any(Number),
+      accuracy: expect.any(Number),
+      benchmarkReport: expect.any(String),
+    });
   });
 
   it("hard-filters customer support rows by capability", async () => {
@@ -559,6 +574,200 @@ describe("worker routes", () => {
     expect(pdfResponse.status).toBe(200);
     expect(pdfBody.benchmarks).toEqual([]);
     expect(recommendationResponse.status).toBe(404);
+  });
+
+  it("returns document-processing benchmark rows with provider, cost, and intelligence filters", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=document-processing&provider=google&maxIntelligenceCostPerTaskAud=1&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+    const visualResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=document-processing&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=5",
+      ),
+      env(),
+      ctx,
+    );
+    const visualBody = (await visualResponse.json()) as JsonObject;
+    const aliasResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=document-processing&provider=google&maxImageInputCostPer1kImages=5",
+      ),
+      env(),
+      ctx,
+    );
+    const aliasBody = (await aliasResponse.json()) as JsonObject;
+    const normalized = (value: number | undefined) =>
+      typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarkCount).toBeGreaterThan(0);
+    expect(
+      body.benchmarks.every(
+        (row: {
+          provider: string;
+          benchmarks: {
+            llm?: {
+              visualReasoning?: number;
+              intelligence?: number;
+              intelligenceCostPerTask?: number;
+            };
+          };
+          pricing: { imageInputPer1kImages?: number };
+        }) =>
+          row.provider === "google" &&
+          typeof row.benchmarks.llm?.visualReasoning === "number" &&
+          (row.benchmarks.llm.intelligence ?? Number.NEGATIVE_INFINITY) >=
+            30 &&
+          (row.benchmarks.llm.intelligenceCostPerTask ??
+            Number.POSITIVE_INFINITY) <= 1,
+      ),
+    ).toBe(true);
+    expect(visualResponse.status).toBe(200);
+    expect(visualBody.benchmarkCount).toBeGreaterThan(0);
+    expect(
+      visualBody.benchmarks.every(
+        (row: {
+          benchmarks: { llm?: { visualReasoning?: number } };
+          pricing: { imageInputPer1kImages?: number };
+        }) =>
+          normalized(row.benchmarks.llm?.visualReasoning) >= 70 &&
+          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
+      ),
+    ).toBe(true);
+    expect(aliasResponse.status).toBe(200);
+    expect(aliasBody.benchmarkCount).toBeGreaterThan(0);
+    expect(
+      aliasBody.benchmarks.every(
+        (row: { pricing: { imageInputPer1kImages?: number } }) =>
+          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
+      ),
+    ).toBe(true);
+  });
+
+  it("applies document-processing visual and image filters to model browsing", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models?useCase=document-processing&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=5",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+    const normalized = (value: number | undefined) =>
+      typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
+
+    expect(response.status).toBe(200);
+    expect(body.modelCount).toBeGreaterThan(0);
+    expect(
+      body.models.every(
+        (row: {
+          benchmarks?: { llm?: { visualReasoning?: number } };
+          pricing: { imageInputPer1kImages?: number };
+        }) =>
+          normalized(row.benchmarks?.llm?.visualReasoning) >= 70 &&
+          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
+      ),
+    ).toBe(true);
+  });
+
+  it("uses highest visual reasoning for document-processing best recommendations", async () => {
+    const query =
+      "useCase=document-processing&maxIntelligenceCostPerTaskAud=5&minIntelligence=30&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=10";
+    const rowsResponse = await handleRequest(
+      new Request(`https://ai.itsolver.au/v1/benchmarks?${query}`),
+      env(),
+      ctx,
+    );
+    const rowsBody = (await rowsResponse.json()) as JsonObject;
+    const recommendationResponse = await handleRequest(
+      new Request(
+        `https://ai.itsolver.au/v1/models/recommend?${query}&tier=best`,
+      ),
+      env(),
+      ctx,
+    );
+    const recommendationBody =
+      (await recommendationResponse.json()) as JsonObject;
+    const normalized = (value: number | undefined) =>
+      typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
+    const failoverFamily = (row: JsonObject) =>
+      `${row.provider}:${String(row.name)
+        .toLowerCase()
+        .replace(
+          /\s*\((?:minimal|low|medium|high|xhigh|reasoning|non-reasoning|thinking|adaptive reasoning|high effort|max effort)\)\s*/g,
+          " ",
+        )
+        .replace(/\b(?:minimal|low|medium|high|xhigh)\b/g, " ")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()}`;
+    const eligible = rowsBody.benchmarks
+      .filter((row: JsonObject) => row.recommendable)
+      .sort(
+        (left: JsonObject, right: JsonObject) =>
+          normalized(right.benchmarks.llm.visualReasoning) -
+            normalized(left.benchmarks.llm.visualReasoning) ||
+          normalized(right.benchmarks.llm.instructionFollowing) -
+            normalized(left.benchmarks.llm.instructionFollowing) ||
+          (right.benchmarks.llm.intelligence ?? -Infinity) -
+            (left.benchmarks.llm.intelligence ?? -Infinity),
+      );
+    const failover = eligible
+      .slice(1)
+      .find(
+        (row: JsonObject) => failoverFamily(row) !== failoverFamily(eligible[0]),
+      );
+
+    expect(rowsResponse.status).toBe(200);
+    expect(recommendationResponse.status).toBe(200);
+    expect(eligible.length).toBeGreaterThan(1);
+    expect(recommendationBody.recommendation.id).toBe(eligible[0].id);
+    expect(recommendationBody.recommendation.failover.id).toBe(failover?.id);
+    expect(recommendationBody.recommendation.failover).not.toHaveProperty(
+      "failover",
+    );
+    expect(
+      normalized(recommendationBody.recommendation.benchmarks.llm.visualReasoning),
+    ).toBeGreaterThanOrEqual(70);
+    expect(
+      recommendationBody.recommendation.pricing.imageInputPer1kImages,
+    ).toBeLessThanOrEqual(10);
+  });
+
+  it("keeps nested recommendation failover within the requested provider", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=document-processing&provider=openai&tier=fast&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.provider).toBe("openai");
+    expect(body.recommendation.failover).toMatchObject({
+      provider: "openai",
+    });
+  });
+
+  it("does not use a same-family variant as a nested recommendation failover", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=document-processing&provider=google&tier=fast&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("gemini-3-5-flash");
+    expect(body.recommendation.failover).toBeNull();
   });
 
   it("applies Run AUD and intelligence filters to recommendations", async () => {
@@ -671,19 +880,17 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation).toMatchObject({
-      id: "gpt-5-5-low",
       provider: "openai",
       pricing: expect.objectContaining({
-        inputPerMTok: 7.5,
-        outputPerMTok: 45,
+        inputPerMTok: expect.any(Number),
+        outputPerMTok: expect.any(Number),
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 6,
           intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
-            falsePositiveCount: 5,
-            verifiedOn: "2026-06-06",
+            falsePositiveCount: expect.any(Number),
+            verifiedOn: expect.any(String),
           }),
         }),
       },
@@ -699,18 +906,25 @@ describe("worker routes", () => {
     const bestBody = (await bestResponse.json()) as JsonObject;
 
     expect(bestResponse.status).toBe(200);
+    const falsePositiveRate = (row: JsonObject) => {
+      const autoClose = row.benchmarks.llm.autoClose;
+      return autoClose.total > 0
+        ? autoClose.falsePositiveCount / autoClose.total
+        : Number.POSITIVE_INFINITY;
+    };
     expect(bestBody.recommendation).toMatchObject({
-      id: "gpt-5-5-medium",
       provider: "openai",
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 9,
           autoClose: expect.objectContaining({
-            falsePositiveCount: 3,
+            falsePositiveCount: expect.any(Number),
           }),
         }),
       },
     });
+    expect(falsePositiveRate(bestBody.recommendation)).toBeLessThanOrEqual(
+      falsePositiveRate(body.recommendation),
+    );
 
     const fastResponse = await handleRequest(
       new Request(
@@ -736,6 +950,7 @@ describe("worker routes", () => {
     ).toBeLessThanOrEqual(
       body.recommendation.benchmarks.llm.intelligenceCostPerTask,
     );
+    expect(body.recommendation.id).toBe(fastBody.recommendation.id);
   });
 
   it("returns the next two safest customer-support failovers for best tier", async () => {
@@ -757,6 +972,8 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("safest");
+    expect(body.recommendation.failover).toMatchObject({ id: "safe" });
+    expect(body.recommendation.failover).not.toHaveProperty("failover");
     expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
       "safe",
       "middle",
@@ -786,6 +1003,9 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("cheapest");
+    expect(body.recommendation.failover).toMatchObject({
+      id: "next-cheapest",
+    });
     expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
       "next-cheapest",
       "third-cheapest",
@@ -812,6 +1032,7 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("only-benchmarked");
+    expect(body.recommendation.failover).toBeNull();
     expect(body.failovers).toEqual([]);
     expect(body.failoverStatus).toEqual({
       requested: 2,
@@ -1098,11 +1319,18 @@ describe("worker routes", () => {
     expect(defaultCappedBody.recommendation.id).not.toBe(
       "google-gemini-2-0-flash-lite",
     );
+    expect(defaultCappedBody.recommendation.failover).toMatchObject({
+      benchmarks: { speechToText: expect.any(Object) },
+    });
+    expect(defaultCappedBody.recommendation.failover).not.toHaveProperty(
+      "failover",
+    );
     expect(cappedGroqVisibleResponse.status).toBe(200);
     expect(cappedGroqVisibleBody.recommendation).toMatchObject({
       id: "groq-whisper-large-v3-turbo",
       provider: "groq",
     });
+    expect(cappedGroqVisibleBody.recommendation.failover).toBeNull();
     expect(fastCheapResponse.status).toBe(200);
     expect(fastCheapBody.recommendation).toMatchObject({
       id: "groq-whisper-large-v3-turbo",

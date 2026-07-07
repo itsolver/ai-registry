@@ -35,11 +35,12 @@ Example:
 curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"
 ```
 
-Recommendation responses keep the primary model in `recommendation` and include
-up to two `failovers` for customer-support overload handling. Failovers are
-ranked with the same production filters and require IT Solver auto-close
-benchmark data; when fewer than two are available, `failoverStatus.reason` is
-`insufficient_its_autoclose_benchmarks`.
+Recommendation responses keep the primary model in `recommendation` and the
+next operationally distinct model for the same filters, including `provider`,
+in `recommendation.failover`. Existing top-level `failovers` still provides up
+to two customer-support overload fallbacks for older clients. Top-level
+failovers require IT Solver auto-close benchmark data; when fewer than two are
+available, `failoverStatus.reason` is `insufficient_its_autoclose_benchmarks`.
 
 Supported filters:
 

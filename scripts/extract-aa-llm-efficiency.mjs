@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const SOURCE_URL = "https://artificialanalysis.ai/models";
+const VISION_SOURCE_URL = "https://artificialanalysis.ai/models/multimodal/vision";
 const OUT_PATH = resolve("src/generated/aa-llm-efficiency.ts");
 const CUSTOMER_SUPPORT_RECOMMENDATIONS_PATH = resolve(
   "src/generated/aa-customer-support-recommendations.ts",
@@ -29,6 +30,10 @@ const DATASETS = {
   pricing: "Pricing: Cache Hit, Input, and Output",
   speed: "Output Speed",
   omniscience: "AA-Omniscience Index",
+  visualReasoning: "Visual Reasoning Intelligence (MMMU Pro evaluation)",
+  imageInputPricing: "Image Input Pricing",
+  visionLatency: "Latency (Single Image & 1,000 Language Tokens Input)",
+  visionOutputSpeed: "Output Speed (Single Image & 1,000 Language Tokens Input)",
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -47,10 +52,12 @@ async function main() {
   }
 
   const html = await response.text();
-  const initialRecords = extractLlmEfficiencyRecords(html);
-  const comparisonPages = await fetchComparisonPages(html, initialRecords);
+  const visionHtml = await fetchOptionalPage(VISION_SOURCE_URL);
+  const sourcePages = [html, visionHtml].filter(Boolean);
+  const initialRecords = extractLlmEfficiencyRecordsFromPages(sourcePages);
+  const comparisonPages = await fetchComparisonPages(sourcePages, initialRecords);
   const records = extractLlmEfficiencyRecordsFromPages([
-    html,
+    ...sourcePages,
     ...comparisonPages,
   ]).sort((left, right) => left.slug.localeCompare(right.slug));
 
@@ -69,8 +76,33 @@ export const AA_LLM_EFFICIENCY_MODELS = ${JSON.stringify(records, null, 2)} as c
   console.log(`Wrote ${records.length} LLM efficiency records to ${OUT_PATH}`);
 }
 
-async function fetchComparisonPages(sourceHtml, initialRecords) {
-  const allModels = extractNextFlightModelRecords(sourceHtml);
+async function fetchOptionalPage(url) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "user-agent": "IT Solver AI Registry weekly extractor",
+      },
+    });
+    if (!response.ok) {
+      console.warn(
+        `Skipping ${url}: Artificial Analysis returned ${response.status}`,
+      );
+      return "";
+    }
+    return await response.text();
+  } catch (error) {
+    console.warn(
+      `Skipping ${url}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return "";
+  }
+}
+
+async function fetchComparisonPages(sourceHtmlPages, initialRecords) {
+  const pagesToSearch = Array.isArray(sourceHtmlPages)
+    ? sourceHtmlPages
+    : [sourceHtmlPages];
+  const allModels = pagesToSearch.flatMap(extractNextFlightModelRecords);
   const existingTaskSlugs = new Set(
     initialRecords
       .filter((record) => record.intelligenceCostPerTask !== undefined)
@@ -153,15 +185,31 @@ export function extractLlmEfficiencyRecordsFromPages(htmlPages) {
     }
   }
   const allModels = [...allModelsBySlug.values()];
-  const frontierModels = allModels.filter(
+  const explicitlyFrontierModels = allModels.filter(
     (record) => record.frontier_model === true,
   );
-  if (!frontierModels.length) {
-    throw new Error("No Artificial Analysis frontier model records found in Next Flight data");
+  const seedModels = explicitlyFrontierModels.length
+    ? explicitlyFrontierModels
+    : allModels.filter(hasNextFlightBenchmarkSignal);
+  if (!seedModels.length) {
+    throw new Error("No Artificial Analysis model records found in Next Flight data");
   }
 
   const datasets = mergeJsonLdDatasets(htmlPages.map(extractJsonLdDatasets));
-  return mergeDatasets(datasets, frontierModels, allModels);
+  return mergeDatasets(datasets, seedModels, allModels);
+}
+
+function hasNextFlightBenchmarkSignal(model) {
+  return [
+    model.intelligence_index,
+    model.agentic_index,
+    model.ifbench,
+    model.tau2,
+    model.mmmu_pro,
+    model.price_1m_input_tokens,
+    model.price_1m_output_tokens,
+    model.price_per_1k_1mp_images,
+  ].some((value) => numberOrUndefined(value) !== undefined);
 }
 
 export function extractJsonLdDatasets(html) {
@@ -307,6 +355,30 @@ function mergeDatasets(datasets, frontierModels, allModels = frontierModels) {
     }, false);
   }
 
+  for (const item of datasets.get(DATASETS.visualReasoning) ?? []) {
+    upsert(bySlug, item, {
+      visualReasoning: numberOrUndefined(item.visualReasoning),
+    }, false);
+  }
+
+  for (const item of datasets.get(DATASETS.imageInputPricing) ?? []) {
+    upsert(bySlug, item, {
+      imageInputPrice: numberOrUndefined(item.imageInputPrice),
+    }, false);
+  }
+
+  for (const item of datasets.get(DATASETS.visionLatency) ?? []) {
+    upsert(bySlug, item, {
+      visualLatency: numberOrUndefined(item.latency),
+    }, false);
+  }
+
+  for (const item of datasets.get(DATASETS.visionOutputSpeed) ?? []) {
+    upsert(bySlug, item, {
+      visualOutputSpeed: numberOrUndefined(item.outputSpeed),
+    }, false);
+  }
+
   return [...bySlug.values()]
     .map((record) => ({
       ...record,
@@ -332,6 +404,7 @@ function mergeDatasets(datasets, frontierModels, allModels = frontierModels) {
         record.agenticIndex !== undefined ||
         record.ifbench !== undefined ||
         record.tau2 !== undefined ||
+        record.visualReasoning !== undefined ||
         record.intelligenceRunTotalCost !== undefined ||
         record.intelligenceCostPerTask !== undefined ||
         record.intelligenceRunOutputTokens !== undefined,
@@ -349,6 +422,15 @@ function nextFlightValues(model) {
   return {
     provider: stringOrUndefined(model.model_creators?.slug),
     contextWindowTokens: numberOrUndefined(model.context_window_tokens),
+    visualReasoning: numberOrUndefined(model.mmmu_pro),
+    visualOutputSpeed: numberOrUndefined(model.timescaleData?.median_output_speed),
+    visualLatency: positiveNumberOrUndefined(
+      numberOrUndefined(model.time_to_first_answer_token_metrics?.total_time) ??
+        numberOrUndefined(model.timescaleData?.median_time_to_first_chunk),
+    ),
+    imageInputPrice: numberOrUndefined(model.price_per_1k_1mp_images),
+    imageInput: booleanOrUndefined(model.input_modality_image),
+    reasoning: booleanOrUndefined(model.reasoning_model),
     intelligenceIndex: numberOrUndefined(model.intelligence_index),
     agenticIndex: numberOrUndefined(model.agentic_index),
     ifbench: numberOrUndefined(model.ifbench),
@@ -515,6 +597,14 @@ function stringOrUndefined(value) {
 
 function numberOrUndefined(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function positiveNumberOrUndefined(value) {
+  return value === undefined || value <= 0 ? undefined : value;
+}
+
+function booleanOrUndefined(value) {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function optionalNumber(key, value) {

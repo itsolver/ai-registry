@@ -11,16 +11,22 @@ describe("homepage copy", () => {
     expect(HOME_HTML).toContain("AA Support Score");
     expect(HOME_HTML).toContain("It is not an ITS safety score.");
     expect(HOME_HTML).toContain(
-      '<a href="/its">Our reopened-ticket classifier replay</a>',
+      '<a href="/its-eval">Our reopened-ticket classifier replay</a>',
     );
     expect(HOME_HTML).toContain(
       '<a href="/webdev">Our web app development benchmark composite</a>',
     );
     expect(HOME_HTML).toContain(
-      "function mergeCustomerSupportBenchmarkRows(models, benchmarkModels)",
+      '<option value="benchmarks">browse benchmark rows</option>',
     );
     expect(HOME_HTML).toContain(
-      "mergeCustomerSupportBenchmarkRows(models || [], currentTextBenchmarkModels()),",
+      "fields.endpoint.value === 'benchmarks'",
+    );
+    expect(HOME_HTML).toContain(
+      "currentBrowseModels = data.benchmarks || [];",
+    );
+    expect(HOME_HTML).not.toContain(
+      "function mergeCustomerSupportBenchmarkRows(models, benchmarkModels)",
     );
     expect(HOME_HTML).toContain(
       "var visibleRows = providerFilter\n        ? state.rows.filter(function (row) { return benchmarkRowProvider(row) === providerFilter; })",
@@ -34,6 +40,11 @@ describe("homepage copy", () => {
       "if (fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();",
     );
     expect(HOME_HTML).toContain("currentBrowseModels = data.models || [];");
+    expect(HOME_HTML).toContain(
+      '<option value="document-processing">document processing (OCR)</option>',
+    );
+    expect(HOME_HTML).toContain("Image AUD/1k");
+    expect(HOME_HTML).toContain("highest accuracy");
     expect(HOME_HTML).toContain(
       'id="b-run-max-range" min="0" max="5" step="0.01" value="5"',
     );

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-07-07
+
+### Added
+
+- Added document-processing OCR recommendations using Artificial Analysis visual reasoning, image pricing, latency, instruction following, intelligence, and Task AUD signals.
+- Added `document-processing`, `ocr`, and `document-ocr` use-case parsing.
+
+### Changed
+
+- Split homepage query builder endpoint choices into recommendations, benchmark rows, and raw registry models so copied/opened URLs match the visible table source.
+- Added `includeItsEval=false` as the public customer-support benchmark-source alias while preserving legacy `includeItsBenchmark=false`.
+
 ## 2026-06-06
 
 ### Added

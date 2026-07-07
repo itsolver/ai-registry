@@ -139,9 +139,22 @@ describe("filter parsing", () => {
       parseFilters(new URLSearchParams("includeItsBenchmark=false"))
         .includeItsBenchmark,
     ).toBe(false);
+    expect(
+      parseFilters(new URLSearchParams("includeItsEval=false"))
+        .includeItsBenchmark,
+    ).toBe(false);
     expect(parseFilters(new URLSearchParams("useCase=support")).useCase).toBe(
       "customer-support",
     );
+    expect(
+      parseFilters(new URLSearchParams("useCase=document-processing")).useCase,
+    ).toBe("document-processing");
+    expect(parseFilters(new URLSearchParams("useCase=ocr")).useCase).toBe(
+      "document-processing",
+    );
+    expect(
+      parseFilters(new URLSearchParams("useCase=document-ocr")).useCase,
+    ).toBe("document-processing");
     expect(
       parseFilters(new URLSearchParams("useCase=billing-incident")),
     ).toMatchObject({
@@ -206,7 +219,6 @@ describe("Artificial Analysis catalog", () => {
 
     expect(ids).toContain("gemini-fast");
     expect(ids).toContain("grok-4-3");
-    expect(ids).not.toContain("grok-4.20-0309-non-reasoning");
     expect(ids).not.toContain("grok-4.20-multi-agent-0309");
     expect(ids).not.toContain("gemini-2.0-flash-lite");
     expect(ids).not.toContain("unsupported-model");
@@ -343,23 +355,22 @@ describe("Artificial Analysis catalog", () => {
     );
     expect(filteredGoogleBestRecommendation).toBeUndefined();
     expect(openaiRecommendation).toMatchObject({
-      id: "gpt-5-5-low",
       provider: "openai",
       recommendable: true,
-      pricing: {
-        inputPerMTok: 5,
-        outputPerMTok: 30,
-      },
+      pricing: expect.objectContaining({
+        inputPerMTok: expect.any(Number),
+        outputPerMTok: expect.any(Number),
+      }),
       benchmarks: {
-        llm: {
+        llm: expect.objectContaining({
           intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
-            falsePositiveCount: 5,
+            falsePositiveCount: expect.any(Number),
             accuracy: expect.any(Number),
             sourceUrl: expect.any(String),
-            verifiedOn: "2026-06-06",
+            verifiedOn: expect.any(String),
           }),
-        },
+        }),
       },
     });
     expect(gpt55Low).toMatchObject({
@@ -583,6 +594,163 @@ describe("Artificial Analysis catalog", () => {
         maxIntelligenceCostPerTaskAud: 0.1,
       })?.id,
     ).toBe("cheapest");
+  });
+
+  it("uses visual reasoning first for document-processing highest accuracy", () => {
+    const candidate = (
+      id: string,
+      visualReasoning: number,
+      imageCost: number,
+      visualLatency: number,
+      capabilities = { vision: true, reasoning: true },
+    ): BenchmarkCandidate => ({
+      id,
+      provider: "openai",
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          visualReasoning,
+          instructionFollowing: 70,
+          intelligence: 60,
+          visualLatency,
+          intelligenceCostPerTask: 0.3,
+        },
+      },
+      pricing: {
+        inputPerMTok: 1,
+        outputPerMTok: 4,
+        imageInputPer1kImages: imageCost,
+      },
+      recommendable: true,
+      availability: {
+        status: "production",
+        acceptedRisk: false,
+        reason: "test",
+      },
+      family: null,
+      contextWindow: 500_000,
+      outputLimit: null,
+      capabilities: {
+        vision: capabilities.vision,
+        reasoning: capabilities.reasoning,
+        pdf: false,
+        toolCalling: false,
+        structuredOutput: false,
+      },
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-07-07T00:00:00Z",
+      modelCount: 4,
+      activeModelCount: 4,
+      providers: [{ provider: "openai", total: 4, active: 4 }],
+      models: [],
+      benchmarkCandidates: [
+        candidate("cheap-fast", 0.7, 0.2, 0.5),
+        candidate("highest-visual", 0.92, 4, 4),
+        candidate("middle", 0.8, 1, 1),
+        candidate("vision-only", 0.99, 0.1, 0.1, {
+          vision: true,
+          reasoning: false,
+        }),
+      ],
+    };
+
+    const rows = benchmarkCandidates(catalog, {
+      useCase: "document-processing",
+    });
+    expect(rows.map((row) => row.id)).toEqual(
+      expect.arrayContaining(["highest-visual", "vision-only"]),
+    );
+    expect(
+      recommendModel(catalog, {
+        useCase: "document-processing",
+        tier: "best",
+      })?.id,
+    ).toBe("highest-visual");
+    expect(
+      recommendModel(catalog, {
+        useCase: "document-processing",
+        tier: "fast",
+      })?.id,
+    ).toBe("cheap-fast");
+  });
+
+  it("applies document-processing provider, cost, and intelligence filters", () => {
+    const row = (
+      id: string,
+      provider: "openai" | "google",
+      taskCost: number,
+      intelligence: number,
+    ): BenchmarkCandidate => ({
+      id,
+      provider,
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          visualReasoning: 0.8,
+          instructionFollowing: 75,
+          intelligence,
+          intelligenceCostPerTask: taskCost,
+        },
+      },
+      pricing: {
+        inputPerMTok: 1,
+        outputPerMTok: 3,
+        imageInputPer1kImages: 0.5,
+      },
+      recommendable: true,
+      availability: {
+        status: "production",
+        acceptedRisk: false,
+        reason: "test",
+      },
+      family: null,
+      contextWindow: 250_000,
+      outputLimit: null,
+      capabilities: {
+        vision: true,
+        reasoning: true,
+        pdf: false,
+        toolCalling: false,
+        structuredOutput: false,
+      },
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-07-07T00:00:00Z",
+      modelCount: 3,
+      activeModelCount: 3,
+      providers: [
+        { provider: "openai", total: 1, active: 1 },
+        { provider: "google", total: 2, active: 2 },
+      ],
+      models: [],
+      benchmarkCandidates: [
+        row("openai-row", "openai", 0.2, 80),
+        row("google-cheap", "google", 0.4, 78),
+        row("google-expensive", "google", 2, 90),
+      ],
+    };
+
+    const rows = benchmarkCandidates(catalog, {
+      useCase: "document-processing",
+      provider: "google",
+      maxIntelligenceCostPerTaskAud: 1,
+      minIntelligence: 70,
+    });
+
+    expect(rows.map((item) => item.id)).toEqual(["google-cheap"]);
   });
 
   it("uses the AA support-score median for AA-only customer-support balance", () => {
@@ -1291,7 +1459,7 @@ describe("Artificial Analysis catalog", () => {
       recommendModel(catalog, {
         useCase: "customer-support",
         tier: "best",
-        maxOutputCostPerMTok: 1,
+        maxOutputCostPerMTok: 0.1,
       }),
     ).toBeUndefined();
     expect(

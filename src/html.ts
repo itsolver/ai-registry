@@ -747,13 +747,15 @@ export const HOME_HTML = String.raw`<!doctype html>
           <label for="b-endpoint">I want to</label>
           <select id="b-endpoint">
             <option value="recommend">get a recommendation</option>
-            <option value="models">browse all models</option>
+            <option value="benchmarks">browse benchmark rows</option>
+            <option value="models">browse registry models</option>
           </select>
         </div>
         <div class="b-field">
           <label for="b-usecase">For use case</label>
           <select id="b-usecase">
             <option value="customer-support" selected>customer support</option>
+            <option value="document-processing">document processing (OCR)</option>
             <option value="voice">voice</option>
             <option value="speech-to-text">speech to text</option>
           </select>
@@ -794,7 +796,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           <label for="b-includeits">Benchmark source</label>
           <label class="check-row">
             <input type="checkbox" id="b-includeits" checked>
-            <span>Include ITS benchmark</span>
+            <span>Include ITS Eval</span>
           </label>
         </div>
         <div class="b-field" data-filter-scope="voice">
@@ -989,6 +991,36 @@ export const HOME_HTML = String.raw`<!doctype html>
     </div>
       <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Intelligence Index Task AUD.</p>
     </div>
+    <div class="benchmark-panel" data-benchmark-panel="document-processing" hidden>
+      <div class="voice-bench">
+        <div class="voice-head">
+          <strong>Document processing</strong>
+          <div class="voice-head-meta">
+            <span id="documentSource">loading...</span>
+          </div>
+        </div>
+        <div class="voice-table-wrap">
+          <table class="voice-table">
+            <thead>
+              <tr>
+                <th data-table="documentRows" data-sort="model">Model</th>
+                <th data-table="documentRows" data-sort="score">Document Score</th>
+                <th data-table="documentRows" data-sort="visual">Visual</th>
+                <th data-table="documentRows" data-sort="ifbench">IFBench</th>
+                <th data-table="documentRows" data-sort="intelligence">Intel</th>
+                <th data-table="documentRows" data-sort="imageCost">Image AUD/1k</th>
+                <th data-table="documentRows" data-sort="runCost">Task AUD</th>
+                <th data-table="documentRows" data-sort="latency">Latency</th>
+              </tr>
+            </thead>
+            <tbody id="documentRows">
+              <tr><td class="empty" colspan="8">loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="bench-note">Document processing rows use Artificial Analysis vision data for MMMU Pro visual reasoning, image input pricing, single-image latency, instruction following, intelligence, and Task AUD. Long-context reasoning is only a weak tie-breaker.</p>
+    </div>
     <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
       <div class="voice-bench">
         <div class="voice-head">
@@ -1052,11 +1084,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>any tier</dt>
       <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. For document processing, fast and cheap prioritizes image/input/output cost and latency after usable visual reasoning. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Document processing blends visual reasoning, image/text cost, and latency. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For document processing, highest accuracy prioritizes AA visual reasoning, then instruction following and intelligence. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
       <dt>AA Support Score</dt>
       <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS safety score.</dd>
       <dt>cost caps</dt>
@@ -1065,14 +1097,16 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
       <dt>Task AUD</dt>
       <dd>Australian dollars per weighted average Artificial Analysis Intelligence Index task. Source benchmark cost is stored in USD and converted with the current catalog exchange rate.</dd>
+      <dt>Image AUD/1k</dt>
+      <dd>Australian dollars per 1,000 one-megapixel image inputs where Artificial Analysis exposes image pricing.</dd>
       <dt>voice AUD/hr</dt>
       <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
       <dt>STT AUD/1k min</dt>
       <dd>Australian dollars per 1,000 minutes of speech-to-text audio, converted from Artificial Analysis provider pricing where available.</dd>
       <dt>benchmark table</dt>
-      <dd>The live recommendation for customer support, voice, or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
+      <dd>The live recommendation for customer support, document processing, voice, or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
       <dt>IT Solver auto-close benchmark</dt>
-      <dd><a href="/its">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
+      <dd><a href="/its-eval">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
       <dt>web development benchmark composite</dt>
       <dd><a href="/webdev">Our web app development benchmark composite</a>. Use it to compare frontier-provider signals across frontend, backend, full-stack, browser, repository, cost, and latency dimensions.</dd>
       <dt>false positives / accuracy</dt>
@@ -1100,7 +1134,11 @@ export const HOME_HTML = String.raw`<!doctype html>
   </div>
   <div class="endpoint">
     <code>GET /v1/models</code>
-    <p>Artificial Analysis benchmark candidates from OpenAI, Google, xAI, and Anthropic. Filter by provider, use case, and cost caps.</p>
+    <p>Raw registry model rows. Use <code>/v1/benchmarks</code> when you want the benchmark-backed table rows shown on this page.</p>
+  </div>
+  <div class="endpoint">
+    <code>GET /v1/benchmarks</code>
+    <p>Benchmark-backed rows for customer support, document processing, voice, and speech to text. Filter by provider, capability, cost caps, and minimum intelligence where relevant.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
@@ -1168,7 +1206,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     <li>OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq are exposed.</li>
     <li>Each model includes AUD pricing and benchmark costs converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
-    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
+    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Document processing, voice, and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
     <li>For customer support, try <code>recommendation</code> first, then <code>failovers[0]</code>, then <code>failovers[1]</code> when a provider or model is overloaded.</li>
   </ul>
 
@@ -1412,6 +1450,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     function benchmarkTableForUseCase(useCase) {
       if (useCase === 'voice') return 'voiceRows';
       if (useCase === 'speech-to-text') return 'sttRows';
+      if (useCase === 'document-processing') return 'documentRows';
       if (useCase === 'customer-support') return 'supportRows';
       return '';
     }
@@ -1419,11 +1458,18 @@ export const HOME_HTML = String.raw`<!doctype html>
     function benchmarkPanelForUseCase(useCase) {
       if (useCase === 'voice') return 'voice';
       if (useCase === 'speech-to-text') return 'speech-to-text';
+      if (useCase === 'document-processing') return 'document-processing';
       if (useCase === 'customer-support') return 'customer-support';
       return '';
     }
 
     function benchmarkCopy(useCase) {
+      if (useCase === 'document-processing') {
+        return {
+          title: 'Document Processing Benchmark',
+          hint: 'Document processing priorities are explicit: highest accuracy sorts by AA visual reasoning, then instruction following and intelligence; fast and cheap prioritizes image/input/output cost and latency; balanced combines visual reasoning, cost, and latency.'
+        };
+      }
       if (useCase === 'voice') {
         return {
           title: 'Voice Benchmark',
@@ -1464,6 +1510,13 @@ export const HOME_HTML = String.raw`<!doctype html>
             fast: 'fast and cheap',
             best: 'highest accuracy'
           }
+        : useCase === 'document-processing'
+          ? {
+              '': 'balanced trade-off',
+              balanced: 'balanced trade-off',
+              fast: 'fast and cheap',
+              best: 'highest accuracy'
+            }
         : useCase === 'voice'
           ? {
               '': 'balanced trade-off',
@@ -1506,7 +1559,8 @@ export const HOME_HTML = String.raw`<!doctype html>
           : 'text';
       document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
         var scope = field.getAttribute('data-filter-scope');
-        field.hidden = scope !== activeScope;
+        field.hidden = scope !== activeScope ||
+          (field.classList.contains('check-field') && useCase !== 'customer-support');
       });
     }
 
@@ -1756,6 +1810,49 @@ export const HOME_HTML = String.raw`<!doctype html>
         return { key: 'falsePositives', direction: 'desc', compare: customerSupportSafetyRowCompare };
       }
       return { key: 'score', direction: 'desc' };
+    }
+
+    function documentAccuracyRowCompare(left, right) {
+      return (
+        compareNumberDesc(
+          normalizedBenchmarkScore(llmSignals(left).visualReasoning),
+          normalizedBenchmarkScore(llmSignals(right).visualReasoning)
+        ) ||
+        compareNumberDesc(
+          normalizedBenchmarkScore(llmSignals(left).instructionFollowing),
+          normalizedBenchmarkScore(llmSignals(right).instructionFollowing)
+        ) ||
+        compareNumberDesc(llmSignals(left).intelligence, llmSignals(right).intelligence) ||
+        compareNumberDesc(
+          normalizedBenchmarkScore(llmSignals(left).lcr),
+          normalizedBenchmarkScore(llmSignals(right).lcr)
+        ) ||
+        compareNumberAsc(imageInputCost(left), imageInputCost(right)) ||
+        String((left.model || {}).name || '').localeCompare(String((right.model || {}).name || ''))
+      );
+    }
+
+    function documentFastRowCompare(left, right) {
+      return (
+        compareNumberAsc(imageInputCost(left), imageInputCost(right)) ||
+        compareNumberAsc((left.model || {}).pricing && (left.model || {}).pricing.inputPerMTok, (right.model || {}).pricing && (right.model || {}).pricing.inputPerMTok) ||
+        compareNumberAsc((left.model || {}).pricing && (left.model || {}).pricing.outputPerMTok, (right.model || {}).pricing && (right.model || {}).pricing.outputPerMTok) ||
+        compareNumberAsc(documentLatency(left), documentLatency(right)) ||
+        documentAccuracyRowCompare(left, right)
+      );
+    }
+
+    function documentProcessingTableSort() {
+      var tier = fields.tier.value || 'balanced';
+      if (tier === 'fast') return { key: 'imageCost', direction: 'asc', compare: documentFastRowCompare };
+      if (tier === 'best') return { key: 'visual', direction: 'desc', compare: documentAccuracyRowCompare };
+      return {
+        key: 'score',
+        direction: 'desc',
+        compare: function (left, right) {
+          return compareNumberDesc(left.score, right.score) || documentAccuracyRowCompare(left, right);
+        }
+      };
     }
 
     function falsePositiveLabel(row) {
@@ -2072,6 +2169,21 @@ export const HOME_HTML = String.raw`<!doctype html>
       return typeof runCostValue === 'number' ? runCostValue : 50;
     }
 
+    function normalizedBenchmarkScore(value) {
+      if (typeof value !== 'number') return undefined;
+      return value <= 1 ? value * 100 : value;
+    }
+
+    function imageInputCost(row) {
+      var pricing = ((row.model || row || {}).pricing || {});
+      return pricing.imageInputPer1kImages;
+    }
+
+    function documentLatency(row) {
+      var signals = llmSignals(row);
+      return signals.visualLatency || signals.latency;
+    }
+
     function weightedSignal(signals, values, fallback) {
       var total = 0;
       var weight = 0;
@@ -2086,6 +2198,36 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function textUseCaseScore(model, useCase) {
       var signals = ((model.benchmarks || {}).llm || {});
+      if (useCase === 'document-processing') {
+        var visualQuality = weightedSignal({
+          visualReasoning: normalizedBenchmarkScore(signals.visualReasoning),
+          instructionFollowing: normalizedBenchmarkScore(signals.instructionFollowing),
+          intelligence: signals.intelligence,
+          lcr: normalizedBenchmarkScore(signals.lcr)
+        }, [
+          ['visualReasoning', 0.7],
+          ['instructionFollowing', 0.15],
+          ['intelligence', 0.1],
+          ['lcr', 0.05]
+        ], 60);
+        var imageCost = typeof model.pricing.imageInputPer1kImages === 'number'
+          ? Math.max(0, 100 - Math.min(Math.log1p(model.pricing.imageInputPer1kImages) / Math.log1p(10), 1) * 100)
+          : undefined;
+        var cost = weightedSignal({
+          image: imageCost,
+          text: textCostScore(model, 0.35),
+          task: textEfficiencyScore(model)
+        }, [
+          ['image', 0.45],
+          ['text', 0.35],
+          ['task', 0.1]
+        ], textCostScore(model, 0.35));
+        var latency = typeof signals.visualLatency === 'number' || typeof signals.latency === 'number'
+          ? Math.max(0, 100 - Math.min((signals.visualLatency || signals.latency) / 20, 1) * 100)
+          : 50;
+        var speed = Math.min((signals.visualOutputSpeed || signals.speed || 0) / 220, 1) * 100;
+        return visualQuality * 0.62 + latency * 0.12 + speed * 0.06 + cost * 0.2;
+      }
       if (useCase === 'customer-support' && typeof signals.customerSupportRank === 'number') {
         return 102 - signals.customerSupportRank * 2;
       }
@@ -2106,10 +2248,13 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function includeItsBenchmark() {
-      return fields.includeits ? fields.includeits.checked : true;
+      return fields.usecase.value === 'customer-support' && fields.includeits
+        ? fields.includeits.checked
+        : false;
     }
 
     function currentTextBenchmarkModels() {
+      if (fields.usecase.value === 'document-processing') return null;
       return includeItsBenchmark() || !textBenchmarkModelsWithoutIts
         ? textBenchmarkModels
         : textBenchmarkModelsWithoutIts;
@@ -2117,6 +2262,10 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function isBrowsingModels() {
       return fields.endpoint.value === 'models';
+    }
+
+    function isBrowsingBenchmarks() {
+      return fields.endpoint.value === 'benchmarks';
     }
 
     function renderCurrentUseCaseBenchmarks() {
@@ -2138,6 +2287,10 @@ export const HOME_HTML = String.raw`<!doctype html>
         renderFilteredModelBenchmarks(currentBrowseModels);
         return;
       }
+      if (isBrowsingBenchmarks() && currentBrowseModels) {
+        renderFilteredModelBenchmarks(currentBrowseModels);
+        return;
+      }
       if (!isBrowsingModels()) {
         loadCurrentTextBenchmarks();
         return;
@@ -2155,30 +2308,8 @@ export const HOME_HTML = String.raw`<!doctype html>
         return;
       }
 
-      renderTextBenchmarks(
-        mergeCustomerSupportBenchmarkRows(models || [], currentTextBenchmarkModels()),
-        true
-      );
+      renderTextBenchmarks(models || [], true);
       renderFaq(models || []);
-    }
-
-    function mergeCustomerSupportBenchmarkRows(models, benchmarkModels) {
-      var merged = new Map();
-      (models || []).forEach(function (model) {
-        if (model && model.id) merged.set(model.id, model);
-      });
-      (benchmarkModels || []).forEach(function (model) {
-        if (!model || !model.id) return;
-        if (!merged.has(model.id)) {
-          merged.set(model.id, model);
-          return;
-        }
-        var existing = merged.get(model.id);
-        var existingAutoClose = existing && existing.benchmarks && existing.benchmarks.llm && existing.benchmarks.llm.autoClose;
-        var benchmarkAutoClose = model.benchmarks && model.benchmarks.llm && model.benchmarks.llm.autoClose;
-        if (!existingAutoClose && benchmarkAutoClose) merged.set(model.id, model);
-      });
-      return Array.from(merged.values());
     }
 
     function textRows(models, useCase) {
@@ -2186,6 +2317,9 @@ export const HOME_HTML = String.raw`<!doctype html>
         .filter(function (model) {
           if (useCase === 'customer-support' && model.recommendable === false) return false;
           var signals = model.benchmarks && model.benchmarks.llm;
+          if (useCase === 'document-processing') {
+            return signals && typeof signals.visualReasoning === 'number';
+          }
           if (
             useCase === 'customer-support' &&
             (!signals ||
@@ -2199,7 +2333,8 @@ export const HOME_HTML = String.raw`<!doctype html>
             signals.terminalBench,
             signals.agentic,
             signals.tauTelecom,
-            signals.professional
+            signals.professional,
+            signals.visualReasoning
           ].some(function (value) { return typeof value === 'number'; });
           return hasQualitySignal;
         })
@@ -2209,6 +2344,18 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
 	    function commonTextColumns(useCase, includeIts) {
+      if (useCase === 'document-processing') {
+        return [
+          { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
+          { key: 'score', label: 'Document Score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } },
+          { key: 'visual', label: 'Visual', value: function (row) { return normalizedBenchmarkScore(llmSignals(row).visualReasoning); }, render: function (row) { return benchmarkScore(llmSignals(row).visualReasoning); } },
+          { key: 'ifbench', label: 'IFBench', value: function (row) { return normalizedBenchmarkScore(llmSignals(row).instructionFollowing); }, render: function (row) { return benchmarkScore(llmSignals(row).instructionFollowing); } },
+          { key: 'intelligence', label: 'Intel', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } },
+          { key: 'imageCost', label: 'Image AUD/1k', value: imageInputCost, render: function (row) { return money(imageInputCost(row)); } },
+          { key: 'runCost', label: 'Task AUD', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } },
+          { key: 'latency', label: 'Latency', value: function (row) { return documentLatency(row); }, render: function (row) { return seconds(documentLatency(row)); } }
+        ];
+      }
 	      var base = [
 	        { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
 	        { key: 'score', label: includeIts ? 'Score' : 'AA Support Score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
@@ -2235,30 +2382,39 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function renderTextBenchmarks(models, useProvidedRows) {
+      var useCase = fields.usecase.value;
+      var tableId = benchmarkTableForUseCase(useCase);
+      var sourceId = useCase === 'document-processing' ? 'documentSource' : 'supportSource';
       var supportModels = useProvidedRows ? models : activeTextBenchmarkModels(models);
-      var support = textRows(supportModels, 'customer-support');
-      var includeIts = includeItsBenchmark();
-      var supportSort = customerSupportTableSort(includeIts);
+      var support = textRows(supportModels, useCase);
+      var includeIts = useCase === 'customer-support' && includeItsBenchmark();
+      var supportSort = useCase === 'document-processing'
+        ? documentProcessingTableSort()
+        : customerSupportTableSort(includeIts);
 
       renderSortableTable(
-        'supportRows',
+        tableId,
         support,
-        commonTextColumns('customer-support', includeIts),
+        commonTextColumns(useCase, includeIts),
         supportSort.key,
         supportSort.direction,
         supportSort.compare
       );
 
-      var label = support.length ? (includeIts ? 'AA + ITS auto-close' : 'AA LLM extract') : 'unavailable';
-      setText('supportSource', label);
+      var label = support.length
+        ? useCase === 'document-processing'
+          ? 'AA vision LLM extract'
+          : includeIts ? 'AA + ITS auto-close' : 'AA LLM extract'
+        : 'unavailable';
+      setText(sourceId, label);
     }
 
-    function customerSupportBenchmarkPath() {
+    function textBenchmarkPath() {
       var params = new URLSearchParams();
-      params.set('useCase', 'customer-support');
+      params.set('useCase', fields.usecase.value);
       if (fields.provider.value) params.set('provider', fields.provider.value);
       if (fields.capability.value) params.set('capability', fields.capability.value);
-      if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
+      if (fields.usecase.value === 'customer-support' && !includeItsBenchmark()) params.set('includeItsEval', 'false');
       if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
       if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
       if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
@@ -2272,22 +2428,26 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function loadCurrentTextBenchmarks() {
-      if (fields.usecase.value !== 'customer-support') return;
+      if (
+        fields.usecase.value !== 'customer-support' &&
+        fields.usecase.value !== 'document-processing'
+      ) return;
       var requestId = ++textBenchmarkRequest;
-      fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })
+      fetch(textBenchmarkPath(), { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
         .then(function (data) {
           if (requestId !== textBenchmarkRequest) return;
-          if (fields.usecase.value !== 'customer-support' || isBrowsingModels()) return;
+          if (isBrowsingModels()) return;
           var rows = data.benchmarks || [];
           renderTextBenchmarks(rows);
           renderFaq(rows);
         })
         .catch(function () {
           if (requestId !== textBenchmarkRequest) return;
-          var rows = document.getElementById('supportRows');
+          var tableId = benchmarkTableForUseCase(fields.usecase.value);
+          var rows = document.getElementById(tableId);
           if (rows) rows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
-          setText('supportSource', 'unavailable');
+          setText(fields.usecase.value === 'document-processing' ? 'documentSource' : 'supportSource', 'unavailable');
         });
     }
 
@@ -2466,7 +2626,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     Promise.all([
       fetch('/v1/benchmarks?useCase=customer-support', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); }),
-      fetch('/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false', { cache: 'no-store' })
+      fetch('/v1/benchmarks?useCase=customer-support&includeItsEval=false', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
     ])
       .then(function (responses) {
@@ -2535,7 +2695,11 @@ export const HOME_HTML = String.raw`<!doctype html>
     });
 
     function buildPath() {
-      var endpoint = fields.endpoint.value === 'models' ? '/v1/models' : '/v1/models/recommend';
+      var endpoint = fields.endpoint.value === 'models'
+        ? '/v1/models'
+        : fields.endpoint.value === 'benchmarks'
+          ? '/v1/benchmarks'
+          : '/v1/models/recommend';
       var params = new URLSearchParams();
       if (fields.tier.value) params.set('tier', fields.tier.value);
       if (fields.provider.value) params.set('provider', fields.provider.value);
@@ -2552,7 +2716,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         if (fields.maxtranscriptioncost.value) params.set('maxTranscriptionCostPer1kMinutes', fields.maxtranscriptioncost.value);
         if (fields.maxaawer.value) params.set('maxAaWer', fields.maxaawer.value);
       } else {
-        if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
+        if (fields.usecase.value === 'customer-support' && !includeItsBenchmark()) params.set('includeItsEval', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
         if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
         if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
@@ -2583,7 +2747,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     function builderStateParams(path) {
       var apiUrl = new URL(path || buildPath(), origin);
       var params = new URLSearchParams(apiUrl.search);
-      params.set('endpoint', fields.endpoint.value === 'models' ? 'models' : 'recommend');
+      params.set('endpoint', fields.endpoint.value);
       return params;
     }
 
@@ -2605,7 +2769,12 @@ export const HOME_HTML = String.raw`<!doctype html>
       setSelectValue(fields.provider, params.get('provider'));
       setSelectValue(fields.capability, params.get('capability'));
       setSelectValue(fields.usecase, params.get('useCase'));
-      if (fields.includeits && params.get('includeItsBenchmark') === 'false') {
+      if (
+        fields.includeits &&
+        (params.get('includeItsEval') === 'false' ||
+          params.get('includeItsBenchmark') === 'false' ||
+          params.get('includeITSBenchmark') === 'false')
+      ) {
         fields.includeits.checked = false;
       }
       setInputValue(fields.inputminrange, params.get('minInputCostPerMTok') || params.get('minCostPerMTok'));
@@ -2646,8 +2815,10 @@ export const HOME_HTML = String.raw`<!doctype html>
       previewTimer = setTimeout(function () {
         var requestedPath = path;
         var requestedUseCase = fields.usecase.value;
-        var requestedBrowse = isBrowsingModels();
-        if (!requestedBrowse) currentBrowseModels = null;
+        var requestedEndpoint = fields.endpoint.value;
+        var requestedBrowse = requestedEndpoint === 'models';
+        var requestedBenchmarkBrowse = requestedEndpoint === 'benchmarks';
+        if (!requestedBrowse && !requestedBenchmarkBrowse) currentBrowseModels = null;
         fetch(path)
           .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
           .then(function (data) {
@@ -2655,6 +2826,11 @@ export const HOME_HTML = String.raw`<!doctype html>
             if (data.recommendation) {
               fields.result.textContent = data.recommendation.id;
               highlightBenchmark(data.recommendation.id, requestedUseCase);
+            } else if (data.benchmarks) {
+              fields.result.textContent = (data.benchmarkCount || data.benchmarks.length || 0).toLocaleString() + ' benchmarks';
+              currentBrowseModels = data.benchmarks || [];
+              renderFilteredModelBenchmarks(currentBrowseModels);
+              highlightBenchmark('', '');
             } else {
               fields.result.textContent = (data.modelCount || 0).toLocaleString() + ' models';
               if (requestedBrowse) {

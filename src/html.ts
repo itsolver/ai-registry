@@ -781,7 +781,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="groq">groq</option>
           </select>
         </div>
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="customer-support">
           <label for="b-capability">Must have</label>
           <select id="b-capability">
             <option value="">any capability</option>
@@ -792,7 +792,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="structuredOutput">structured output</option>
           </select>
         </div>
-        <div class="b-field check-field" data-filter-scope="text">
+        <div class="b-field check-field" data-filter-scope="customer-support">
           <label for="b-includeits">Benchmark source</label>
           <label class="check-row">
             <input type="checkbox" id="b-includeits" checked>
@@ -854,8 +854,42 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="range-group" data-filter-scope="text">
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="document-processing">
+          <label for="b-visualreasoning-min-range">Min visual reasoning</label>
+          <input type="hidden" id="b-minvisualreasoning">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-visualreasoning-label">Any visual reasoning</strong>
+              <button type="button" id="b-visualreasoning-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-visualreasoning-min-range" min="0" max="100" step="1" value="0" aria-label="Minimum visual reasoning score">
+            </div>
+            <div class="price-filter-scale">
+              <span>0</span>
+              <span>100</span>
+            </div>
+          </div>
+        </div>
+        <div class="b-field" data-filter-scope="document-processing">
+          <label for="b-imagecost-max-range">Max image AUD/1k</label>
+          <input type="hidden" id="b-maximagecost">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-imagecost-label">Any image AUD/1k</strong>
+              <button type="button" id="b-imagecost-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-imagecost-max-range" min="0" max="10" step="0.01" value="10" aria-label="Maximum image input AUD per 1000 images">
+            </div>
+            <div class="price-filter-scale">
+              <span>$0</span>
+              <span>$10+</span>
+            </div>
+          </div>
+        </div>
+        <div class="range-group" data-filter-scope="customer-support">
+        <div class="b-field" data-filter-scope="customer-support">
           <label for="b-input-min-range">Input AUD/MTok range</label>
           <input type="hidden" id="b-mincost">
           <input type="hidden" id="b-maxcost">
@@ -874,7 +908,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="customer-support">
           <label for="b-output-min-range">Output AUD/MTok range</label>
           <input type="hidden" id="b-minoutputcost">
           <input type="hidden" id="b-maxoutputcost">
@@ -893,7 +927,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="customer-support">
           <label for="b-context-min-range">Context range</label>
           <input type="hidden" id="b-minctx">
           <input type="hidden" id="b-maxctx">
@@ -913,7 +947,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           </div>
         </div>
         </div>
-        <div class="b-field range-field" data-filter-scope="text">
+        <div class="b-field range-field" data-filter-scope="customer-support document-processing">
           <label for="b-run-min-range">Task AUD range</label>
           <input type="hidden" id="b-minruncost">
           <input type="hidden" id="b-maxruncost">
@@ -932,7 +966,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="customer-support document-processing">
           <label for="b-minintelligence">Min intelligence</label>
           <input type="number" id="b-minintelligence" min="0" max="100" step="1" value="30">
         </div>
@@ -1259,6 +1293,14 @@ export const HOME_HTML = String.raw`<!doctype html>
       aawermaxrange: document.getElementById('b-aawer-max-range'),
       aawerlabel: document.getElementById('b-aawer-label'),
       aawerany: document.getElementById('b-aawer-any'),
+      minvisualreasoning: document.getElementById('b-minvisualreasoning'),
+      visualreasoningminrange: document.getElementById('b-visualreasoning-min-range'),
+      visualreasoninglabel: document.getElementById('b-visualreasoning-label'),
+      visualreasoningany: document.getElementById('b-visualreasoning-any'),
+      maximagecost: document.getElementById('b-maximagecost'),
+      imagecostmaxrange: document.getElementById('b-imagecost-max-range'),
+      imagecostlabel: document.getElementById('b-imagecost-label'),
+      imagecostany: document.getElementById('b-imagecost-any'),
       minctx: document.getElementById('b-minctx'),
       maxctx: document.getElementById('b-maxctx'),
       contextminrange: document.getElementById('b-context-min-range'),
@@ -1552,15 +1594,9 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function updateFilterVisibility(useCase) {
-      var activeScope = useCase === 'voice'
-        ? 'voice'
-        : useCase === 'speech-to-text'
-          ? 'speech-to-text'
-          : 'text';
       document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
-        var scope = field.getAttribute('data-filter-scope');
-        field.hidden = scope !== activeScope ||
-          (field.classList.contains('check-field') && useCase !== 'customer-support');
+        var scopes = String(field.getAttribute('data-filter-scope') || '').split(/\s+/);
+        field.hidden = scopes.indexOf(useCase) === -1;
       });
     }
 
@@ -1938,6 +1974,18 @@ export const HOME_HTML = String.raw`<!doctype html>
       updateMaxRangeFill(config, max);
     }
 
+    function syncMinRange(config) {
+      var min = Number(config.minRange.value);
+      if (!Number.isFinite(min)) min = config.min;
+      min = Math.min(config.max, Math.max(config.min, min));
+      config.minRange.value = String(min);
+      config.hiddenMin.value = min > config.min ? String(min) : '';
+      config.label.textContent = min <= config.min
+        ? config.anyLabel
+        : 'At least ' + config.format(min, false, config.max);
+      updateMinRangeFill(config, min);
+    }
+
     function updateMaxRangeFill(config, max) {
       var stack = config.maxRange.parentElement;
       if (!stack) return;
@@ -1947,9 +1995,24 @@ export const HOME_HTML = String.raw`<!doctype html>
       stack.style.setProperty('--range-end', Math.min(Math.max(end, 0), 100) + '%');
     }
 
+    function updateMinRangeFill(config, min) {
+      var stack = config.minRange.parentElement;
+      if (!stack) return;
+      var span = config.max - config.min;
+      var start = span > 0 ? ((min - config.min) / span) * 100 : 0;
+      stack.style.setProperty('--range-start', Math.min(Math.max(start, 0), 100) + '%');
+      stack.style.setProperty('--range-end', '100%');
+    }
+
     function resetMaxRange(config) {
       config.maxRange.value = String(config.max);
       syncMaxRange(config);
+      refreshBuilder();
+    }
+
+    function resetMinRange(config) {
+      config.minRange.value = String(config.min);
+      syncMinRange(config);
       refreshBuilder();
     }
 
@@ -1998,6 +2061,13 @@ export const HOME_HTML = String.raw`<!doctype html>
         maxRange: config.maxRange
       }, clientX));
       syncMaxRange(config);
+      refreshBuilder();
+    }
+
+    function moveMinRangeThumb(config, clientX) {
+      config.minRange.focus();
+      config.minRange.value = String(steppedRangeValue(config, clientX));
+      syncMinRange(config);
       refreshBuilder();
     }
 
@@ -2055,8 +2125,43 @@ export const HOME_HTML = String.raw`<!doctype html>
       });
     }
 
+    function installMinRangePointer(config) {
+      var stack = config.minRange.parentElement;
+      if (!stack) return;
+      stack.addEventListener('pointerdown', function (event) {
+        if (event.button !== undefined && event.button !== 0) return;
+        event.preventDefault();
+        stack.setPointerCapture(event.pointerId);
+        moveMinRangeThumb(config, event.clientX);
+
+        function onPointerMove(moveEvent) {
+          moveMinRangeThumb(config, moveEvent.clientX);
+        }
+
+        function onPointerUp(upEvent) {
+          stack.releasePointerCapture(upEvent.pointerId);
+          stack.removeEventListener('pointermove', onPointerMove);
+          stack.removeEventListener('pointerup', onPointerUp);
+          stack.removeEventListener('pointercancel', onPointerUp);
+        }
+
+        stack.addEventListener('pointermove', onPointerMove);
+        stack.addEventListener('pointerup', onPointerUp);
+        stack.addEventListener('pointercancel', onPointerUp);
+      });
+    }
+
     function formatRunCostCap(value, isMax, max) {
       if (isMax && value >= max) return '$' + max.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '+';
+      return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function formatVisualReasoningFloor(value) {
+      return Math.round(value).toLocaleString();
+    }
+
+    function formatImageCostCap(value, isMax, max) {
+      if (isMax && value >= max) return '$' + max.toLocaleString() + '+';
       return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
     }
 
@@ -2080,6 +2185,8 @@ export const HOME_HTML = String.raw`<!doctype html>
     var contextRange;
     var runCostRange;
     var audioInputCostRange;
+    var visualReasoningRange;
+    var imageCostRange;
     var transcriptionCostRange;
     var aaWerRange;
 
@@ -2089,6 +2196,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       syncDualRange(contextRange);
       syncDualRange(runCostRange);
       syncMaxRange(audioInputCostRange);
+      syncMinRange(visualReasoningRange);
+      syncMaxRange(imageCostRange);
       syncMaxRange(transcriptionCostRange);
       syncMaxRange(aaWerRange);
     }
@@ -2413,17 +2522,25 @@ export const HOME_HTML = String.raw`<!doctype html>
       var params = new URLSearchParams();
       params.set('useCase', fields.usecase.value);
       if (fields.provider.value) params.set('provider', fields.provider.value);
-      if (fields.capability.value) params.set('capability', fields.capability.value);
-      if (fields.usecase.value === 'customer-support' && !includeItsBenchmark()) params.set('includeItsEval', 'false');
-      if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
-      if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
-      if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
-      if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
-      if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
-      if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
-      if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
-      if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
-      if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
+      if (fields.usecase.value === 'document-processing') {
+        if (fields.minvisualreasoning.value) params.set('minVisualReasoning', fields.minvisualreasoning.value);
+        if (fields.maximagecost.value) params.set('maxImageInputCostPer1kImagesAud', fields.maximagecost.value);
+        if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
+        if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
+        if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
+      } else {
+        if (fields.capability.value) params.set('capability', fields.capability.value);
+        if (!includeItsBenchmark()) params.set('includeItsEval', 'false');
+        if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
+        if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+        if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
+        if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+        if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
+        if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
+        if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
+        if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+        if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
+      }
       return '/v1/benchmarks?' + params.toString();
     }
 
@@ -2706,8 +2823,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
       if (
         fields.capability.value &&
-        fields.usecase.value !== 'voice' &&
-        fields.usecase.value !== 'speech-to-text'
+        fields.usecase.value === 'customer-support'
       ) params.set('capability', fields.capability.value);
       if (fields.usecase.value === 'voice') {
         if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
@@ -2715,6 +2831,12 @@ export const HOME_HTML = String.raw`<!doctype html>
       } else if (fields.usecase.value === 'speech-to-text') {
         if (fields.maxtranscriptioncost.value) params.set('maxTranscriptionCostPer1kMinutes', fields.maxtranscriptioncost.value);
         if (fields.maxaawer.value) params.set('maxAaWer', fields.maxaawer.value);
+      } else if (fields.usecase.value === 'document-processing') {
+        if (fields.minvisualreasoning.value) params.set('minVisualReasoning', fields.minvisualreasoning.value);
+        if (fields.maximagecost.value) params.set('maxImageInputCostPer1kImagesAud', fields.maximagecost.value);
+        if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
+        if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
+        if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
       } else {
         if (fields.usecase.value === 'customer-support' && !includeItsBenchmark()) params.set('includeItsEval', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
@@ -2788,6 +2910,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       setInputValue(fields.maxaudiooutputcost, params.get('maxAudioOutputCostPerHour'));
       setInputValue(fields.transcriptionmaxrange, params.get('maxTranscriptionCostPer1kMinutes'));
       setInputValue(fields.aawermaxrange, params.get('maxAaWer'));
+      setInputValue(fields.visualreasoningminrange, params.get('minVisualReasoning'));
+      setInputValue(
+        fields.imagecostmaxrange,
+        params.get('maxImageInputCostPer1kImagesAud') || params.get('maxImageInputCostPer1kImages')
+      );
       if (params.get('minContextWindow')) {
         setInputValue(fields.contextminrange, Number(params.get('minContextWindow')) / 1000);
       }
@@ -2904,6 +3031,24 @@ export const HOME_HTML = String.raw`<!doctype html>
       anyLabel: 'Any input audio AUD/hr',
       format: formatAudioCostCap
     };
+    visualReasoningRange = {
+      min: 0,
+      max: 100,
+      minRange: fields.visualreasoningminrange,
+      hiddenMin: fields.minvisualreasoning,
+      label: fields.visualreasoninglabel,
+      anyLabel: 'Any visual reasoning',
+      format: formatVisualReasoningFloor
+    };
+    imageCostRange = {
+      min: 0,
+      max: 10,
+      maxRange: fields.imagecostmaxrange,
+      hiddenMax: fields.maximagecost,
+      label: fields.imagecostlabel,
+      anyLabel: 'Any image AUD/1k',
+      format: formatImageCostCap
+    };
     transcriptionCostRange = {
       min: 0,
       max: 20,
@@ -2927,10 +3072,14 @@ export const HOME_HTML = String.raw`<!doctype html>
     fields.contextany.addEventListener('click', function () { resetDualRange(contextRange); });
     fields.runcostany.addEventListener('click', function () { resetDualRange(runCostRange); });
     fields.audioinputcostany.addEventListener('click', function () { resetMaxRange(audioInputCostRange); });
+    fields.visualreasoningany.addEventListener('click', function () { resetMinRange(visualReasoningRange); });
+    fields.imagecostany.addEventListener('click', function () { resetMaxRange(imageCostRange); });
     fields.transcriptioncostany.addEventListener('click', function () { resetMaxRange(transcriptionCostRange); });
     fields.aawerany.addEventListener('click', function () { resetMaxRange(aaWerRange); });
     [inputCostRange, outputCostRange, contextRange, runCostRange].forEach(installDualRangePointer);
     installMaxRangePointer(audioInputCostRange);
+    installMinRangePointer(visualReasoningRange);
+    installMaxRangePointer(imageCostRange);
     installMaxRangePointer(transcriptionCostRange);
     installMaxRangePointer(aaWerRange);
     restoreBuilderStateFromUrl();

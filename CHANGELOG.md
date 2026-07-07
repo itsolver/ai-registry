@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added document-processing OCR recommendations using Artificial Analysis visual reasoning, image pricing, latency, instruction following, intelligence, and Task AUD signals.
 - Added `document-processing`, `ocr`, and `document-ocr` use-case parsing.
+- Added document-processing filters for `minVisualReasoning` and `maxImageInputCostPer1kImagesAud`, with `maxImageInputCostPer1kImages` accepted as a compatibility alias.
 
 ### Changed
 
 - Split homepage query builder endpoint choices into recommendations, benchmark rows, and raw registry models so copied/opened URLs match the visible table source.
+- Made homepage query-builder filters use explicit use-case profiles so document processing, customer support, voice, and speech-to-text only serialize their active controls.
 - Added `includeItsEval=false` as the public customer-support benchmark-source alias while preserving legacy `includeItsBenchmark=false`.
 
 ## 2026-06-06

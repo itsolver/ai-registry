@@ -175,6 +175,27 @@ describe("filter parsing", () => {
       maxAaWer: 3,
     });
     expect(
+      parseFilters(
+        new URLSearchParams(
+          "useCase=document-processing&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=4.5",
+        ),
+      ),
+    ).toMatchObject({
+      useCase: "document-processing",
+      minVisualReasoning: 70,
+      maxImageInputCostPer1kImagesAud: 4.5,
+    });
+    expect(
+      parseFilters(
+        new URLSearchParams(
+          "useCase=ocr&maxImageInputCostPer1kImages=2.5",
+        ),
+      ),
+    ).toMatchObject({
+      useCase: "document-processing",
+      maxImageInputCostPer1kImagesAud: 2.5,
+    });
+    expect(
       parseFilters(new URLSearchParams("provider=deepgram")),
     ).toMatchObject({
       unsupportedProvider: true,
@@ -679,6 +700,14 @@ describe("Artificial Analysis catalog", () => {
         tier: "fast",
       })?.id,
     ).toBe("cheap-fast");
+    expect(
+      recommendModel(catalog, {
+        useCase: "document-processing",
+        tier: "best",
+        minVisualReasoning: 75,
+        maxImageInputCostPer1kImagesAud: 1,
+      })?.id,
+    ).toBe("middle");
   });
 
   it("applies document-processing provider, cost, and intelligence filters", () => {
@@ -687,6 +716,8 @@ describe("Artificial Analysis catalog", () => {
       provider: "openai" | "google",
       taskCost: number,
       intelligence: number,
+      visualReasoning = 0.8,
+      imageCost = 0.5,
     ): BenchmarkCandidate => ({
       id,
       provider,
@@ -694,7 +725,7 @@ describe("Artificial Analysis catalog", () => {
       source: "artificialanalysis",
       benchmarks: {
         llm: {
-          visualReasoning: 0.8,
+          visualReasoning,
           instructionFollowing: 75,
           intelligence,
           intelligenceCostPerTask: taskCost,
@@ -703,7 +734,7 @@ describe("Artificial Analysis catalog", () => {
       pricing: {
         inputPerMTok: 1,
         outputPerMTok: 3,
-        imageInputPer1kImages: 0.5,
+        imageInputPer1kImages: imageCost,
       },
       recommendable: true,
       availability: {
@@ -729,17 +760,19 @@ describe("Artificial Analysis catalog", () => {
     });
     const catalog: Catalog = {
       generatedAt: "2026-07-07T00:00:00Z",
-      modelCount: 3,
-      activeModelCount: 3,
+      modelCount: 5,
+      activeModelCount: 5,
       providers: [
         { provider: "openai", total: 1, active: 1 },
-        { provider: "google", total: 2, active: 2 },
+        { provider: "google", total: 4, active: 4 },
       ],
       models: [],
       benchmarkCandidates: [
-        row("openai-row", "openai", 0.2, 80),
-        row("google-cheap", "google", 0.4, 78),
-        row("google-expensive", "google", 2, 90),
+        row("openai-row", "openai", 0.2, 80, 0.95, 0.2),
+        row("google-cheap", "google", 0.4, 78, 0.9, 0.5),
+        row("google-expensive", "google", 2, 90, 0.95, 0.5),
+        row("google-low-visual", "google", 0.3, 85, 0.7, 0.5),
+        row("google-image-expensive", "google", 0.3, 85, 0.91, 2),
       ],
     };
 
@@ -748,6 +781,8 @@ describe("Artificial Analysis catalog", () => {
       provider: "google",
       maxIntelligenceCostPerTaskAud: 1,
       minIntelligence: 70,
+      minVisualReasoning: 85,
+      maxImageInputCostPer1kImagesAud: 1,
     });
 
     expect(rows.map((item) => item.id)).toEqual(["google-cheap"]);

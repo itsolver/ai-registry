@@ -266,6 +266,8 @@ export interface ModelFilters {
   minIntelligenceCostPerTaskUsd?: number;
   maxIntelligenceCostPerTaskUsd?: number;
   minIntelligence?: number;
+  minVisualReasoning?: number;
+  maxImageInputCostPer1kImagesAud?: number;
   maxAudioInputCostPerHour?: number;
   maxAudioOutputCostPerHour?: number;
   maxTranscriptionCostPer1kMinutes?: number;
@@ -534,6 +536,10 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     params.get("maxIntelligenceCostPerTaskUsd"),
   );
   const minIntelligence = asFiniteNumber(params.get("minIntelligence"));
+  const minVisualReasoning = asFiniteNumber(params.get("minVisualReasoning"));
+  const maxImageInputCostPer1kImagesAud =
+    asFiniteNumber(params.get("maxImageInputCostPer1kImagesAud")) ??
+    asFiniteNumber(params.get("maxImageInputCostPer1kImages"));
   const maxAudioInputCostPerHour =
     asFiniteNumber(params.get("maxAudioInputCostPerHour")) ??
     asFiniteNumber(params.get("maxAudioCostPerHour"));
@@ -574,6 +580,10 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
       ? { maxIntelligenceCostPerTaskUsd }
       : {}),
     ...(minIntelligence !== undefined ? { minIntelligence } : {}),
+    ...(minVisualReasoning !== undefined ? { minVisualReasoning } : {}),
+    ...(maxImageInputCostPer1kImagesAud !== undefined
+      ? { maxImageInputCostPer1kImagesAud }
+      : {}),
     ...(maxAudioInputCostPerHour !== undefined
       ? { maxAudioInputCostPerHour }
       : {}),
@@ -690,6 +700,21 @@ export function filterModels(
       filters.minIntelligence !== undefined &&
       (model.benchmarks?.llm?.intelligence === undefined ||
         model.benchmarks.llm.intelligence < filters.minIntelligence)
+    ) {
+      return false;
+    }
+    if (
+      filters.minVisualReasoning !== undefined &&
+      ((normalizedBenchmarkScore(model.benchmarks?.llm?.visualReasoning) ??
+        Number.NEGATIVE_INFINITY) < filters.minVisualReasoning)
+    ) {
+      return false;
+    }
+    if (
+      filters.maxImageInputCostPer1kImagesAud !== undefined &&
+      (model.pricing.imageInputPer1kImages === undefined ||
+        model.pricing.imageInputPer1kImages >
+          filters.maxImageInputCostPer1kImagesAud)
     ) {
       return false;
     }
@@ -1078,6 +1103,21 @@ function passesCostFilters(
     filters.minIntelligence !== undefined &&
     (candidate.benchmarks.llm?.intelligence === undefined ||
       candidate.benchmarks.llm.intelligence < filters.minIntelligence)
+  ) {
+    return false;
+  }
+  if (
+    filters.minVisualReasoning !== undefined &&
+    ((normalizedBenchmarkScore(candidate.benchmarks.llm?.visualReasoning) ??
+      Number.NEGATIVE_INFINITY) < filters.minVisualReasoning)
+  ) {
+    return false;
+  }
+  if (
+    filters.maxImageInputCostPer1kImagesAud !== undefined &&
+    (candidate.pricing.imageInputPer1kImages === undefined ||
+      candidate.pricing.imageInputPer1kImages >
+        filters.maxImageInputCostPer1kImagesAud)
   ) {
     return false;
   }

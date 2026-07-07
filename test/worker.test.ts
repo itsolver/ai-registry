@@ -160,8 +160,11 @@ describe("worker routes", () => {
       '<option value="fast" selected>fast and cheap</option>',
     );
     expect(html).toContain(
-      '<div class="b-field" data-filter-scope="text">\n          <label for="b-capability">Must have</label>',
+      '<div class="b-field" data-filter-scope="customer-support">\n          <label for="b-capability">Must have</label>',
     );
+    expect(html).toContain("Min visual reasoning");
+    expect(html).toContain("Max image AUD/1k");
+    expect(html).not.toContain('data-filter-scope="text"');
     expect(html).toContain("model.capabilities[capability] !== true");
     expect(html).toContain("function textBenchmarkPath()");
     expect(html).toContain(
@@ -581,6 +584,24 @@ describe("worker routes", () => {
       ctx,
     );
     const body = (await response.json()) as JsonObject;
+    const visualResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=document-processing&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=5",
+      ),
+      env(),
+      ctx,
+    );
+    const visualBody = (await visualResponse.json()) as JsonObject;
+    const aliasResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=document-processing&provider=google&maxImageInputCostPer1kImages=5",
+      ),
+      env(),
+      ctx,
+    );
+    const aliasBody = (await aliasResponse.json()) as JsonObject;
+    const normalized = (value: number | undefined) =>
+      typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
 
     expect(response.status).toBe(200);
     expect(body.benchmarkCount).toBeGreaterThan(0);
@@ -595,6 +616,7 @@ describe("worker routes", () => {
               intelligenceCostPerTask?: number;
             };
           };
+          pricing: { imageInputPer1kImages?: number };
         }) =>
           row.provider === "google" &&
           typeof row.benchmarks.llm?.visualReasoning === "number" &&
@@ -604,11 +626,57 @@ describe("worker routes", () => {
             Number.POSITIVE_INFINITY) <= 1,
       ),
     ).toBe(true);
+    expect(visualResponse.status).toBe(200);
+    expect(visualBody.benchmarkCount).toBeGreaterThan(0);
+    expect(
+      visualBody.benchmarks.every(
+        (row: {
+          benchmarks: { llm?: { visualReasoning?: number } };
+          pricing: { imageInputPer1kImages?: number };
+        }) =>
+          normalized(row.benchmarks.llm?.visualReasoning) >= 70 &&
+          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
+      ),
+    ).toBe(true);
+    expect(aliasResponse.status).toBe(200);
+    expect(aliasBody.benchmarkCount).toBeGreaterThan(0);
+    expect(
+      aliasBody.benchmarks.every(
+        (row: { pricing: { imageInputPer1kImages?: number } }) =>
+          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
+      ),
+    ).toBe(true);
+  });
+
+  it("applies document-processing visual and image filters to model browsing", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models?useCase=document-processing&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=5",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+    const normalized = (value: number | undefined) =>
+      typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
+
+    expect(response.status).toBe(200);
+    expect(body.modelCount).toBeGreaterThan(0);
+    expect(
+      body.models.every(
+        (row: {
+          benchmarks?: { llm?: { visualReasoning?: number } };
+          pricing: { imageInputPer1kImages?: number };
+        }) =>
+          normalized(row.benchmarks?.llm?.visualReasoning) >= 70 &&
+          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
+      ),
+    ).toBe(true);
   });
 
   it("uses highest visual reasoning for document-processing best recommendations", async () => {
     const query =
-      "useCase=document-processing&provider=google&maxIntelligenceCostPerTaskAud=5&minIntelligence=30";
+      "useCase=document-processing&maxIntelligenceCostPerTaskAud=5&minIntelligence=30&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=5";
     const rowsResponse = await handleRequest(
       new Request(`https://ai.itsolver.au/v1/benchmarks?${query}`),
       env(),
@@ -643,8 +711,11 @@ describe("worker routes", () => {
     expect(eligible.length).toBeGreaterThan(0);
     expect(recommendationBody.recommendation.id).toBe(eligible[0].id);
     expect(
-      rowsBody.benchmarks.some((row: JsonObject) => row.recommendable === false),
-    ).toBe(true);
+      normalized(recommendationBody.recommendation.benchmarks.llm.visualReasoning),
+    ).toBeGreaterThanOrEqual(70);
+    expect(
+      recommendationBody.recommendation.pricing.imageInputPer1kImages,
+    ).toBeLessThanOrEqual(5);
   });
 
   it("applies Run AUD and intelligence filters to recommendations", async () => {

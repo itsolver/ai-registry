@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added document-processing OCR recommendations using Artificial Analysis visual reasoning, image pricing, latency, instruction following, intelligence, and Task AUD signals.
 - Added `document-processing`, `ocr`, and `document-ocr` use-case parsing.
 - Added document-processing filters for `minVisualReasoning` and `maxImageInputCostPer1kImagesAud`, with `maxImageInputCostPer1kImages` accepted as a compatibility alias.
+- Added `recommendation.failover` to recommendation responses for the next-best model under the same filters.
 
 ### Changed
 

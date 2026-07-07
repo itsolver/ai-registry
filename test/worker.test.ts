@@ -677,7 +677,7 @@ describe("worker routes", () => {
 
   it("uses highest visual reasoning for document-processing best recommendations", async () => {
     const query =
-      "useCase=document-processing&maxIntelligenceCostPerTaskAud=5&minIntelligence=30&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=5";
+      "useCase=document-processing&maxIntelligenceCostPerTaskAud=5&minIntelligence=30&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=10";
     const rowsResponse = await handleRequest(
       new Request(`https://ai.itsolver.au/v1/benchmarks?${query}`),
       env(),
@@ -709,14 +709,18 @@ describe("worker routes", () => {
 
     expect(rowsResponse.status).toBe(200);
     expect(recommendationResponse.status).toBe(200);
-    expect(eligible.length).toBeGreaterThan(0);
+    expect(eligible.length).toBeGreaterThan(1);
     expect(recommendationBody.recommendation.id).toBe(eligible[0].id);
+    expect(recommendationBody.recommendation.failover.id).toBe(eligible[1].id);
+    expect(recommendationBody.recommendation.failover).not.toHaveProperty(
+      "failover",
+    );
     expect(
       normalized(recommendationBody.recommendation.benchmarks.llm.visualReasoning),
     ).toBeGreaterThanOrEqual(70);
     expect(
       recommendationBody.recommendation.pricing.imageInputPer1kImages,
-    ).toBeLessThanOrEqual(5);
+    ).toBeLessThanOrEqual(10);
   });
 
   it("applies Run AUD and intelligence filters to recommendations", async () => {
@@ -921,6 +925,8 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("safest");
+    expect(body.recommendation.failover).toMatchObject({ id: "safe" });
+    expect(body.recommendation.failover).not.toHaveProperty("failover");
     expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
       "safe",
       "middle",
@@ -950,6 +956,9 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("cheapest");
+    expect(body.recommendation.failover).toMatchObject({
+      id: "next-cheapest",
+    });
     expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
       "next-cheapest",
       "third-cheapest",
@@ -976,6 +985,7 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("only-benchmarked");
+    expect(body.recommendation.failover).toBeNull();
     expect(body.failovers).toEqual([]);
     expect(body.failoverStatus).toEqual({
       requested: 2,
@@ -1261,6 +1271,12 @@ describe("worker routes", () => {
     expect(defaultCappedBody.recommendation.deprecated).not.toBe(true);
     expect(defaultCappedBody.recommendation.id).not.toBe(
       "google-gemini-2-0-flash-lite",
+    );
+    expect(defaultCappedBody.recommendation.failover).toMatchObject({
+      benchmarks: { speechToText: expect.any(Object) },
+    });
+    expect(defaultCappedBody.recommendation.failover).not.toHaveProperty(
+      "failover",
     );
     expect(cappedGroqVisibleResponse.status).toBe(200);
     expect(cappedGroqVisibleBody.recommendation).toMatchObject({

@@ -1176,7 +1176,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
-    <p>The opinionated endpoint. Apply filters and get one primary model plus benchmarked customer-support failovers when available.</p>
+    <p>The opinionated endpoint. Apply filters and get one primary model plus a nested next-best failover. The top-level failovers array remains for customer-support compatibility.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/providers</code>
@@ -1211,7 +1211,13 @@ export const HOME_HTML = String.raw`<!doctype html>
         "intelligenceCostPerTask": 1.2112
       }
     },
-    "recommendable": true
+    "recommendable": true,
+    "failover": {
+      "id": "grok-4-3",
+      "provider": "xai",
+      "name": "Grok 4.3 (high)",
+      "recommendable": true
+    }
   },
   "failovers": [
     {
@@ -1241,7 +1247,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     <li>Each model includes AUD pricing and benchmark costs converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
     <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Document processing, speech-to-speech (voice), and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
-    <li>For customer support, try <code>recommendation</code> first, then <code>failovers[0]</code>, then <code>failovers[1]</code> when a provider or model is overloaded.</li>
+    <li>Use <code>recommendation.failover</code> as the simple next-best model for the same filters. Top-level <code>failovers</code> remains for existing customer-support clients that expect two overload fallbacks.</li>
   </ul>
 
   <p class="footnote">Last data refresh: <span id="generatedAt">checking...</span><br>Pricing shown as: <span id="pricingContext">checking...</span></p>

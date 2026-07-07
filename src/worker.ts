@@ -9,12 +9,13 @@ import {
   latestForProvider,
   normalizeArtificialAnalysisCatalog,
   parseFilters,
-  recommendModel,
   recommendModelFailovers,
+  rankedRecommendedModels,
   type ArtificialAnalysisModel,
   type ArtificialAnalysisSpeechToTextModel,
   type Catalog,
   type ExchangeRate,
+  type RecommendedModel,
 } from "./registry";
 
 const CACHE_KEY = "catalog:v26";
@@ -116,6 +117,22 @@ export async function refreshCatalog(env: Env): Promise<Catalog> {
   return catalog;
 }
 
+function withoutNestedFailover(model: RecommendedModel): RecommendedModel {
+  const { failover: _failover, ...modelWithoutFailover } =
+    model as RecommendedModel & { failover?: unknown };
+  return modelWithoutFailover as RecommendedModel;
+}
+
+function withNestedFailover(
+  recommendation: RecommendedModel,
+  failover: RecommendedModel | undefined,
+): RecommendedModel & { failover: RecommendedModel | null } {
+  return {
+    ...withoutNestedFailover(recommendation),
+    failover: failover ? withoutNestedFailover(failover) : null,
+  };
+}
+
 async function routeApi(
   route: string,
   params: URLSearchParams,
@@ -141,7 +158,8 @@ async function routeApi(
 
   if (route === "/models/recommend") {
     const filters = parseFilters(params);
-    const recommendation = recommendModel(catalog, filters);
+    const rankedRecommendations = rankedRecommendedModels(catalog, filters);
+    const recommendation = rankedRecommendations[0];
     if (!recommendation) {
       return jsonResponse(
         {
@@ -151,6 +169,10 @@ async function routeApi(
         404,
       );
     }
+    const recommendationWithFailover = withNestedFailover(
+      recommendation,
+      rankedRecommendations[1],
+    );
 
     const requestedFailovers = 2;
     const failovers = recommendModelFailovers(
@@ -169,7 +191,7 @@ async function routeApi(
 
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
-      recommendation,
+      recommendation: recommendationWithFailover,
       failovers,
       failoverStatus,
     });

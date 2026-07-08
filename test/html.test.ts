@@ -37,6 +37,9 @@ describe("homepage copy", () => {
       "var supportModels = useProvidedRows ? models : activeTextBenchmarkModels(models);",
     );
     expect(HOME_HTML).toContain(
+      "renderTextBenchmarks(rows, fields.usecase.value === 'document-processing');",
+    );
+    expect(HOME_HTML).toContain(
       "if (fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();",
     );
     expect(HOME_HTML).toContain("currentBrowseModels = data.models || [];");

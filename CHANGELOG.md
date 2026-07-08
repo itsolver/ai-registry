@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-07-08
+
+### Fixed
+
+- Fixed document-processing follow-ups from PR review: preserve image pricing with token pricing, avoid customer-support availability exclusions for OCR recommendations, keep hidden support capability filters out of document tables, and scope vision output speed to document rankings.
+
 ## 2026-07-07
 
 ### Added

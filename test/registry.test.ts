@@ -720,6 +720,82 @@ describe("Artificial Analysis catalog", () => {
     ).toBe("middle");
   });
 
+  it("does not reuse customer-support availability exclusions for document-processing", () => {
+    const row: BenchmarkCandidate = {
+      id: "ocr-safe-text-rejected",
+      provider: "google",
+      name: "OCR Safe Text Rejected",
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          visualReasoning: 0.9,
+          instructionFollowing: 80,
+          intelligence: 70,
+          intelligenceCostPerTask: 0.2,
+        },
+      },
+      pricing: {
+        inputPerMTok: 1,
+        outputPerMTok: 3,
+        imageInputPer1kImages: 0.5,
+      },
+      recommendable: true,
+      availability: {
+        status: "unknown",
+        acceptedRisk: false,
+        reason: "Customer-support auto-close benchmark did not accept this row.",
+      },
+      family: null,
+      contextWindow: 250_000,
+      outputLimit: null,
+      capabilities: {
+        vision: true,
+        reasoning: true,
+        pdf: false,
+        toolCalling: false,
+        structuredOutput: false,
+      },
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    };
+    const catalog: Catalog = {
+      generatedAt: "2026-07-07T00:00:00Z",
+      modelCount: 1,
+      activeModelCount: 1,
+      providers: [{ provider: "google", total: 1, active: 1 }],
+      models: [],
+      benchmarkCandidates: [row],
+    };
+
+    expect(
+      recommendModel(catalog, {
+        useCase: "document-processing",
+        provider: "google",
+      })?.id,
+    ).toBe("ocr-safe-text-rejected");
+  });
+
+  it("keeps AA vision image pricing when token pricing comes from another source", () => {
+    const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 2,
+      source: "test",
+    });
+    const row = benchmarkCandidates(catalog, {
+      useCase: "document-processing",
+      provider: "xai",
+      maxImageInputCostPer1kImagesAud: 10,
+    }).find((item) => item.id === "grok-4-3");
+
+    expect(row).toBeDefined();
+    expect(row?.pricing.imageInputPer1kImages).toEqual(expect.any(Number));
+    expect(row?.pricing.imageInputPer1kImages).toBeLessThanOrEqual(10);
+  });
+
   it("applies document-processing provider, cost, and intelligence filters", () => {
     const row = (
       id: string,

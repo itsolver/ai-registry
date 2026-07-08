@@ -2562,7 +2562,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           if (requestId !== textBenchmarkRequest) return;
           if (isBrowsingModels()) return;
           var rows = data.benchmarks || [];
-          renderTextBenchmarks(rows);
+          renderTextBenchmarks(rows, fields.usecase.value === 'document-processing');
           renderFaq(rows);
         })
         .catch(function () {

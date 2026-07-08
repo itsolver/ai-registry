@@ -960,12 +960,7 @@ function isUseCaseRecommendationCandidate(
       candidate.capabilities?.vision === true &&
       candidate.capabilities?.reasoning === true &&
       isProductionAvailabilityAllowed(
-        candidate.availability ??
-          productionAvailabilityForTextModel(
-            candidate.id,
-            candidate.name,
-            candidate.benchmarks.llm,
-          ),
+        heuristicAvailabilityForTextModel(candidate.id, candidate.name),
         filters,
       )
     );
@@ -1483,9 +1478,9 @@ function buildBenchmarkCandidates(
       exchangeRate,
     );
     const pricing = hasTokenPricing(existing?.pricing ?? {})
-      ? existing!.pricing
+      ? withImagePricing(existing!.pricing, frontierPricing)
       : hasTokenPricing(generatedPricing)
-        ? generatedPricing
+        ? withImagePricing(generatedPricing, frontierPricing)
         : frontierPricing;
 
     const candidate = benchmarkCandidateFromRegistry({
@@ -2186,6 +2181,22 @@ function pricingFromArtificialAnalysisEfficiency(
   };
 
   return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
+}
+
+function withImagePricing(
+  pricing: ModelPricing,
+  imagePricing: ModelPricing,
+): ModelPricing {
+  if (
+    pricing.imageInputPer1kImages !== undefined ||
+    imagePricing.imageInputPer1kImages === undefined
+  ) {
+    return pricing;
+  }
+  return {
+    ...pricing,
+    imageInputPer1kImages: imagePricing.imageInputPer1kImages,
+  };
 }
 
 function pricingFromCustomerSupportRecommendation(
@@ -3167,7 +3178,7 @@ function scoreBenchmarkCandidate(
   const signals = candidate.benchmarks.llm;
   const quality = benchmarkCandidateQualityScore(candidate, useCase);
   const latency = benchmarkCandidateLatencyScore(candidate, useCase);
-  const speed = speedScore(signals);
+  const speed = speedScore(signals, useCase);
   const context = Math.min((candidate.contextWindow ?? 0) / 1_000_000, 1) * 100;
   const cost = benchmarkCandidateCostScore(candidate, useCase, tier);
   const weights = scoringWeights(useCase, tier);
@@ -3317,7 +3328,7 @@ function scoreRecommendation(
     model.benchmarks?.llm ?? catalog.benchmarkSignals?.[modelKey(model)];
   const quality = qualityScore(model, signals, useCase);
   const latency = latencyScore(signals, model, useCase);
-  const speed = speedScore(signals);
+  const speed = speedScore(signals, useCase);
   const context = contextScore(model);
   const cost = costScore(model, useCase, signals, tier);
   const weights = scoringWeights(useCase, tier);
@@ -3479,8 +3490,14 @@ function latencyScore(
   return 100 - Math.min(latency / 20, 1) * 100;
 }
 
-function speedScore(signals: BenchmarkSignals | undefined): number {
-  const speed = signals?.visualOutputSpeed ?? signals?.speed;
+function speedScore(
+  signals: Pick<BenchmarkSignals, "speed" | "visualOutputSpeed"> | undefined,
+  useCase?: UseCase,
+): number {
+  const speed =
+    useCase === "document-processing"
+      ? (signals?.visualOutputSpeed ?? signals?.speed)
+      : signals?.speed;
   if (speed === undefined) return 50;
   return Math.min(speed / 220, 1) * 100;
 }

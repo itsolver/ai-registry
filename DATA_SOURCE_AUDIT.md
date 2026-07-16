@@ -1,96 +1,100 @@
 # Data Source Audit
 
-Last audited: 2026-05-20
+Last audited: 2026-07-16
 
 Sources checked:
 
 - `https://models.dev/api.json`
 - `https://artificialanalysis.ai/api/v2/data/llms/models`
+- `https://artificialanalysis.ai/api/v2/language/models/free` (all pages)
 - `https://artificialanalysis.ai/leaderboards/models`
 - `https://artificialanalysis.ai/speech-to-speech`
-- Live registry: `https://ai.itsolver.au/v1/models?includeDeprecated=true`
+- Live registry: `https://ai.itsolver.au/v1/models`
+- Live benchmarks: `https://ai.itsolver.au/v1/benchmarks`
 
 ## Findings
 
 ### models.dev import
 
-The live registry matched the current models.dev source for the supported providers.
+models.dev is the mandatory canonical source for base model identity, provider,
+release/update dates, context and output limits, capabilities, modalities,
+availability, deprecation state, and fallback pricing. The source can be
+overridden for tests with `MODELS_DEV_URL`.
 
-- Supported models.dev records: 129
-- Live registry records: 144
-- Extra records: 15 Artificial Analysis speech-to-speech records
-- Missing models.dev records: 0
-- AUD pricing mismatches after USD to AUD conversion: 0
-- Context window / output limit / deprecated status mismatches: 0
-
-No code change was needed for models.dev normalization.
+`/v1/models` returns these base registry records. Artificial Analysis effort
+configurations are not promoted into duplicate registry models, so a newly
+published model can be visible before it has enough benchmark evidence to be
+recommended. Fable 5, Grok 4.5, and GPT-5.6 should appear as base families
+whenever models.dev publishes them for a supported provider.
 
 ### Artificial Analysis speech-to-speech scrape
 
-The public speech-to-speech page scrape produced the same 15 records as the committed generated data. Only the extraction timestamp changed.
+The checked-in speech-to-speech extract continues to supply voice benchmark
+rows and can be refreshed independently. Rows without
+`costPerHourOfInputAudio` are visible, but do not qualify for recommendations
+that require `maxAudioInputCostPerHour`.
 
-The live registry matched the extracted AA speech records after AUD conversion:
-
-- AA speech records: 15
-- Live AA voice records: 15
-- Missing records: 0
-- Pricing mismatches: 0
-
-AA source records without `costPerHourOfInputAudio`:
+Known source rows without that input-audio cost are:
 
 - `google-gemini-2-5-flash-native-audio-dialog-thinking`
 - `google-gemini-2-5-flash-native-audio-preview-dec-2025`
 - `openai-4o-audio-chatcompletions`
 
-These are not simple registry bugs. The source page does not provide the benchmark input-audio cost field for those rows, so the registry correctly avoids using them for `maxAudioInputCostPerHour` recommendations.
-
 ### Artificial Analysis LLM data
 
-The live registry matched all 47 benchmarked text models back to public Artificial Analysis leaderboard records by provider and model id/name/slug.
+When `ARTIFICIAL_ANALYSIS_API_KEY` is configured, each catalog refresh merges:
 
-Simple fix applied:
+- The legacy detailed endpoint from `ARTIFICIAL_ANALYSIS_LLM_URL` for existing
+  benchmark signals.
+- Every page of the current free endpoint from
+  `ARTIFICIAL_ANALYSIS_FREE_LLM_URL` for current headline indices, nested
+  pricing, nested median performance, and Intelligence Index total/per-task
+  cost.
 
-- `tau2` is now accepted as a telecom benchmark alias.
-- `gdpval_normalized` is now accepted as a professional-task benchmark alias if the API provides it.
-- `0` speed / latency values are now treated as missing, not real benchmark values.
+Current free-feed fields take precedence. Legacy and checked-in extracts fill
+missing fields only and never replace fresher live values. The current parser
+follows `pagination.has_more`, `page`, and `total_pages` rather than assuming the
+first page is complete.
 
-After deployment and cache refresh:
+Artificial Analysis rows are matched to a models.dev family by normalized
+provider and model identity. Effort variants such as `gpt-5-6-sol-high` keep
+distinct benchmark rows and scores while inheriting applicable base-family
+metadata. Fable and GPT-5.6 variants can therefore appear in customer-support
+benchmarks when their required signals exist; Grok 4.5 is not forced into a
+customer-support recommendation without those signals.
 
-- Text models with AA LLM benchmarks: 47
-- Intelligence signals: 45
-- Coding signals: 43
-- IFBench signals: 34
-- TerminalBench signals: 34
-- Telecom signals: 34
-- Speed signals: 37
-- Latency signals: 37
-- Zero speed / latency placeholders: 0
+### Visibility and recommendation eligibility
 
-Remaining unresolved issue:
+The API intentionally exposes different datasets:
 
-- The public AA leaderboard includes GDPval-style professional-task values, but the free AA LLM API response available to the Worker did not populate `professional` in the live registry after the alias patch. Fixing this likely requires either scraping the public leaderboard payload or using a richer AA API/data product. That is possible, but brittle enough that it should be a deliberate product decision.
+- `/v1/models` contains base registry records and honors explicitly supplied
+  filters.
+- `/v1/benchmarks` contains use-case benchmark/configuration rows, including
+  relevant incomplete rows with a recommendation-eligibility reason.
+- `/v1/models/recommend` retains its existing response shape and only considers
+  rows with positive pricing, production availability, and all evidence
+  required by the selected use case.
+- `/v1/health` reports registry, benchmark, and recommendable counts separately;
+  `/v1/models/providers` derives provider totals from registry records.
 
-### Source disagreements
+This is a show-first, qualify-later policy: visibility in a registry or
+benchmark response does not imply recommendation eligibility.
 
-Some overlapping public AA leaderboard pricing values disagree with models.dev. The registry currently treats models.dev as the source of truth for text model pricing.
+### Freshness and source precedence
 
-Examples in USD:
+Current Artificial Analysis input/output pricing takes precedence when present;
+models.dev pricing is the registry fallback. Source USD pricing and benchmark
+costs are converted to AUD with the catalog's Frankfurter exchange rate.
 
-| Model | models.dev input/output | AA public input/output |
-| --- | ---: | ---: |
-| `openai:o1-preview` | 15 / 60 | 16.5 / 66 |
-| `google:gemini-2.0-flash` | 0.1 / 0.4 | 0.15 / 0.6 |
-| `anthropic:claude-sonnet-4-6` | 3 / 15 | 3.75 / 15 |
-| `anthropic:claude-opus-4-7` | 5 / 25 | 6.25 / 25 |
-| `google:gemma-3-27b-it` | 0 / 0 | 0.1095 / 0.25 |
+The normalized KV cache uses `catalog:v27` so older response shapes cannot be
+served after deployment. A models.dev failure always prevents a cache write.
+When an Artificial Analysis key is configured, failure of any current-free page
+also prevents a cache write; legacy LLM and speech-to-text failures may use
+checked-in fallback extracts. If a valid older catalog is already cached, the
+Worker continues serving it rather than overwriting it with partial data.
 
-These are not safe to auto-rectify without deciding which source should own pricing. The current implementation keeps the simpler rule: models.dev owns text model pricing; Artificial Analysis owns benchmark scores and voice benchmark-run pricing.
-
-AA public speed/latency values also differ from the AA free API values for some models, even after a fresh cache refresh. Example:
-
-- `openai:gpt-5.2`
-  - Live AA API-derived speed / latency: 66.747 tok/s / 68.508s
-  - Public leaderboard speed / latency: 75.999 tok/s / 103.381s
-
-This may be due to different prompt options, API freshness, or leaderboard-specific aggregation. The registry continues to use the AA free API values because they are the supported API source.
-
+After deployment, verify that the three named model families appear in registry
+JSON when present upstream, `/v1/models` and `/v1/benchmarks` differ as intended,
+incomplete rows are visible but not recommendable, health/provider counts match
+their respective datasets, and all three homepage modes render distinct table
+content.

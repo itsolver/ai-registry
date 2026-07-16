@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-07-16
+
+### Added
+
+- Restored a live models.dev-backed base-model registry and enriched it from both the legacy Artificial Analysis LLM endpoint and the paginated current free Language Models endpoint.
+- Added visible recommendation-eligibility reasons to relevant incomplete benchmark rows.
+- Added distinct homepage views for recommendations, use-case benchmark rows, and base registry models.
+
+### Changed
+
+- Made `/v1/models` return canonical registry records, kept `/v1/benchmarks` focused on benchmark/configuration rows, and reported registry, benchmark, and recommendable counts separately.
+- Preserved Artificial Analysis effort variants as distinct benchmark rows while matching them to base registry families.
+- Kept new models visible before they qualify for recommendations, while retaining strict positive-pricing, production-availability, and use-case evidence requirements.
+- Versioned the normalized catalog cache and retained a valid cached catalog when a primary live refresh fails instead of replacing it with partial data.
+
+### Fixed
+
+- Parsed current Artificial Analysis nested pricing, performance, and Intelligence Index task-cost fields so newly published models are not hidden by missing normalized prices.
+- Prevented late requests from a previously selected homepage mode from replacing the active table, so all three browse choices now render their own rows and columns.
+
 ## 2026-07-08
 
 ### Fixed

@@ -97,7 +97,9 @@ next operationally distinct model for the same filters, including `provider`,
 in `recommendation.failover`. Existing top-level `failovers` still provides up
 to two customer-support overload fallbacks for older clients. Top-level
 failovers require IT Solver auto-close benchmark data; when fewer than two are
-available, `failoverStatus.reason` is `insufficient_its_autoclose_benchmarks`.
+available, `failoverStatus.reason` is `insufficient_its_autoclose_benchmarks`,
+or `insufficient_distinct_model_families` when enough benchmark rows exist but
+they do not cover enough operationally distinct base models.
 
 Supported filters:
 

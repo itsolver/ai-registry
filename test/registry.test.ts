@@ -7,6 +7,7 @@ import {
   parseFilters,
   recommendModel,
   recommendModelFailovers,
+  recommendationFamilyKey,
   type BenchmarkCandidate,
   type Catalog,
 } from "../src/registry";
@@ -296,6 +297,167 @@ describe("Artificial Analysis catalog", () => {
     ).not.toContain("grok-4-5");
   });
 
+  it("preserves base registry metadata when fallback support rows add effort variants", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    source.openai.models["gpt-5.5"] = {
+      ...source.openai.models["gpt-5.6"],
+      id: "gpt-5.5",
+      name: "GPT-5.5",
+      family: "gpt",
+    };
+
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      "2026-07-16T00:00:00Z",
+    );
+
+    expect(
+      catalog.benchmarkCandidates?.find(
+        (candidate) => candidate.id === "gpt-5-5-low",
+      ),
+    ).toMatchObject({
+      registryModelId: "gpt-5.5",
+      family: "gpt",
+    });
+  });
+
+  it("joins compound effort variants without collapsing canonical max models", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    const anthropicTemplate = source.anthropic.models["claude-fable-5"];
+    source.anthropic.models["claude-sonnet-4.6"] = {
+      ...anthropicTemplate,
+      id: "claude-sonnet-4.6",
+      name: "Claude Sonnet 4.6",
+      family: "claude-sonnet",
+      modalities: { input: ["text", "pdf"], output: ["text"] },
+    };
+    const openAiTemplate = source.openai.models["gpt-5.6"];
+    source.openai.models["gpt-5.1-codex"] = {
+      ...openAiTemplate,
+      id: "gpt-5.1-codex",
+      name: "GPT-5.1 Codex",
+      family: "gpt-codex",
+    };
+    source.openai.models["gpt-5.1-codex-max"] = {
+      ...openAiTemplate,
+      id: "gpt-5.1-codex-max",
+      name: "GPT-5.1 Codex Max",
+      family: "gpt-codex",
+    };
+
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      "2026-07-16T00:00:00Z",
+    );
+    const byId = new Map(
+      catalog.benchmarkCandidates?.map((candidate) => [candidate.id, candidate]),
+    );
+
+    expect(byId.get("claude-sonnet-4-6-adaptive")).toMatchObject({
+      registryModelId: "claude-sonnet-4.6",
+      family: "claude-sonnet",
+      capabilities: {
+        vision: true,
+        reasoning: true,
+      },
+    });
+    expect(
+      byId.get("claude-sonnet-4-6-non-reasoning-low-effort"),
+    ).toMatchObject({
+      registryModelId: "claude-sonnet-4.6",
+      family: "claude-sonnet",
+      capabilities: {
+        vision: true,
+        reasoning: false,
+        pdf: true,
+        toolCalling: true,
+        structuredOutput: true,
+      },
+    });
+    expect(
+      benchmarkCandidates(catalog, { capability: "reasoning" }).some(
+        (candidate) =>
+          candidate.id === "claude-sonnet-4-6-non-reasoning-low-effort",
+      ),
+    ).toBe(false);
+
+    const canonical = catalog.models.find(
+      (model) => model.id === "gpt-5.1-codex",
+    )!;
+    const canonicalMax = catalog.models.find(
+      (model) => model.id === "gpt-5.1-codex-max",
+    )!;
+    expect(recommendationFamilyKey(canonical)).not.toBe(
+      recommendationFamilyKey(canonicalMax),
+    );
+  });
+
+  it("preserves registry capabilities that an AA effort row omits", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    const anthropicTemplate = source.anthropic.models["claude-fable-5"];
+    source.anthropic.models["claude-sonnet-4.6"] = {
+      ...anthropicTemplate,
+      id: "claude-sonnet-4.6",
+      name: "Claude Sonnet 4.6",
+      family: "claude-sonnet",
+    };
+    const efficiencyRecord = AA_LLM_EFFICIENCY_MODELS.find(
+      (record) =>
+        record.slug === "claude-sonnet-4-6-non-reasoning-low-effort",
+    );
+    expect(efficiencyRecord).toBeDefined();
+    const mutableRecord = efficiencyRecord as unknown as {
+      imageInput?: boolean;
+      reasoning?: boolean;
+    };
+    const originalImageInput = mutableRecord.imageInput;
+    delete mutableRecord.imageInput;
+
+    try {
+      const catalog = normalizeModelsDevCatalog(
+        source,
+        "2026-07-16T00:00:00Z",
+      );
+      expect(
+        catalog.benchmarkCandidates?.find(
+          (candidate) =>
+            candidate.id ===
+            "claude-sonnet-4-6-non-reasoning-low-effort",
+        ),
+      ).toMatchObject({
+        registryModelId: "claude-sonnet-4.6",
+        capabilities: {
+          vision: true,
+          reasoning: false,
+          pdf: true,
+          toolCalling: true,
+          structuredOutput: true,
+        },
+      });
+    } finally {
+      mutableRecord.imageInput = originalImageInput;
+    }
+  });
+
+  it("infers the same base for compound AA variants without registry metadata", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-07-16T00:00:00Z",
+    );
+    const adaptive = catalog.benchmarkCandidates?.find(
+      (candidate) => candidate.id === "claude-sonnet-4-6-adaptive",
+    )!;
+    const lowEffort = catalog.benchmarkCandidates?.find(
+      (candidate) =>
+        candidate.id === "claude-sonnet-4-6-non-reasoning-low-effort",
+    )!;
+
+    expect(adaptive.registryModelId).toBeUndefined();
+    expect(lowEffort.registryModelId).toBeUndefined();
+    expect(recommendationFamilyKey(adaptive)).toBe(
+      recommendationFamilyKey(lowEffort),
+    );
+  });
+
   it("prefers an exact canonical registry match over an earlier max alias", () => {
     const source = structuredClone(modelsDevFixture) as any;
     const template = source.openai.models["gpt-5.6"];
@@ -337,6 +499,70 @@ describe("Artificial Analysis catalog", () => {
         (candidate) => candidate.id === "gpt-5-1-codex",
       )?.registryModelId,
     ).toBe("gpt-5.1-codex");
+  });
+
+  it("uses the exact AA effort fallback before a stripped base alias", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    source.google.models["gemma-4-31b"] = {
+      ...source.google.models["gemini-fast"],
+      id: "gemma-4-31b",
+      name: "Gemma 4 31B",
+      family: "gemma",
+    };
+    const expected = AA_LLM_EFFICIENCY_MODELS.find(
+      (record) => record.slug === "gemma-4-31b-non-reasoning",
+    );
+    expect(expected).toBeDefined();
+
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          id: "aa-gemma-4-31b-non-reasoning",
+          name: "Gemma 4 31B (Non-reasoning)",
+          slug: "gemma-4-31b-non-reasoning",
+          model_creator: { name: "Google", slug: "google" },
+          evaluations: { artificial_analysis_intelligence_index: 20 },
+        },
+      ],
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "gemma-4-31b-non-reasoning",
+    );
+
+    expect(candidate?.benchmarks.llm?.instructionFollowing).toBe(
+      expected?.ifbench,
+    );
+    expect(candidate?.pricing).toMatchObject({
+      inputPerMTok: expected?.inputPrice,
+      outputPerMTok: expected?.outputPrice,
+    });
+  });
+
+  it("does not inherit a base auto-close run for an unbenchmarked effort variant", () => {
+    const id = "grok-4-3-non-reasoning-low-effort";
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          id: `aa-${id}`,
+          name: "Grok 4.3 (Non-reasoning, Low Effort)",
+          slug: id,
+          model_creator: { name: "xAI", slug: "xai" },
+          evaluations: { artificial_analysis_intelligence_index: 50 },
+        },
+      ],
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === id,
+    );
+
+    expect(candidate).toBeDefined();
+    expect(candidate?.benchmarks.llm?.autoClose).toBeUndefined();
   });
 
   it("merges live AA pricing field-by-field over checked-in fallbacks", () => {

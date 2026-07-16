@@ -86,7 +86,7 @@ Current Artificial Analysis input/output pricing takes precedence when present;
 models.dev pricing is the registry fallback. Source USD pricing and benchmark
 costs are converted to AUD with the catalog's Frankfurter exchange rate.
 
-The normalized KV cache uses `catalog:v27` so older response shapes cannot be
+The normalized KV cache uses `catalog:v28` so older response shapes cannot be
 served after deployment. A models.dev failure always prevents a cache write.
 When an Artificial Analysis key is configured, failure of any current-free page
 also prevents a cache write; legacy LLM and speech-to-text failures may use

@@ -899,13 +899,39 @@ export function recommendModelFailovers(
   if (filters.useCase !== "customer-support" || limit <= 0) return [];
 
   const recommendation = recommendModel(catalog, filters);
+  const seenFamilies = new Set<string>();
+  if (recommendation) {
+    seenFamilies.add(recommendationFamilyKey(recommendation));
+  }
+
   return rankedBenchmarkRecommendations(catalog, {
     ...filters,
     includeItsBenchmark: true,
   })
     .filter((candidate) => candidate.id !== recommendation?.id)
     .filter((candidate) => Boolean(candidate.benchmarks.llm?.autoClose))
+    .filter((candidate) => {
+      const family = recommendationFamilyKey(candidate);
+      if (!family || seenFamilies.has(family)) return false;
+      seenFamilies.add(family);
+      return true;
+    })
     .slice(0, limit);
+}
+
+export function recommendationFamilyKey(model: RecommendedModel): string {
+  const isRegistryModel = !("source" in model);
+  const registryModelId =
+    "registryModelId" in model ? model.registryModelId : undefined;
+  const canonicalIdentity = registryModelId || (isRegistryModel ? model.id : "");
+  if (canonicalIdentity) {
+    return `${model.provider}:${normalizeMatchKey(canonicalIdentity)}`;
+  }
+
+  const identity = model.name || model.id || model.family || "";
+  const baseIdentity =
+    modelJoinKeys(identity).at(-1) ?? normalizeMatchKey(identity);
+  return `${model.provider}:${baseIdentity}`;
 }
 
 export function benchmarkCandidates(
@@ -1823,7 +1849,7 @@ function buildBenchmarkCandidates(
       efficiencySignalsForKeys(aaKeys, exchangeRate),
       existing?.benchmarks.llm,
       benchmarkSignalsFromArtificialAnalysis(aaModel, exchangeRate),
-      autoCloseSignalsForKeys(aaKeys, exchangeRate),
+      autoCloseSignalsForKeys(aaModel, aaKeys, exchangeRate),
     );
     if (!hasAnyTextQualitySignal(signals)) continue;
 
@@ -1907,8 +1933,8 @@ function buildBenchmarkCandidates(
       models,
       provider,
       new Set(
-        [recommendationModel.slug, recommendationModel.label].map(
-          normalizeMatchKey,
+        [recommendationModel.slug, recommendationModel.label].flatMap(
+          modelJoinKeys,
         ),
       ),
     );
@@ -1978,13 +2004,7 @@ function buildBenchmarkCandidates(
       contextWindow:
         existing?.contextWindow ?? registryModel?.contextWindow ?? 1_000_000,
       deprecated: autoCloseModel.deprecated,
-      capabilities: {
-        vision: true,
-        reasoning: true,
-        pdf: false,
-        toolCalling: false,
-        structuredOutput: false,
-      },
+      capabilities: { vision: true, reasoning: true },
     });
     candidates.set(candidate.id, candidate);
   }
@@ -2116,12 +2136,17 @@ function benchmarkCandidateFromRegistry(input: {
   pricing: ModelPricing;
   registryModel?: RegistryModel;
   contextWindow?: number | null;
-  capabilities?: Record<Capability, boolean> | null;
+  capabilities?: Partial<Record<Capability, boolean>> | null;
   deprecated?: boolean | null;
   releaseDate?: string;
 }): BenchmarkCandidate {
   const model = input.registryModel;
   const deprecated = model?.deprecated ?? input.deprecated ?? null;
+  const capabilities = mergeBenchmarkCapabilities(
+    model?.capabilities ??
+      inferredTextCapabilities(input.id, input.name, input.benchmarks.llm),
+    input.capabilities,
+  );
   const availability = input.benchmarks.llm
     ? mergeBenchmarkAvailability(
         model?.availability,
@@ -2156,11 +2181,7 @@ function benchmarkCandidateFromRegistry(input: {
     family: model?.family ?? null,
     contextWindow: model?.contextWindow ?? input.contextWindow ?? null,
     outputLimit: model?.outputLimit ?? null,
-    capabilities:
-      model?.capabilities ??
-      input.capabilities ??
-      inferredTextCapabilities(input.id, input.name, input.benchmarks.llm) ??
-      null,
+    capabilities,
     modalities: model?.modalities ?? null,
     ...(model?.releaseDate || input.releaseDate
       ? { releaseDate: model?.releaseDate ?? input.releaseDate }
@@ -2175,33 +2196,42 @@ function benchmarkCandidateFromRegistry(input: {
   };
 }
 
+function mergeBenchmarkCapabilities(
+  base: Record<Capability, boolean> | null | undefined,
+  benchmark: Partial<Record<Capability, boolean>> | null | undefined,
+): Record<Capability, boolean> | null {
+  if (!benchmark) return base ?? null;
+
+  return {
+    vision: benchmark.vision ?? base?.vision ?? false,
+    pdf: benchmark.pdf ?? base?.pdf ?? false,
+    reasoning: benchmark.reasoning ?? base?.reasoning ?? false,
+    toolCalling: benchmark.toolCalling ?? base?.toolCalling ?? false,
+    structuredOutput:
+      benchmark.structuredOutput ?? base?.structuredOutput ?? false,
+  };
+}
+
 function capabilitiesFromCustomerSupportRecommendation(
   model: ArtificialAnalysisCustomerSupportRecommendation,
-): Record<Capability, boolean> {
+): Partial<Record<Capability, boolean>> {
   return {
     vision: model.imageInput,
     reasoning: model.reasoning,
-    pdf: false,
-    toolCalling: false,
-    structuredOutput: false,
   };
 }
 
 function capabilitiesFromLlmEfficiency(
   model: ArtificialAnalysisLlmEfficiencyModel,
   existing?: Record<Capability, boolean> | null,
-): Record<Capability, boolean> | null {
-  if (model.imageInput === undefined && model.reasoning === undefined) {
-    return existing ?? null;
-  }
-
-  return {
-    vision: model.imageInput ?? existing?.vision ?? false,
-    reasoning: model.reasoning ?? existing?.reasoning ?? false,
-    pdf: existing?.pdf ?? false,
-    toolCalling: existing?.toolCalling ?? false,
-    structuredOutput: existing?.structuredOutput ?? false,
+): Partial<Record<Capability, boolean>> | null {
+  const capabilities: Partial<Record<Capability, boolean>> = {
+    ...(existing ?? {}),
   };
+  if (model.imageInput !== undefined) capabilities.vision = model.imageInput;
+  if (model.reasoning !== undefined) capabilities.reasoning = model.reasoning;
+
+  return Object.keys(capabilities).length ? capabilities : null;
 }
 
 function inferredTextCapabilities(
@@ -2530,12 +2560,7 @@ function efficiencySignalsForKeys(
   aaKeys: Set<string>,
   exchangeRate?: ExchangeRate,
 ): BenchmarkSignals {
-  const match = (
-    AA_LLM_EFFICIENCY_MODELS as readonly ArtificialAnalysisLlmEfficiencyModel[]
-  ).find((efficiencyModel) => {
-    const efficiencyKeys = artificialAnalysisEfficiencyKeys(efficiencyModel);
-    return [...efficiencyKeys].some((key) => aaKeys.has(key));
-  });
+  const match = efficiencyModelForKeys(aaKeys);
 
   return match
     ? benchmarkSignalsFromArtificialAnalysisEfficiency(match, exchangeRate)
@@ -2546,16 +2571,43 @@ function efficiencyPricingForKeys(
   aaKeys: Set<string>,
   exchangeRate?: ExchangeRate,
 ): ModelPricing {
-  const match = (
-    AA_LLM_EFFICIENCY_MODELS as readonly ArtificialAnalysisLlmEfficiencyModel[]
-  ).find((efficiencyModel) => {
-    const efficiencyKeys = artificialAnalysisEfficiencyKeys(efficiencyModel);
-    return [...efficiencyKeys].some((key) => aaKeys.has(key));
-  });
+  const match = efficiencyModelForKeys(aaKeys);
 
   return match
     ? pricingFromArtificialAnalysisEfficiency(match, exchangeRate)
     : {};
+}
+
+function efficiencyModelForKeys(
+  aaKeys: Set<string>,
+): ArtificialAnalysisLlmEfficiencyModel | undefined {
+  const models =
+    AA_LLM_EFFICIENCY_MODELS as readonly ArtificialAnalysisLlmEfficiencyModel[];
+  let best: ArtificialAnalysisLlmEfficiencyModel | undefined;
+  let bestExactScore = 0;
+
+  for (const model of models) {
+    const exactScore = Math.max(
+      0,
+      ...efficiencyIdentityValues(model)
+        .map(normalizeMatchKey)
+        .filter((key) => aaKeys.has(key))
+        .map((key) => key.length),
+    );
+    if (exactScore > bestExactScore) {
+      best = model;
+      bestExactScore = exactScore;
+    }
+  }
+
+  return (
+    best ??
+    models.find((model) =>
+      [...artificialAnalysisEfficiencyKeys(model)].some((key) =>
+        aaKeys.has(key),
+      ),
+    )
+  );
 }
 
 function pricingForKeys(
@@ -2573,17 +2625,31 @@ function pricingForKeys(
 }
 
 function autoCloseSignalsForKeys(
+  aaModel: ArtificialAnalysisModel,
   aaKeys: Set<string>,
   exchangeRate?: ExchangeRate,
 ): Pick<BenchmarkSignals, "autoClose"> | Record<string, never> {
-  const match = (
-    AI_AUTOCLOSE_BENCHMARKS as readonly AiAutoCloseBenchmarkModel[]
-  ).find((benchmarkModel) => {
+  const models =
+    AI_AUTOCLOSE_BENCHMARKS as readonly AiAutoCloseBenchmarkModel[];
+  const identities = artificialAnalysisIdentityValues(aaModel);
+  const exactAaKeys = new Set(identities.map(normalizeMatchKey));
+  const exactMatch = models.find((benchmarkModel) =>
+    autoCloseConfigurationIdentityValues(benchmarkModel)
+      .map(normalizeMatchKey)
+      .some((key) => exactAaKeys.has(key)),
+  );
+  if (exactMatch) {
+    return autoCloseSignalsFromBenchmark(exactMatch, exchangeRate);
+  }
+
+  if (identities.some(hasEffortVariantSuffix)) return {};
+
+  const aliasMatch = models.find((benchmarkModel) => {
     const benchmarkKeys = autoCloseBenchmarkKeys(benchmarkModel);
     return [...benchmarkKeys].some((key) => aaKeys.has(key));
   });
 
-  return autoCloseSignalsFromBenchmark(match, exchangeRate);
+  return autoCloseSignalsFromBenchmark(aliasMatch, exchangeRate);
 }
 
 function autoCloseSignalsForSlug(
@@ -3195,9 +3261,15 @@ function minDefined(
 
 function artificialAnalysisKeys(model: ArtificialAnalysisModel): Set<string> {
   return new Set(
-    [model.id, model.name, model.slug]
-      .filter((value): value is string => typeof value === "string")
-      .flatMap(modelJoinKeys),
+    artificialAnalysisIdentityValues(model).flatMap(modelJoinKeys),
+  );
+}
+
+function artificialAnalysisIdentityValues(
+  model: ArtificialAnalysisModel,
+): string[] {
+  return [model.id, model.name, model.slug].filter(
+    (value): value is string => typeof value === "string",
   );
 }
 
@@ -3205,14 +3277,18 @@ function artificialAnalysisEfficiencyKeys(
   model: ArtificialAnalysisLlmEfficiencyModel,
 ): Set<string> {
   return new Set(
-    [
-      model.slug,
-      model.label,
-      model.detailsUrl.split("/").filter(Boolean).at(-1),
-    ]
-      .filter((value): value is string => typeof value === "string")
-      .flatMap(modelJoinKeys),
+    efficiencyIdentityValues(model).flatMap(modelJoinKeys),
   );
+}
+
+function efficiencyIdentityValues(
+  model: ArtificialAnalysisLlmEfficiencyModel,
+): string[] {
+  return [
+    model.slug,
+    model.label,
+    model.detailsUrl.split("/").filter(Boolean).at(-1),
+  ].filter((value): value is string => typeof value === "string");
 }
 
 function artificialAnalysisPricingKeys(
@@ -3231,10 +3307,17 @@ function artificialAnalysisPricingKeys(
 
 function autoCloseBenchmarkKeys(model: AiAutoCloseBenchmarkModel): Set<string> {
   return new Set(
-    [model.id, model.modelKey, model.apiModel, model.displayName]
-      .filter((value): value is string => typeof value === "string")
-      .flatMap(modelJoinKeys),
+    [
+      ...autoCloseConfigurationIdentityValues(model),
+      model.apiModel,
+    ].flatMap(modelJoinKeys),
   );
+}
+
+function autoCloseConfigurationIdentityValues(
+  model: AiAutoCloseBenchmarkModel,
+): string[] {
+  return [model.id, model.modelKey, model.displayName];
 }
 
 function modelKeys(model: RegistryModel): string[] {
@@ -3242,14 +3325,31 @@ function modelKeys(model: RegistryModel): string[] {
 }
 
 function modelJoinKeys(value: string): string[] {
-  const slug = slugFrom(value);
-  const baseSlug = slug
+  const variants = [slugFrom(value)];
+
+  while (true) {
+    const current = variants.at(-1)!;
+    const stripped = stripEffortVariantSuffix(current);
+    if (stripped === current) break;
+    variants.push(stripped);
+  }
+
+  return [...new Set(variants.map(normalizeMatchKey))];
+}
+
+function stripEffortVariantSuffix(value: string): string {
+  return value
+    .replace(/-(?:minimal|low|medium|high|xhigh|max)-effort$/, "")
+    .replace(/-effort-(?:minimal|low|medium|high|xhigh|max)$/, "")
     .replace(
-      /-(?:adaptive-reasoning|non-reasoning|reasoning|thinking|minimal|low|medium|high|xhigh|max)$/,
+      /-(?:adaptive-reasoning|non-reasoning|reasoning|thinking|adaptive|minimal|low|medium|high|xhigh|max)$/,
       "",
-    )
-    .replace(/-(?:effort-)?(?:minimal|low|medium|high|xhigh|max)$/, "");
-  return [...new Set([normalizeMatchKey(slug), normalizeMatchKey(baseSlug)])];
+    );
+}
+
+function hasEffortVariantSuffix(value: string): boolean {
+  const slug = slugFrom(value);
+  return stripEffortVariantSuffix(slug) !== slug;
 }
 
 function normalizeMatchKey(value: string): string {

@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Parsed current Artificial Analysis nested pricing, performance, and Intelligence Index task-cost fields so newly published models are not hidden by missing normalized prices.
 - Prevented late requests from a previously selected homepage mode from replacing the active table, so all three browse choices now render their own rows and columns.
+- Deduplicated recommendation failovers by canonical base model before applying the failover limit, including when an effort row is missing family metadata.
+- Preserved explicit Artificial Analysis reasoning and vision capability values on effort variants joined to a base registry model.
+- Preferred exact Artificial Analysis effort configurations over stripped base aliases when filling missing benchmark fields.
+- Distinguished a shortage of base-model families from a shortage of IT Solver auto-close benchmark rows in failover status responses.
+- Prevented effort variants without an exact IT Solver auto-close run from inheriting a base model's benchmark result.
 
 ## 2026-07-08
 

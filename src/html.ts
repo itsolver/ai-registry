@@ -1251,7 +1251,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
-    <p>The opinionated endpoint. Apply filters and get one primary model plus a nested distinct failover when one matches. The top-level failovers array remains for customer-support compatibility.</p>
+    <p>The opinionated endpoint. Apply filters and get one primary model plus a nested distinct failover when one matches. The top-level failovers array remains for customer-support compatibility; <code>failoverStatus.reason</code> distinguishes missing auto-close benchmark coverage from too few distinct base-model families.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/providers</code>
@@ -2551,13 +2551,23 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function recommendationFamilyKey(model) {
-      var identity = model.family || model.registryModelId || model.name || model.id || '';
-      return String(model.provider || '') + ':' + String(identity)
+      var canonicalIdentity = model.registryModelId || (!model.source ? model.id : '');
+      var identity = canonicalIdentity || model.name || model.id || model.family || '';
+      var normalized = String(identity)
         .toLowerCase()
-        .replace(/\s*\((?:minimal|low|medium|high|xhigh|max|reasoning|thinking|adaptive reasoning|max effort|high effort)\)\s*/g, ' ')
-        .replace(/[-_](?:minimal|low|medium|high|xhigh|max|reasoning|thinking)$/g, '')
-        .replace(/[^a-z0-9]+/g, ' ')
-        .trim();
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      if (!canonicalIdentity) {
+        var previous;
+        do {
+          previous = normalized;
+          normalized = normalized
+            .replace(/-(?:minimal|low|medium|high|xhigh|max)-effort$/, '')
+            .replace(/-effort-(?:minimal|low|medium|high|xhigh|max)$/, '')
+            .replace(/-(?:adaptive-reasoning|non-reasoning|reasoning|thinking|adaptive|minimal|low|medium|high|xhigh|max)$/, '');
+        } while (normalized !== previous);
+      }
+      return String(model.provider || '') + ':' + normalized.replace(/[^a-z0-9]+/g, '');
     }
 
     function recommendationRowsFromResponse(data) {

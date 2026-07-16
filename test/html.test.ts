@@ -371,8 +371,17 @@ describe("homepage copy", () => {
     const grok = {
       id: "grok-4-5-high",
       family: "grok-4.5",
+      registryModelId: "grok-4.5",
       provider: "xai",
       name: "Grok 4.5 (high)",
+      source: "artificialanalysis",
+    };
+    const grokLow = {
+      id: "grok-4-5-low",
+      family: null,
+      provider: "xai",
+      name: "Grok 4.5 (low)",
+      source: "artificialanalysis",
     };
 
     renderRecommendation({
@@ -381,15 +390,18 @@ describe("homepage copy", () => {
         family: "claude-fable-5",
         provider: "anthropic",
         name: "Claude Fable 5",
+        source: "artificialanalysis",
         failover: grok,
       },
       failovers: [
         grok,
+        grokLow,
         {
           id: "gpt-5-6-high",
           family: "gpt-5.6",
           provider: "openai",
           name: "GPT-5.6 (high)",
+          source: "artificialanalysis",
         },
       ],
     });
@@ -404,9 +416,52 @@ describe("homepage copy", () => {
     expect(
       elements.recommendationRows.innerHTML.match(/Grok 4\.5 \(high\)/g),
     ).toHaveLength(1);
+    expect(elements.recommendationRows.innerHTML).not.toContain(
+      "Grok 4.5 (low)",
+    );
     expect(elements.recommendationRows.innerHTML).toContain("GPT-5.6 (high)");
     expect(elements.recommendationSource.textContent).toBe(
       "3 distinct model families",
+    );
+  });
+
+  it("distinguishes canonical max models while collapsing compound AA efforts", () => {
+    const familySource = HOME_HTML.slice(
+      HOME_HTML.indexOf("function recommendationFamilyKey"),
+      HOME_HTML.indexOf("function recommendationRowsFromResponse"),
+    );
+    const createFamilyKey = new Function(
+      `${familySource}\nreturn recommendationFamilyKey;`,
+    ) as () => (model: Record<string, unknown>) => string;
+    const familyKey = createFamilyKey();
+
+    expect(
+      familyKey({
+        id: "claude-sonnet-4-6-adaptive",
+        provider: "anthropic",
+        name: "Claude Sonnet 4.6 (Adaptive Reasoning, Max Effort)",
+        source: "artificialanalysis",
+      }),
+    ).toBe(
+      familyKey({
+        id: "claude-sonnet-4-6-non-reasoning-low-effort",
+        provider: "anthropic",
+        name: "Claude Sonnet 4.6 (Non-reasoning, Low Effort)",
+        source: "artificialanalysis",
+      }),
+    );
+    expect(
+      familyKey({
+        id: "gpt-5.1-codex",
+        provider: "openai",
+        name: "GPT-5.1 Codex",
+      }),
+    ).not.toBe(
+      familyKey({
+        id: "gpt-5.1-codex-max",
+        provider: "openai",
+        name: "GPT-5.1 Codex Max",
+      }),
     );
   });
 

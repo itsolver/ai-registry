@@ -10,6 +10,7 @@ import {
   latestForProvider,
   normalizeModelsDevCatalog,
   parseFilters,
+  recommendationFamilyKey,
   recommendModelFailovers,
   rankedRecommendedModels,
   type ArtificialAnalysisModel,
@@ -21,7 +22,7 @@ import {
   type RecommendedModel,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v27";
+const CACHE_KEY = "catalog:v28";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
 const DEFAULT_FX_RATE_URL =
@@ -157,32 +158,19 @@ function nextRecommendedFailover(
 ): RecommendedModel | undefined {
   const recommendation = recommendations[0];
   if (!recommendation) return undefined;
-  const recommendationFamily = failoverFamilyKey(recommendation);
+  const recommendationFamily = recommendationFamilyKey(recommendation);
 
   return recommendations
     .slice(1)
     .find(
       (candidate) =>
         (!provider || candidate.provider === provider) &&
-        failoverFamilyKey(candidate) !== recommendationFamily,
+        recommendationFamilyKey(candidate) !== recommendationFamily,
     );
 }
 
-function failoverFamilyKey(model: RecommendedModel): string {
-  const nameKey = normalizedFailoverFamily(model.name);
-  return `${model.provider}:${nameKey || normalizedFailoverFamily(model.id)}`;
-}
-
-function normalizedFailoverFamily(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(
-      /\s*\((?:minimal|low|medium|high|xhigh|reasoning|non-reasoning|thinking|adaptive reasoning|high effort|max effort)\)\s*/g,
-      " ",
-    )
-    .replace(/\b(?:minimal|low|medium|high|xhigh)\b/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+function hasItsAutoCloseBenchmark(model: RecommendedModel): boolean {
+  return Boolean(model.benchmarks?.llm?.autoClose);
 }
 
 async function routeApi(
@@ -237,12 +225,28 @@ async function routeApi(
       filters,
       requestedFailovers,
     );
+    const eligibleAutoCloseFallbackCount =
+      filters.useCase === "customer-support"
+        ? rankedRecommendedModels(catalog, {
+            ...filters,
+            includeItsBenchmark: true,
+          }).filter(
+            (candidate) =>
+              candidate.id !== recommendation.id &&
+              hasItsAutoCloseBenchmark(candidate),
+          ).length
+        : 0;
     const failoverStatus = {
       requested: requestedFailovers,
       returned: failovers.length,
       ...(filters.useCase === "customer-support" &&
       failovers.length < requestedFailovers
-        ? { reason: "insufficient_its_autoclose_benchmarks" }
+        ? {
+            reason:
+              eligibleAutoCloseFallbackCount >= requestedFailovers
+                ? "insufficient_distinct_model_families"
+                : "insufficient_its_autoclose_benchmarks",
+          }
         : {}),
     };
 

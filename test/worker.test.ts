@@ -1374,6 +1374,83 @@ describe("worker routes", () => {
     });
   });
 
+  it("deduplicates customer-support failovers by base model", async () => {
+    const primary = supportCandidate("primary", 0, 0.9, 50, 1);
+    primary.name = "GPT-5 mini (medium)";
+    primary.registryModelId = "gpt-5-mini";
+
+    const grokHigh = supportCandidate("grok-4-3", 1, 0.9, 100, 1);
+    grokHigh.provider = "xai";
+    grokHigh.name = "Grok 4.3 (high)";
+    grokHigh.family = "grok";
+    grokHigh.registryModelId = "grok-4.3";
+
+    const grokLow = supportCandidate("grok-4-3-low", 2, 0.9, 110, 1);
+    grokLow.provider = "xai";
+    grokLow.name = "Grok 4.3 (low)";
+
+    const distinct = supportCandidate("gpt-5-4-low", 3, 0.9, 120, 1);
+    distinct.name = "GPT-5.4 (low)";
+    distinct.registryModelId = "gpt-5.4";
+
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning",
+      ),
+      envWithCachedCatalog(
+        supportCatalog([primary, grokHigh, grokLow, distinct]),
+      ),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("primary");
+    expect(body.recommendation.failover).toMatchObject({ id: "grok-4-3" });
+    expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
+      "grok-4-3",
+      "gpt-5-4-low",
+    ]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 2,
+    });
+  });
+
+  it("reports a shortage of distinct customer-support model families", async () => {
+    const primary = supportCandidate("primary", 0, 0.9, 50, 1);
+    primary.name = "GPT-5 mini (medium)";
+    primary.registryModelId = "gpt-5-mini";
+
+    const grokHigh = supportCandidate("grok-4-3", 1, 0.9, 100, 1);
+    grokHigh.provider = "xai";
+    grokHigh.name = "Grok 4.3 (high)";
+    grokHigh.registryModelId = "grok-4.3";
+
+    const grokLow = supportCandidate("grok-4-3-low", 2, 0.9, 110, 1);
+    grokLow.provider = "xai";
+    grokLow.name = "Grok 4.3 (low)";
+
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning",
+      ),
+      envWithCachedCatalog(supportCatalog([primary, grokHigh, grokLow])),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
+      "grok-4-3",
+    ]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 1,
+      reason: "insufficient_distinct_model_families",
+    });
+  });
+
   it("reports thin customer-support failover coverage", async () => {
     const response = await handleRequest(
       new Request(

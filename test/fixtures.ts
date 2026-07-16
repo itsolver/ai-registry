@@ -1,3 +1,191 @@
+export const modelsDevFixture = {
+  openai: {
+    models: {
+      "gpt-5.6": {
+        id: "gpt-5.6",
+        name: "GPT-5.6",
+        family: "gpt-sol",
+        attachment: true,
+        reasoning: true,
+        tool_call: true,
+        structured_output: true,
+        release_date: "2026-07-09",
+        last_updated: "2026-07-09",
+        modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+        open_weights: false,
+        limit: { context: 1_050_000, output: 128_000 },
+        cost: { input: 5, output: 30, cache_read: 0.5 },
+      },
+      "gpt-5.6-sol": {
+        id: "gpt-5.6-sol",
+        name: "GPT-5.6 Sol",
+        family: "gpt-sol",
+        reasoning: true,
+        tool_call: true,
+        structured_output: true,
+        release_date: "2026-07-09",
+        last_updated: "2026-07-09",
+        modalities: { input: ["text", "image"], output: ["text"] },
+        open_weights: false,
+        limit: { context: 1_050_000, output: 128_000 },
+        cost: { input: 5, output: 30 },
+      },
+    },
+  },
+  anthropic: {
+    models: {
+      "claude-fable-5": {
+        id: "claude-fable-5",
+        name: "Claude Fable 5",
+        family: "claude-fable",
+        attachment: true,
+        reasoning: true,
+        tool_call: true,
+        structured_output: true,
+        release_date: "2026-06-07",
+        last_updated: "2026-06-09",
+        modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+        open_weights: false,
+        limit: { context: 1_000_000, output: 128_000 },
+        cost: { input: 10, output: 50, cache_read: 1 },
+      },
+    },
+  },
+  xai: {
+    models: {
+      "grok-4.5": {
+        id: "grok-4.5",
+        name: "Grok 4.5",
+        family: "grok",
+        attachment: true,
+        reasoning: true,
+        tool_call: true,
+        structured_output: true,
+        release_date: "2026-07-08",
+        last_updated: "2026-07-08",
+        modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+        open_weights: false,
+        limit: { context: 500_000, output: 500_000 },
+        cost: { input: 2, output: 6, cache_read: 0.5 },
+      },
+    },
+  },
+  google: {
+    models: {
+      "gemini-fast": {
+        id: "gemini-fast",
+        name: "Gemini Fast",
+        family: "gemini",
+        reasoning: true,
+        release_date: "2026-05-01",
+        last_updated: "2026-05-01",
+        modalities: { input: ["text", "image"], output: ["text"] },
+        open_weights: false,
+        limit: { context: 1_000_000, output: 64_000 },
+        cost: { input: 1, output: 4 },
+      },
+    },
+  },
+  nvidia: {
+    models: {
+      "parakeet-tdt-0.6b-v3": {
+        id: "parakeet-tdt-0.6b-v3",
+        name: "Parakeet TDT 0.6B V3",
+        release_date: "2026-01-01",
+        last_updated: "2026-01-01",
+        modalities: { input: ["audio"], output: ["text"] },
+        open_weights: true,
+        limit: { context: 0, output: 8_000 },
+        cost: {},
+      },
+    },
+  },
+  groq: {
+    models: {
+      "whisper-large-v3-turbo": {
+        id: "whisper-large-v3-turbo",
+        name: "Whisper Large V3 Turbo",
+        family: "whisper",
+        release_date: "2025-01-01",
+        last_updated: "2026-01-01",
+        modalities: { input: ["audio"], output: ["text"] },
+        open_weights: false,
+        limit: { context: 0, output: 8_000 },
+        cost: {},
+      },
+    },
+  },
+};
+
+export const artificialAnalysisFreeFixture = {
+  tier: "free",
+  pagination: { page: 1, page_size: 200, total_pages: 1, has_more: false },
+  data: [
+    {
+      id: "aa-fable-5-high",
+      name: "Claude Fable 5 (high)",
+      slug: "claude-fable-5-high",
+      release_date: "2026-06-07",
+      model_creator: { name: "Anthropic", slug: "anthropic" },
+      evaluations: {
+        artificial_analysis_intelligence_index: 91,
+        artificial_analysis_agentic_index: 88,
+        ifbench: 0.94,
+      },
+      artificial_analysis_intelligence_index_cost: {
+        total_cost: 700,
+        cost_per_task: { total_cost: 0.7 },
+      },
+      pricing: {
+        price_1m_input_tokens: 10,
+        price_1m_output_tokens: 50,
+        price_1m_cache_hit_tokens: 1,
+      },
+      performance: {
+        median_output_tokens_per_second: 92,
+        median_time_to_first_token_seconds: 1.1,
+      },
+    },
+    {
+      id: "aa-gpt-5-6-sol-high",
+      name: "GPT-5.6 Sol (high)",
+      slug: "gpt-5-6-sol-high",
+      release_date: "2026-07-09",
+      model_creator: { name: "OpenAI", slug: "openai" },
+      evaluations: {
+        artificial_analysis_intelligence_index: 96,
+        artificial_analysis_agentic_index: 94,
+        ifbench: 0.97,
+      },
+      artificial_analysis_intelligence_index_cost: {
+        total_cost: 800,
+        cost_per_task: { total_cost: 0.8 },
+      },
+      pricing: {
+        price_1m_input_tokens: 6,
+        price_1m_output_tokens: 36,
+      },
+      performance: { median_output_tokens_per_second: 80 },
+    },
+    {
+      id: "aa-grok-4-5",
+      name: "Grok 4.5",
+      slug: "grok-4-5",
+      release_date: "2026-07-08",
+      model_creator: { name: "xAI", slug: "xai" },
+      evaluations: {
+        artificial_analysis_intelligence_index: 93,
+        artificial_analysis_coding_index: 91,
+      },
+      pricing: {
+        price_1m_input_tokens: 2,
+        price_1m_output_tokens: 6,
+      },
+      performance: { median_output_tokens_per_second: 110 },
+    },
+  ],
+};
+
 export const artificialAnalysisFixture = {
   status: 200,
   data: [

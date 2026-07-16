@@ -1,6 +1,7 @@
 # AI Registry
 
-Public Cloudflare Workers API for IT Solver model recommendations.
+Public Cloudflare Workers API and browser for IT Solver's AI model registry,
+benchmark rows, and recommendations.
 
 Production URL:
 
@@ -8,11 +9,37 @@ Production URL:
 https://ai.itsolver.au
 ```
 
-The Worker uses Artificial Analysis data for OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq benchmark candidates, then exposes a small `/v1/...` API with recommendation tiers.
+The Worker rebuilds a canonical base-model registry from
+[models.dev](https://models.dev/api.json), then enriches it with Artificial
+Analysis data for OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq.
+Each catalog refresh reads both the legacy Artificial Analysis LLM endpoint for
+detailed benchmark signals and the paginated current free Language Models
+endpoint for current headline indices, performance, nested pricing, and
+Intelligence Index task cost. Checked-in Artificial Analysis extracts fill
+missing fields only; they never override fresher live values.
 
-Recommendations are tuned for IT Solver customer support, voice-agent API work, and speech-to-text transcription. For customer support, recommendations require real token pricing, a local auto-close benchmark result, and default-production availability. Ranking is safety-first: false positives sort first, accuracy second, and Artificial Analysis Intelligence Index Task AUD third. Deprecated and retired models are excluded from public model, benchmark, and recommendation results. Preview-only, experimental, latest-alias, and near-retirement text models are not default production recommendations. Voice recommendations use a cached Artificial Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
+Registry visibility and recommendation eligibility are intentionally separate:
+new base models can appear in `/v1/models` as soon as models.dev publishes them,
+even when they do not yet have enough evidence to recommend. Artificial
+Analysis effort configurations such as a high-reasoning variant remain distinct
+benchmark rows while linking to the matching base-model family. Recommendations
+still require positive pricing, default-production availability, and the
+benchmark evidence required by the selected use case.
 
-Model pricing and benchmark costs from Artificial Analysis are stored from source USD data and converted to AUD using the current catalog USD to AUD rate from Frankfurter. The API only returns AUD pricing and includes the exchange-rate metadata used for that catalog view.
+Recommendations are tuned for IT Solver customer support, document processing,
+speech-to-speech voice-agent API work, and speech-to-text transcription. For
+customer support, ranking is safety-first: false positives sort first, accuracy
+second, and Artificial Analysis Intelligence Index Task AUD third. Preview-only,
+experimental, latest-alias, and near-retirement text models are not default
+production recommendations. Voice recommendations use a cached Artificial
+Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations
+use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
+
+Live Artificial Analysis pricing takes precedence when present, with models.dev
+pricing used as the registry fallback. Source USD pricing and benchmark costs
+are converted to AUD using the catalog's current Frankfurter exchange rate. The
+API returns AUD pricing and includes the exchange-rate metadata used for that
+catalog view.
 
 ## Endpoints
 
@@ -20,7 +47,7 @@ All API endpoints are public and require no bearer token or IP allowlist.
 
 ```text
 GET /v1/health
-GET /v1/benchmarks?useCase=customer-support|voice|speech-to-text
+GET /v1/benchmarks?useCase=customer-support|document-processing|voice|speech-to-text
 GET /v1/models
 GET /v1/models/recommend
 GET /v1/models/providers
@@ -28,6 +55,36 @@ GET /v1/models/:provider/latest
 ```
 
 Unprefixed `/benchmarks`, `/models`, `/models/recommend`, `/models/providers`, and `/models/:provider/latest` mirror v1. The old `/models.json` and `/model-registry.json` registry documents are intentionally gone.
+
+The endpoint datasets serve different purposes:
+
+- `/v1/models` returns canonical base registry records. Explicit API filters are
+  still supported, but the homepage registry browser does not apply a use-case
+  or recommendation-priority filter.
+- `/v1/benchmarks` returns use-case-relevant Artificial Analysis configurations
+  and other benchmark rows, including incomplete rows with a visible reason
+  when they are not recommendation-eligible.
+- `/v1/models/recommend` returns only candidates that satisfy the selected use
+  case's pricing, availability, and evidence requirements. Its existing primary
+  recommendation and failover response shape is unchanged.
+- `/v1/health` reports separate registry, benchmark, and recommendable counts,
+  while `/v1/models/providers` derives provider totals from registry records.
+
+## Homepage Modes
+
+The query builder has three distinct right-hand views:
+
+- **Get a recommendation** shows the primary recommendation plus deduplicated,
+  operationally distinct failovers and use-case-relevant metrics.
+- **Browse benchmark rows** shows the selected use-case benchmark schema,
+  including incomplete rows and their recommendation-eligibility reason.
+- **Browse registry models** shows base model identity, provider, release/update
+  date, availability, context window, input/output AUD pricing, and
+  capabilities. Benchmark-only controls are hidden in this mode.
+
+Each mode keeps separate response state. A late response from an earlier request
+is discarded, so switching modes quickly cannot replace the active table with
+stale rows.
 
 Example:
 
@@ -63,7 +120,7 @@ maxTranscriptionCostPer1kMinutes=10 # max speech-to-text AUD per 1,000 minutes
 maxAaWer=4.6                        # max speech-to-text AA-WER error rate
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
-useCase=customer-support|voice|speech-to-text  # stt is accepted as an alias
+useCase=customer-support|document-processing|voice|speech-to-text  # stt is accepted as an alias
 includeItsBenchmark=false              # omit IT Solver auto-close ranking for customer support
 allowPreview=true                      # allow preview models in customer-support recommendations
 ```
@@ -100,6 +157,12 @@ Create the KV namespace used for the normalized catalog cache and replace the pl
 wrangler kv namespace create MODEL_CACHE
 wrangler kv namespace create MODEL_CACHE --preview
 ```
+
+The normalized catalog is versioned in KV. A cache-key bump invalidates older
+normalized payloads after source or schema changes. On refresh, the Worker keeps
+serving a previously valid catalog instead of replacing it with a partial result
+when a primary live source fails; checked-in extracts are only missing-field
+fallbacks within a successful live refresh.
 
 Deploy:
 

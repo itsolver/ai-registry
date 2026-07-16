@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleRequest, type Env } from "../src/worker";
 import type { BenchmarkCandidate, Catalog } from "../src/registry";
 import {
+  artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
   artificialAnalysisSpeechToTextFixture,
+  modelsDevFixture,
 } from "./fixtures";
 
 interface JsonObject {
@@ -26,12 +28,20 @@ const artificialAnalysisUrl =
 const artificialAnalysisSttUrl =
   "data:application/json," +
   encodeURIComponent(JSON.stringify(artificialAnalysisSpeechToTextFixture));
+const artificialAnalysisFreeUrl =
+  "data:application/json," +
+  encodeURIComponent(JSON.stringify(artificialAnalysisFreeFixture));
+const modelsDevUrl =
+  "data:application/json," +
+  encodeURIComponent(JSON.stringify(modelsDevFixture));
 
 function env(): Env {
   return {
     FX_RATE_URL: fxUrl,
+    MODELS_DEV_URL: modelsDevUrl,
     ARTIFICIAL_ANALYSIS_API_KEY: "aa-secret",
     ARTIFICIAL_ANALYSIS_LLM_URL: artificialAnalysisUrl,
+    ARTIFICIAL_ANALYSIS_FREE_LLM_URL: artificialAnalysisFreeUrl,
     ARTIFICIAL_ANALYSIS_STT_URL: artificialAnalysisSttUrl,
   };
 }
@@ -265,22 +275,307 @@ describe("worker routes", () => {
         quote: "AUD",
         rate: 1.5,
       },
-      providerCount: 7,
+      providerCount: 6,
     });
-    expect(body.modelCount).toBeGreaterThanOrEqual(9);
-    expect(body.activeModelCount).toBeGreaterThanOrEqual(8);
+    expect(body.modelCount).toBe(7);
+    expect(body.activeModelCount).toBe(7);
+    expect(body.registryModelCount).toBe(7);
+    expect(body.benchmarkCount).toBeGreaterThan(body.registryModelCount);
+    expect(body.recommendableCount).toBeGreaterThan(0);
   });
 
-  it("requires a use case for AA-only recommendations", async () => {
+  it("loads every page from the current Artificial Analysis free endpoint", async () => {
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (!url.startsWith("https://aa.test/language/models/free")) {
+          return realFetch(input, init);
+        }
+        const page = Number(new URL(url).searchParams.get("page") ?? "1");
+        const rows = artificialAnalysisFreeFixture.data;
+        return Response.json({
+          tier: "free",
+          pagination: {
+            page,
+            page_size: 2,
+            total_pages: 2,
+            has_more: page === 1,
+          },
+          data: page === 1 ? rows.slice(0, 1) : rows.slice(1),
+        });
+      },
+    );
+
+    try {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/benchmarks"),
+        {
+          ...env(),
+          ARTIFICIAL_ANALYSIS_FREE_LLM_URL:
+            "https://aa.test/language/models/free",
+        },
+        ctx,
+      );
+      const body = (await response.json()) as JsonObject;
+      expect(response.status).toBe(200);
+      expect(body.benchmarks.map((row: { id: string }) => row.id)).toEqual(
+        expect.arrayContaining([
+          "claude-fable-5-high",
+          "gpt-5-6-sol-high",
+          "grok-4-5",
+        ]),
+      );
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://aa.test/language/models/free?page=2",
+        expect.any(Object),
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("serves a stale valid cache without overwriting it when models.dev fails", async () => {
+    let putCount = 0;
+    const cached = supportCatalog([supportCandidate("cached", 0, 0.9, 10, 2)]);
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      {
+        MODEL_CACHE: {
+          get: async () => JSON.stringify(cached),
+          put: async () => {
+            putCount += 1;
+          },
+        } as unknown as KVNamespace,
+        MODELS_DEV_URL: "data:application/json,%5B%5D",
+      },
+      ctx,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()) as JsonObject).toMatchObject({
+      benchmarkCount: 1,
+      registryModelCount: 0,
+    });
+    expect(putCount).toBe(0);
+  });
+
+  it("rejects empty and structurally partial models.dev responses", async () => {
+    for (const source of [
+      {},
+      { openai: modelsDevFixture.openai },
+      {
+        ...modelsDevFixture,
+        anthropic: { models: {} },
+      },
+      {
+        ...modelsDevFixture,
+        anthropic: { models: { broken: {} } },
+      },
+      { ...modelsDevFixture, nvidia: undefined },
+      { ...modelsDevFixture, groq: undefined },
+    ]) {
+      let putCount = 0;
+      const cached = supportCatalog([
+        supportCandidate("cached", 0, 0.9, 10, 2),
+      ]);
+      cached.generatedAt = "2020-01-01T00:00:00Z";
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        {
+          ...env(),
+          MODEL_CACHE: {
+            get: async () => JSON.stringify(cached),
+            put: async () => {
+              putCount += 1;
+            },
+          } as unknown as KVNamespace,
+          MODELS_DEV_URL:
+            "data:application/json," +
+            encodeURIComponent(JSON.stringify(source)),
+        },
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      expect((await response.json()) as JsonObject).toMatchObject({
+        benchmarkCount: 1,
+        registryModelCount: 0,
+      });
+      expect(putCount).toBe(0);
+    }
+  });
+
+  it("does not drop an optional registry provider that exists in the cache", async () => {
+    let putCount = 0;
+    const cached = supportCatalog([]);
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    cached.modelCount = 1;
+    cached.activeModelCount = 1;
+    cached.providers = [
+      { provider: "elevenlabs", total: 1, active: 1 },
+    ];
+    cached.models = [
+      {
+        id: "elevenlabs-future-model",
+        provider: "elevenlabs",
+        name: "ElevenLabs Future Model",
+        family: "elevenlabs",
+        contextWindow: 8_000,
+        outputLimit: 1_000,
+        pricing: { inputPerMTok: 1, outputPerMTok: 2 },
+        capabilities: {
+          vision: false,
+          pdf: false,
+          reasoning: false,
+          toolCalling: false,
+          structuredOutput: false,
+        },
+        modalities: { input: ["text"], output: ["text"] },
+        openWeights: false,
+        tier: "fast",
+        deprecated: false,
+        updatedAt: "2026-07-16T00:00:00Z",
+        availability: {
+          status: "production",
+          acceptedRisk: false,
+          reason: "test",
+        },
+      },
+    ];
+
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      {
+        ...env(),
+        MODEL_CACHE: {
+          get: async () => JSON.stringify(cached),
+          put: async () => {
+            putCount += 1;
+          },
+        } as unknown as KVNamespace,
+      },
+      ctx,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()) as JsonObject).toMatchObject({
+      providerCount: 1,
+      registryModelCount: 1,
+    });
+    expect(putCount).toBe(0);
+  });
+
+  it("rejects an empty current-free AA aggregate without overwriting cache", async () => {
+    let putCount = 0;
+    const cached = supportCatalog([supportCandidate("cached", 0, 0.9, 10, 2)]);
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    const emptyAaUrl =
+      "data:application/json," +
+      encodeURIComponent(
+        JSON.stringify({
+          tier: "free",
+          pagination: {
+            page: 1,
+            page_size: 200,
+            total_pages: 1,
+            has_more: false,
+          },
+          data: [],
+        }),
+      );
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      {
+        ...env(),
+        MODEL_CACHE: {
+          get: async () => JSON.stringify(cached),
+          put: async () => {
+            putCount += 1;
+          },
+        } as unknown as KVNamespace,
+        ARTIFICIAL_ANALYSIS_FREE_LLM_URL: emptyAaUrl,
+      },
+      ctx,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()) as JsonObject).toMatchObject({
+      benchmarkCount: 1,
+      registryModelCount: 0,
+    });
+    expect(putCount).toBe(0);
+  });
+
+  it("rejects malformed current-free pagination and model identities", async () => {
+    const validRow = artificialAnalysisFreeFixture.data[0];
+    const invalidBodies = [
+      { tier: "free", data: [validRow] },
+      {
+        tier: "free",
+        pagination: { page: 1, total_pages: 1, has_more: false },
+        data: [{ id: "broken", name: "Broken", slug: "" }],
+      },
+      {
+        tier: "free",
+        pagination: { page: 2, total_pages: 2, has_more: false },
+        data: [validRow],
+      },
+      {
+        tier: "free",
+        pagination: { page: 1, total_pages: 2, has_more: false },
+        data: [validRow],
+      },
+    ];
+
+    for (const body of invalidBodies) {
+      let putCount = 0;
+      const cached = supportCatalog([
+        supportCandidate("cached", 0, 0.9, 10, 2),
+      ]);
+      cached.generatedAt = "2020-01-01T00:00:00Z";
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        {
+          ...env(),
+          MODEL_CACHE: {
+            get: async () => JSON.stringify(cached),
+            put: async () => {
+              putCount += 1;
+            },
+          } as unknown as KVNamespace,
+          ARTIFICIAL_ANALYSIS_FREE_LLM_URL:
+            "data:application/json," +
+            encodeURIComponent(JSON.stringify(body)),
+        },
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      expect((await response.json()) as JsonObject).toMatchObject({
+        benchmarkCount: 1,
+        registryModelCount: 0,
+      });
+      expect(putCount).toBe(0);
+    }
+  });
+
+  it("uses the restored registry for recommendations without a use case", async () => {
     const response = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/models/recommend?provider=openai&tier=best",
+        "https://ai.itsolver.au/v1/models/recommend?provider=openai",
       ),
       env(),
       ctx,
     );
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as JsonObject;
+    expect(body.recommendation).toMatchObject({
+      provider: "openai",
+      id: expect.stringMatching(/^gpt-5\.6/),
+    });
   });
 
   it("uses useCase for benchmark-aware recommendations", async () => {
@@ -433,7 +728,8 @@ describe("worker routes", () => {
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: expect.any(Number),
+          agentic: expect.any(Number),
+          instructionFollowing: expect.any(Number),
           intelligenceRunTotalCost: expect.any(Number),
         }),
       },
@@ -512,10 +808,10 @@ describe("worker routes", () => {
     ).toBe(true);
   });
 
-  it("populates ITS auto-close columns in customer-support model rows", async () => {
+  it("populates ITS auto-close columns in customer-support benchmark rows", async () => {
     const cappedResponse = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/models?tier=best&useCase=customer-support&maxRunCostAud=1300&minIntelligence=30",
+        "https://ai.itsolver.au/v1/benchmarks?tier=best&useCase=customer-support&maxRunCostAud=1300&minIntelligence=30",
       ),
       env(),
       ctx,
@@ -523,7 +819,7 @@ describe("worker routes", () => {
     const cappedBody = (await cappedResponse.json()) as JsonObject;
 
     expect(cappedResponse.status).toBe(200);
-    const autoCloseRows = cappedBody.models.filter(
+    const autoCloseRows = cappedBody.benchmarks.filter(
       (row: { benchmarks: { llm?: { autoClose?: unknown } } }) =>
         row.benchmarks.llm?.autoClose,
     );
@@ -572,8 +868,13 @@ describe("worker routes", () => {
       ),
     ).toBe(true);
     expect(pdfResponse.status).toBe(200);
-    expect(pdfBody.benchmarks).toEqual([]);
-    expect(recommendationResponse.status).toBe(404);
+    expect(pdfBody.benchmarks).toContainEqual(
+      expect.objectContaining({
+        id: "claude-fable-5-high",
+        capabilities: expect.objectContaining({ pdf: true }),
+      }),
+    );
+    expect(recommendationResponse.status).toBe(200);
   });
 
   it("returns document-processing benchmark rows with provider, cost, and intelligence filters", async () => {
@@ -649,30 +950,87 @@ describe("worker routes", () => {
     ).toBe(true);
   });
 
-  it("applies document-processing visual and image filters to model browsing", async () => {
-    const response = await handleRequest(
+  it("serves registry models independently from benchmark rows", async () => {
+    const [response, benchmarkResponse] = await Promise.all([
+      handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/models?useCase=document-processing&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=5",
+        "https://ai.itsolver.au/v1/models?provider=anthropic&capability=pdf",
       ),
       env(),
       ctx,
-    );
-    const body = (await response.json()) as JsonObject;
-    const normalized = (value: number | undefined) =>
-      typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
-
-    expect(response.status).toBe(200);
-    expect(body.modelCount).toBeGreaterThan(0);
-    expect(
-      body.models.every(
-        (row: {
-          benchmarks?: { llm?: { visualReasoning?: number } };
-          pricing: { imageInputPer1kImages?: number };
-        }) =>
-          normalized(row.benchmarks?.llm?.visualReasoning) >= 70 &&
-          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
       ),
-    ).toBe(true);
+      handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/benchmarks?provider=anthropic",
+        ),
+        env(),
+        ctx,
+      ),
+    ]);
+    const body = (await response.json()) as JsonObject;
+    const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
+    expect(response.status).toBe(200);
+    expect(benchmarkResponse.status).toBe(200);
+    expect(body.modelCount).toBe(1);
+    expect(body.models[0]).toMatchObject({
+      id: "claude-fable-5",
+      provider: "anthropic",
+      capabilities: { pdf: true },
+    });
+    expect(body.models[0].source).toBeUndefined();
+    expect(benchmarkBody.benchmarks).toContainEqual(
+      expect.objectContaining({
+        id: "claude-fable-5-high",
+        registryModelId: "claude-fable-5",
+        source: "artificialanalysis",
+      }),
+    );
+    expect(
+      benchmarkBody.benchmarks.map((row: { id: string }) => row.id),
+    ).not.toEqual(body.models.map((row: { id: string }) => row.id));
+  });
+
+  it("shows beta registry models while keeping their AA variants ineligible", async () => {
+    const betaSource = structuredClone(modelsDevFixture) as any;
+    betaSource.anthropic.models["claude-fable-5"].status = "beta";
+    const betaEnv = {
+      ...env(),
+      MODELS_DEV_URL:
+        "data:application/json," +
+        encodeURIComponent(JSON.stringify(betaSource)),
+    };
+    const [registryResponse, benchmarkResponse] = await Promise.all([
+      handleRequest(
+        new Request("https://ai.itsolver.au/v1/models?provider=anthropic"),
+        betaEnv,
+        ctx,
+      ),
+      handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/benchmarks?provider=anthropic&useCase=customer-support&includeItsBenchmark=false",
+        ),
+        betaEnv,
+        ctx,
+      ),
+    ]);
+    const registryBody = (await registryResponse.json()) as JsonObject;
+    const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
+
+    expect(registryResponse.status).toBe(200);
+    expect(registryBody.models).toContainEqual(
+      expect.objectContaining({
+        id: "claude-fable-5",
+        availability: expect.objectContaining({ status: "beta" }),
+      }),
+    );
+    expect(benchmarkResponse.status).toBe(200);
+    expect(benchmarkBody.benchmarks).toContainEqual(
+      expect.objectContaining({
+        id: "claude-fable-5-high",
+        recommendable: false,
+        eligibilityReason: "beta",
+      }),
+    );
   });
 
   it("uses highest visual reasoning for document-processing best recommendations", async () => {
@@ -1146,6 +1504,7 @@ describe("worker routes", () => {
         id: "elevenlabs-scribe-v2",
         provider: "elevenlabs",
         recommendable: true,
+        eligibilityReason: "eligible",
         pricing: expect.objectContaining({
           transcriptionCostPer1kMinutes: 7.5,
         }),
@@ -1157,9 +1516,30 @@ describe("worker routes", () => {
         },
       }),
     );
+    const incompleteRows = body.benchmarks.filter((row: { id: string }) =>
+      row.id.includes("missing"),
+    );
+    expect(incompleteRows.length).toBeGreaterThan(0);
     expect(
-      body.benchmarks.some((row: { id: string }) => row.id.includes("missing")),
-    ).toBe(false);
+      incompleteRows.every(
+        (row: { recommendable: boolean; eligibilityReason?: string }) =>
+          !row.recommendable &&
+          typeof row.eligibilityReason === "string" &&
+          row.eligibilityReason !== "eligible",
+      ),
+    ).toBe(true);
+    expect(incompleteRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringContaining("missing-price"),
+          eligibilityReason: "missing_transcription_pricing",
+        }),
+        expect.objectContaining({
+          id: expect.stringContaining("missing-wer"),
+          eligibilityReason: "missing_aa_wer",
+        }),
+      ]),
+    );
     expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
       "google-gemini-2-0-flash-lite",
     );
@@ -1214,16 +1594,16 @@ describe("worker routes", () => {
     ).toBe(true);
   });
 
-  it("serves speech-to-text browse rows", async () => {
+  it("serves speech-to-text benchmark browse rows", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/v1/models?useCase=speech-to-text"),
+      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text"),
       env(),
       ctx,
     );
     const body = (await response.json()) as JsonObject;
 
     expect(response.status).toBe(200);
-    expect(body.models).toContainEqual(
+    expect(body.benchmarks).toContainEqual(
       expect.objectContaining({
         id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
         provider: "nvidia",
@@ -1234,10 +1614,10 @@ describe("worker routes", () => {
         },
       }),
     );
-    expect(body.models.map((row: { id: string }) => row.id)).not.toContain(
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
       "google-gemini-2-0-flash-lite",
     );
-    expect(body.models.map((row: { id: string }) => row.id)).not.toContain(
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
       "google-gemini-2-0-flash",
     );
   });
@@ -1361,15 +1741,7 @@ describe("worker routes", () => {
     expect(response.status).toBe(200);
     expect(
       body.providers.map((provider: { provider: string }) => provider.provider),
-    ).toEqual([
-      "openai",
-      "google",
-      "xai",
-      "anthropic",
-      "nvidia",
-      "elevenlabs",
-      "groq",
-    ]);
+    ).toEqual(["openai", "google", "xai", "anthropic", "nvidia", "groq"]);
   });
 
   it("does not serve the old static registry URLs", async () => {

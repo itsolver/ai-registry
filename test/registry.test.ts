@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   benchmarkCandidates,
+  isBenchmarkCandidateRecommendedForFilters,
   normalizeArtificialAnalysisCatalog,
+  normalizeModelsDevCatalog,
   parseFilters,
   recommendModel,
   recommendModelFailovers,
@@ -11,8 +13,10 @@ import {
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
 import { AI_AUTOCLOSE_BENCHMARKS } from "../src/generated/ai-autoclose-benchmarks";
 import {
+  artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
   artificialAnalysisSpeechToTextFixture,
+  modelsDevFixture,
 } from "./fixtures";
 
 function aaSupportScore(candidate: BenchmarkCandidate): number {
@@ -237,6 +241,239 @@ describe("Artificial Analysis catalog", () => {
       "elevenlabs",
       "groq",
     ]);
+  });
+
+  it("keeps models.dev registry rows distinct while enriching AA variants", () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      "2026-07-16T00:00:00Z",
+      { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+      artificialAnalysisFreeFixture.data,
+    );
+
+    expect(catalog.models.map((model) => model.id)).toEqual(
+      expect.arrayContaining(["gpt-5.6", "claude-fable-5", "grok-4.5"]),
+    );
+    expect(catalog.modelCount).toBe(catalog.models.length);
+    expect(catalog.benchmarkCandidates?.length).toBeGreaterThan(
+      catalog.models.length,
+    );
+
+    const fable = catalog.benchmarkCandidates?.find(
+      (candidate) => candidate.id === "claude-fable-5-high",
+    );
+    expect(fable).toMatchObject({
+      registryModelId: "claude-fable-5",
+      family: "claude-fable",
+      contextWindow: 1_000_000,
+      pricing: {
+        inputPerMTok: 15,
+        outputPerMTok: 75,
+        cacheReadPerMTok: 1.5,
+      },
+      benchmarks: {
+        llm: {
+          agentic: 88,
+          speed: 92,
+          intelligenceRunTotalCost: 1050,
+          intelligenceCostPerTask: 1.05,
+        },
+      },
+    });
+
+    const gpt = catalog.benchmarkCandidates?.find(
+      (candidate) => candidate.id === "gpt-5-6-sol-high",
+    );
+    expect(gpt).toMatchObject({
+      registryModelId: "gpt-5.6-sol",
+      family: "gpt-sol",
+      recommendable: true,
+    });
+    expect(
+      benchmarkCandidates(catalog, { useCase: "customer-support" }).map(
+        (candidate) => candidate.id,
+      ),
+    ).not.toContain("grok-4-5");
+  });
+
+  it("prefers an exact canonical registry match over an earlier max alias", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    const template = source.openai.models["gpt-5.6"];
+    source.openai.models = {
+      "gpt-5.1-codex-max": {
+        ...template,
+        id: "gpt-5.1-codex-max",
+        name: "GPT-5.1 Codex Max",
+        family: "gpt-codex",
+      },
+      "gpt-5.1-codex": {
+        ...template,
+        id: "gpt-5.1-codex",
+        name: "GPT-5.1 Codex",
+        family: "gpt-codex",
+      },
+    };
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          id: "aa-gpt-5-1-codex",
+          name: "GPT-5.1 Codex",
+          slug: "gpt-5-1-codex",
+          model_creator: { name: "OpenAI", slug: "openai" },
+          evaluations: { artificial_analysis_intelligence_index: 80 },
+          pricing: {
+            price_1m_input_tokens: 2,
+            price_1m_output_tokens: 8,
+          },
+        },
+      ],
+    );
+
+    expect(
+      catalog.benchmarkCandidates?.find(
+        (candidate) => candidate.id === "gpt-5-1-codex",
+      )?.registryModelId,
+    ).toBe("gpt-5.1-codex");
+  });
+
+  it("merges live AA pricing field-by-field over checked-in fallbacks", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          id: "aa-claude-3-5-haiku-high",
+          name: "Claude 3.5 Haiku (high)",
+          slug: "claude-3-5-haiku-high",
+          model_creator: { name: "Anthropic", slug: "anthropic" },
+          evaluations: { artificial_analysis_intelligence_index: 40 },
+          pricing: {
+            price_1m_input_tokens: 9,
+            price_1m_cache_write_tokens: 0.5,
+            price_per_1k_1mp_images: 22,
+          },
+        },
+      ],
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-3-5-haiku-high",
+    );
+
+    expect(candidate?.pricing).toMatchObject({
+      inputPerMTok: 9,
+      outputPerMTok: 4,
+      cacheReadPerMTok: 0.08,
+      cacheWritePerMTok: 0.5,
+      imageInputPer1kImages: 22,
+    });
+  });
+
+  it("lets later current-free fields override legacy live fields only when present", () => {
+    const shared = {
+      id: "aa-claude-fable-5-high",
+      name: "Claude Fable 5 (high)",
+      slug: "claude-fable-5-high",
+      model_creator: { name: "Anthropic", slug: "anthropic" },
+    };
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          ...shared,
+          evaluations: {
+            artificial_analysis_intelligence_index: 80,
+            artificial_analysis_agentic_index: 75,
+          },
+          pricing: {
+            price_1m_input_tokens: 10,
+            price_1m_output_tokens: 50,
+            price_1m_cache_hit_tokens: 1,
+          },
+        },
+        {
+          ...shared,
+          evaluations: { artificial_analysis_intelligence_index: 91 },
+          pricing: { price_1m_output_tokens: 60 },
+        },
+      ],
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === shared.slug,
+    );
+
+    expect(candidate).toMatchObject({
+      pricing: {
+        inputPerMTok: 10,
+        outputPerMTok: 60,
+        cacheReadPerMTok: 1,
+      },
+      benchmarks: { llm: { intelligence: 91, agentic: 75 } },
+    });
+  });
+
+  it("inherits non-production registry availability on AA effort variants", () => {
+    const previewSource = structuredClone(modelsDevFixture) as any;
+    previewSource.anthropic.models["claude-fable-5"].status = "preview";
+    const catalog = normalizeModelsDevCatalog(
+      previewSource,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      artificialAnalysisFreeFixture.data,
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-fable-5-high",
+    );
+
+    expect(candidate).toMatchObject({
+      registryModelId: "claude-fable-5",
+      recommendable: false,
+      availability: { status: "preview", acceptedRisk: false },
+    });
+    expect(
+      candidate &&
+        isBenchmarkCandidateRecommendedForFilters(candidate, {
+          useCase: "customer-support",
+          includeItsBenchmark: false,
+        }),
+    ).toBe(false);
+  });
+
+  it("keeps beta registry models visible but their AA variants ineligible", () => {
+    const betaSource = structuredClone(modelsDevFixture) as any;
+    betaSource.anthropic.models["claude-fable-5"].status = "beta";
+    const catalog = normalizeModelsDevCatalog(
+      betaSource,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      artificialAnalysisFreeFixture.data,
+    );
+    const registryModel = catalog.models.find(
+      (model) => model.id === "claude-fable-5",
+    );
+    const variant = catalog.benchmarkCandidates?.find(
+      (candidate) => candidate.id === "claude-fable-5-high",
+    );
+
+    expect(registryModel).toMatchObject({
+      deprecated: false,
+      availability: { status: "beta", acceptedRisk: false },
+    });
+    expect(variant).toMatchObject({
+      registryModelId: "claude-fable-5",
+      recommendable: false,
+      availability: { status: "beta", acceptedRisk: false },
+    });
+    expect(
+      variant &&
+        isBenchmarkCandidateRecommendedForFilters(variant, {
+          useCase: "customer-support",
+          includeItsBenchmark: false,
+        }),
+    ).toBe(false);
   });
 
   it("includes supported-provider AA rows and excludes unsupported providers", () => {

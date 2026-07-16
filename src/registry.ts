@@ -120,6 +120,7 @@ export type ModelAvailabilityStatus =
   | "deprecated"
   | "retired"
   | "preview"
+  | "beta"
   | "experimental"
   | "latest-alias"
   | "near-retirement"
@@ -193,6 +194,7 @@ export interface RegistryModel {
   tier: Tier;
   deprecated: boolean;
   updatedAt: string;
+  availability?: ModelAvailabilityMetadata;
   benchmarks?: {
     voice?: VoiceBenchmarks;
     llm?: BenchmarkSignals;
@@ -217,6 +219,42 @@ export interface Catalog {
   models: RegistryModel[];
 }
 
+export interface ModelsDevProvider {
+  models?: Record<string, ModelsDevModel>;
+}
+
+export interface ModelsDevModel {
+  id?: unknown;
+  name?: unknown;
+  family?: unknown;
+  attachment?: unknown;
+  reasoning?: unknown;
+  tool_call?: unknown;
+  structured_output?: unknown;
+  knowledge?: unknown;
+  release_date?: unknown;
+  last_updated?: unknown;
+  modalities?: {
+    input?: unknown;
+    output?: unknown;
+  };
+  open_weights?: unknown;
+  limit?: {
+    context?: unknown;
+    input?: unknown;
+    output?: unknown;
+  };
+  cost?: {
+    input?: unknown;
+    output?: unknown;
+    cache_read?: unknown;
+    cache_write?: unknown;
+  };
+  status?: unknown;
+}
+
+export type ModelsDevDocument = Record<string, ModelsDevProvider>;
+
 export interface BenchmarkCandidate {
   id: string;
   provider: ProviderId;
@@ -230,6 +268,7 @@ export interface BenchmarkCandidate {
   pricing: ModelPricing;
   registryModelId?: string;
   recommendable: boolean;
+  eligibilityReason?: string;
   availability?: ModelAvailabilityMetadata;
   family: string | null;
   contextWindow: number | null;
@@ -292,6 +331,10 @@ export interface ArtificialAnalysisModel {
   median_output_tokens_per_second?: unknown;
   median_time_to_first_token_seconds?: unknown;
   median_time_to_first_answer_token?: unknown;
+  release_date?: unknown;
+  reasoning_model?: unknown;
+  performance?: unknown;
+  artificial_analysis_intelligence_index_cost?: unknown;
   pricing?: unknown;
   prices?: unknown;
   price?: unknown;
@@ -646,6 +689,67 @@ export function normalizeArtificialAnalysisCatalog(
   };
 }
 
+export function normalizeModelsDevCatalog(
+  source: ModelsDevDocument,
+  generatedAt = new Date().toISOString(),
+  exchangeRate?: ExchangeRate,
+  artificialAnalysisModels: ArtificialAnalysisModel[] = [],
+  artificialAnalysisSpeechToTextModels: ArtificialAnalysisSpeechToTextModel[] = [],
+): Catalog {
+  const registryModels: RegistryModel[] = [];
+
+  for (const provider of SUPPORTED_PROVIDERS) {
+    const rawProvider = source[provider];
+    if (!rawProvider?.models) continue;
+
+    for (const [modelKey, rawModel] of Object.entries(rawProvider.models)) {
+      registryModels.push(
+        normalizeModelsDevModel(
+          provider,
+          modelKey,
+          rawModel,
+          generatedAt,
+          exchangeRate,
+        ),
+      );
+    }
+  }
+
+  const tieredModels = assignRegistryTiers(registryModels);
+  const voiceModels = normalizeSpeechToSpeechModels(exchangeRate);
+  const speechToTextModels = [
+    ...(AA_SPEECH_TO_TEXT_MODELS as readonly ArtificialAnalysisSpeechToTextModel[]),
+    ...artificialAnalysisSpeechToTextModels,
+  ];
+  const benchmarkCandidates = buildBenchmarkCandidates(
+    [...tieredModels, ...voiceModels],
+    artificialAnalysisModels,
+    speechToTextModels,
+    exchangeRate,
+    generatedAt,
+  );
+  const models = enrichRegistryModels(tieredModels, benchmarkCandidates);
+  const benchmarkSignals = Object.fromEntries(
+    benchmarkCandidates
+      .filter((candidate) => candidate.benchmarks.llm)
+      .map((candidate) => [
+        `${candidate.provider}:${candidate.id}`,
+        candidate.benchmarks.llm!,
+      ]),
+  );
+
+  return {
+    generatedAt,
+    ...(exchangeRate ? { exchangeRate } : {}),
+    ...(Object.keys(benchmarkSignals).length ? { benchmarkSignals } : {}),
+    ...(benchmarkCandidates.length ? { benchmarkCandidates } : {}),
+    modelCount: models.length,
+    activeModelCount: models.filter((model) => !model.deprecated).length,
+    providers: buildRegistryProviderSummaries(models),
+    models,
+  };
+}
+
 export function filterModels(
   models: RegistryModel[],
   filters: ModelFilters,
@@ -851,7 +955,116 @@ export function isBenchmarkCandidateRecommendedForFilters(
 ): boolean {
   return (
     hasRecommendableBenchmarkBasics(candidate) &&
+    candidateAvailabilityAllowed(candidate, filters) &&
     isUseCaseRecommendationCandidate(candidate, filters)
+  );
+}
+
+export function benchmarkCandidateEligibilityReason(
+  candidate: BenchmarkCandidate,
+  filters: ModelFilters,
+): string {
+  if (isBenchmarkCandidateRecommendedForFilters(candidate, filters)) {
+    return "eligible";
+  }
+  if (isDeprecatedBenchmarkCandidate(candidate)) return "deprecated";
+  if (!candidateAvailabilityAllowed(candidate, filters)) {
+    return candidate.availability?.status ?? "not_production";
+  }
+
+  if (candidate.benchmarks.voice) {
+    if (
+      candidate.pricing.benchmarkInputAudioPerHour === undefined ||
+      candidate.pricing.benchmarkInputAudioPerHour <= 0
+    ) {
+      return "missing_benchmark_audio_pricing";
+    }
+    if (!hasPositiveCandidateAudioPrice(candidate.pricing)) {
+      return "missing_audio_pricing";
+    }
+  }
+
+  if (candidate.benchmarks.speechToText) {
+    if (!isNumber(candidate.benchmarks.speechToText.aaWer)) {
+      return "missing_aa_wer";
+    }
+    if (
+      candidate.pricing.transcriptionCostPer1kMinutes === undefined ||
+      candidate.pricing.transcriptionCostPer1kMinutes <= 0
+    ) {
+      return "missing_transcription_pricing";
+    }
+  }
+
+  if (candidate.benchmarks.llm) {
+    if (!hasAnyTextQualitySignal(candidate.benchmarks.llm)) {
+      return "missing_benchmark_evidence";
+    }
+    if (
+      candidate.pricing.inputPerMTok === undefined ||
+      candidate.pricing.inputPerMTok <= 0
+    ) {
+      return "missing_input_pricing";
+    }
+    if (
+      candidate.pricing.outputPerMTok === undefined ||
+      candidate.pricing.outputPerMTok <= 0
+    ) {
+      return "missing_output_pricing";
+    }
+  }
+
+  if (filters.useCase === "document-processing") {
+    if (candidate.capabilities?.vision !== true) {
+      return "missing_vision_capability";
+    }
+    if (candidate.capabilities?.reasoning !== true) {
+      return "missing_reasoning_capability";
+    }
+  }
+
+  if (filters.useCase === "customer-support") {
+    if (
+      filters.includeItsBenchmark !== false &&
+      !candidate.benchmarks.llm?.autoClose
+    ) {
+      return "missing_its_autoclose_benchmark";
+    }
+    if (filters.includeItsBenchmark === false) {
+      if (candidate.capabilities?.vision !== true) {
+        return "missing_vision_capability";
+      }
+      if (candidate.capabilities?.reasoning !== true) {
+        return "missing_reasoning_capability";
+      }
+    }
+  }
+
+  return "insufficient_recommendation_evidence";
+}
+
+function candidateAvailabilityAllowed(
+  candidate: BenchmarkCandidate,
+  filters: ModelFilters,
+): boolean {
+  if (!candidate.benchmarks.llm) return true;
+  if (
+    filters.useCase === "document-processing" &&
+    candidate.availability?.status === "unknown"
+  ) {
+    return isProductionAvailabilityAllowed(
+      heuristicAvailabilityForTextModel(candidate.id, candidate.name),
+      filters,
+    );
+  }
+  return isProductionAvailabilityAllowed(
+    candidate.availability ??
+      productionAvailabilityForTextModel(
+        candidate.id,
+        candidate.name,
+        candidate.benchmarks.llm,
+      ),
+    filters,
   );
 }
 
@@ -959,10 +1172,7 @@ function isUseCaseRecommendationCandidate(
     return (
       candidate.capabilities?.vision === true &&
       candidate.capabilities?.reasoning === true &&
-      isProductionAvailabilityAllowed(
-        heuristicAvailabilityForTextModel(candidate.id, candidate.name),
-        filters,
-      )
+      candidateAvailabilityAllowed(candidate, filters)
     );
   }
 
@@ -1197,6 +1407,10 @@ export function isRecommendationCandidate(
     model.pricing.inputPerMTok > 0 &&
     model.pricing.outputPerMTok !== undefined &&
     model.pricing.outputPerMTok > 0 &&
+    isProductionAvailabilityAllowed(
+      model.availability ??
+        heuristicAvailabilityForTextModel(model.id, model.name),
+    ) &&
     providerFamilyAllowed(model) &&
     !NON_WORK_MODEL_PATTERNS.some((pattern) => searchable.includes(pattern)) &&
     !id.includes("embedding") &&
@@ -1310,6 +1524,181 @@ function asUseCase(value: string | null): UseCase | undefined {
     return "customer-support";
   }
   return USE_CASES.find((useCase) => useCase === value);
+}
+
+function normalizeModelsDevModel(
+  provider: ProviderId,
+  modelKey: string,
+  raw: ModelsDevModel,
+  generatedAt: string,
+  exchangeRate?: ExchangeRate,
+): RegistryModel {
+  const id = stringValue(raw.id, modelKey);
+  const name = stringValue(raw.name, modelKey);
+  const inputModalities = asStringArray(raw.modalities?.input);
+  const outputModalities = asStringArray(raw.modalities?.output);
+  const inputPrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.input),
+  );
+  const outputPrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.output),
+  );
+  const cacheReadPrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.cache_read),
+  );
+  const cacheWritePrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.cache_write),
+  );
+  const pricing: ModelPricing = {
+    ...optionalTokenPrice("inputPerMTok", inputPrice),
+    ...optionalTokenPrice("outputPerMTok", outputPrice),
+    ...optionalTokenPrice("cacheReadPerMTok", cacheReadPrice),
+    ...(cacheWritePrice !== undefined
+      ? { cacheWritePerMTok: cacheWritePrice }
+      : {}),
+  };
+  const deprecated = ["deprecated", "retired"].includes(
+    stringValue(raw.status, "").toLowerCase(),
+  );
+
+  return {
+    id,
+    provider,
+    name,
+    family: stringValue(raw.family, "unknown"),
+    contextWindow:
+      numberOrUndefined(raw.limit?.context ?? raw.limit?.input) ?? 0,
+    outputLimit: numberOrUndefined(raw.limit?.output) ?? 0,
+    pricing: exchangeRate ? convertPricing(pricing, exchangeRate) : pricing,
+    capabilities: {
+      vision: inputModalities.includes("image"),
+      pdf: Boolean(raw.attachment) || inputModalities.includes("pdf"),
+      reasoning: Boolean(raw.reasoning),
+      toolCalling: Boolean(raw.tool_call),
+      structuredOutput: Boolean(raw.structured_output),
+    },
+    modalities: {
+      input: inputModalities,
+      output: outputModalities,
+    },
+    ...optionalString("releaseDate", raw.release_date),
+    ...optionalString("knowledgeCutoff", raw.knowledge),
+    openWeights: Boolean(raw.open_weights),
+    tier: "fast",
+    deprecated,
+    updatedAt: dateToIso(raw.last_updated) ?? generatedAt,
+    availability: modelsDevAvailability(raw.status, id, name),
+  };
+}
+
+function modelsDevAvailability(
+  status: unknown,
+  id: string,
+  name: string,
+): ModelAvailabilityMetadata {
+  const normalized = stringValue(status, "").toLowerCase();
+  const knownStatuses: ModelAvailabilityStatus[] = [
+    "production",
+    "deprecated",
+    "retired",
+    "preview",
+    "beta",
+    "experimental",
+  ];
+  if (knownStatuses.includes(normalized as ModelAvailabilityStatus)) {
+    const mapped = normalized as ModelAvailabilityStatus;
+    return {
+      status: mapped,
+      acceptedRisk: false,
+      reason: `models.dev reports this model as ${mapped}.`,
+      sourceUrl: "https://models.dev/api.json",
+    };
+  }
+
+  return {
+    ...heuristicAvailabilityForTextModel(id, name),
+    sourceUrl: "https://models.dev/api.json",
+  };
+}
+
+function assignRegistryTiers(models: RegistryModel[]): RegistryModel[] {
+  const tiers = new Map<string, Tier>();
+
+  for (const provider of SUPPORTED_PROVIDERS) {
+    const candidates = models
+      .filter((model) => model.provider === provider)
+      .filter((model) => isRecommendationCandidate(model))
+      .sort(compareCheapest);
+    const firstBreak = Math.ceil(candidates.length / 3);
+    const secondBreak = Math.ceil((candidates.length * 2) / 3);
+
+    candidates.forEach((model, index) => {
+      tiers.set(
+        modelKey(model),
+        index < firstBreak
+          ? "fast"
+          : index < secondBreak
+            ? "balanced"
+            : "best",
+      );
+    });
+  }
+
+  return models.map((model) => ({
+    ...model,
+    tier: tiers.get(modelKey(model)) ?? fallbackRegistryTier(model),
+  }));
+}
+
+function fallbackRegistryTier(model: RegistryModel): Tier {
+  const input = model.pricing.inputPerMTok;
+  if (input !== undefined && input <= 1) return "fast";
+  if (input !== undefined && input <= 5) return "balanced";
+  return "best";
+}
+
+function buildRegistryProviderSummaries(
+  models: RegistryModel[],
+): ProviderSummary[] {
+  return SUPPORTED_PROVIDERS.map((provider) => {
+    const providerModels = models.filter((model) => model.provider === provider);
+    return {
+      provider,
+      total: providerModels.length,
+      active: providerModels.filter((model) => !model.deprecated).length,
+    };
+  }).filter((summary) => summary.total > 0);
+}
+
+function enrichRegistryModels(
+  models: RegistryModel[],
+  candidates: BenchmarkCandidate[],
+): RegistryModel[] {
+  return models.map((model) => {
+    const joined = candidates.filter(
+      (candidate) =>
+        candidate.provider === model.provider &&
+        candidate.registryModelId === model.id &&
+        candidate.benchmarks.llm,
+    );
+    const exact = joined.find(
+      (candidate) =>
+        normalizeMatchKey(candidate.id) === normalizeMatchKey(model.id),
+    );
+    const benchmark = exact ?? joined[0];
+    if (!benchmark) return model;
+
+    return {
+      ...model,
+      ...(exact && hasTokenPricing(exact.pricing)
+        ? { pricing: exact.pricing }
+        : {}),
+      benchmarks: {
+        ...model.benchmarks,
+        llm: benchmark.benchmarks.llm,
+      },
+    };
+  });
 }
 
 function normalizeSpeechToSpeechModels(
@@ -1427,30 +1816,35 @@ function buildBenchmarkCandidates(
 
     const aaKeys = artificialAnalysisKeys(aaModel);
     const registryModel = findRegistryModel(models, provider, aaKeys);
-    const signals = {
-      ...benchmarkSignalsFromArtificialAnalysis(aaModel),
-      ...efficiencySignalsForKeys(aaKeys, exchangeRate),
-      ...autoCloseSignalsForKeys(aaKeys, exchangeRate),
-    };
+    const id = stringValue(aaModel.slug ?? aaModel.id, "");
+    if (!id) continue;
+    const existing = candidates.get(id);
+    const signals = mergeBenchmarkSignals(
+      efficiencySignalsForKeys(aaKeys, exchangeRate),
+      existing?.benchmarks.llm,
+      benchmarkSignalsFromArtificialAnalysis(aaModel, exchangeRate),
+      autoCloseSignalsForKeys(aaKeys, exchangeRate),
+    );
     if (!hasAnyTextQualitySignal(signals)) continue;
 
     const aaPricing = pricingFromArtificialAnalysis(aaModel, exchangeRate);
     const generatedPricing = pricingForKeys(aaKeys, exchangeRate);
-    const pricing = hasTokenPricing(aaPricing)
-      ? aaPricing
-      : hasTokenPricing(generatedPricing)
-        ? generatedPricing
-        : (registryModel?.pricing ?? {});
-    const id = registryModel?.id ?? stringValue(aaModel.slug ?? aaModel.id, "");
-    if (!id) continue;
+    const pricing = mergePricing(
+      registryModel?.pricing,
+      efficiencyPricingForKeys(aaKeys, exchangeRate),
+      generatedPricing,
+      existing?.pricing,
+      aaPricing,
+    );
 
     const candidate = benchmarkCandidateFromRegistry({
       id,
       provider,
-      name: registryModel?.name ?? stringValue(aaModel.name, id),
+      name: stringValue(aaModel.name, existing?.name ?? registryModel?.name ?? id),
       benchmarks: { llm: signals },
       pricing,
       registryModel,
+      releaseDate: stringValue(aaModel.release_date, "") || undefined,
     });
     candidates.set(candidate.id, candidate);
   }
@@ -1459,15 +1853,17 @@ function buildBenchmarkCandidates(
     const provider = providerFromArtificialAnalysisEfficiency(efficiencyModel);
     if (!provider) continue;
 
+    const efficiencyKeys = artificialAnalysisEfficiencyKeys(efficiencyModel);
+    const registryModel = findRegistryModel(models, provider, efficiencyKeys);
     const existing = candidates.get(efficiencyModel.slug);
-    const signals = {
-      ...(existing?.benchmarks.llm ?? {}),
-      ...benchmarkSignalsFromArtificialAnalysisEfficiency(
+    const signals = mergeBenchmarkSignals(
+      benchmarkSignalsFromArtificialAnalysisEfficiency(
         efficiencyModel,
         exchangeRate,
       ),
-      ...autoCloseSignalsForSlug(efficiencyModel.slug, exchangeRate),
-    };
+      existing?.benchmarks.llm,
+      autoCloseSignalsForSlug(efficiencyModel.slug, exchangeRate),
+    );
     if (!hasAnyTextQualitySignal(signals)) continue;
     const generatedPricing = pricingFromArtificialAnalysisPricing(
       pricingModelForSlug(efficiencyModel.slug),
@@ -1477,11 +1873,12 @@ function buildBenchmarkCandidates(
       efficiencyModel,
       exchangeRate,
     );
-    const pricing = hasTokenPricing(existing?.pricing ?? {})
-      ? withImagePricing(existing!.pricing, frontierPricing)
-      : hasTokenPricing(generatedPricing)
-        ? withImagePricing(generatedPricing, frontierPricing)
-        : frontierPricing;
+    const pricing = mergePricing(
+      registryModel?.pricing,
+      frontierPricing,
+      generatedPricing,
+      existing?.pricing,
+    );
 
     const candidate = benchmarkCandidateFromRegistry({
       id: existing?.id ?? efficiencyModel.slug,
@@ -1489,8 +1886,11 @@ function buildBenchmarkCandidates(
       name: existing?.name ?? efficiencyModel.label,
       benchmarks: { llm: signals },
       pricing,
+      registryModel,
       contextWindow:
-        existing?.contextWindow ?? efficiencyModel.contextWindowTokens,
+        existing?.contextWindow ??
+        registryModel?.contextWindow ??
+        efficiencyModel.contextWindowTokens,
       capabilities: capabilitiesFromLlmEfficiency(
         efficiencyModel,
         existing?.capabilities,
@@ -1503,6 +1903,15 @@ function buildBenchmarkCandidates(
     const provider = recommendationModel.provider;
     if (!SUPPORTED_PROVIDERS.includes(provider)) continue;
 
+    const registryModel = findRegistryModel(
+      models,
+      provider,
+      new Set(
+        [recommendationModel.slug, recommendationModel.label].map(
+          normalizeMatchKey,
+        ),
+      ),
+    );
     const existing = candidates.get(recommendationModel.slug);
     const signals = mergeBenchmarkSignals(
       benchmarkSignalsFromCustomerSupportRecommendation(
@@ -1516,9 +1925,11 @@ function buildBenchmarkCandidates(
       recommendationModel,
       exchangeRate,
     );
-    const pricing = hasTokenPricing(existing?.pricing ?? {})
-      ? existing!.pricing
-      : generatedPricing;
+    const pricing = mergePricing(
+      registryModel?.pricing,
+      generatedPricing,
+      existing?.pricing,
+    );
 
     const candidate = benchmarkCandidateFromRegistry({
       id: existing?.id ?? recommendationModel.slug,
@@ -1526,6 +1937,7 @@ function buildBenchmarkCandidates(
       name: existing?.name ?? recommendationModel.label,
       benchmarks: { llm: signals },
       pricing,
+      registryModel,
       capabilities:
         capabilitiesFromCustomerSupportRecommendation(recommendationModel),
       contextWindow:
@@ -1538,6 +1950,11 @@ function buildBenchmarkCandidates(
     if (autoCloseModel.provider !== "google") continue;
 
     const existing = candidates.get(autoCloseModel.id);
+    const registryModel = findRegistryModel(
+      models,
+      autoCloseModel.provider,
+      autoCloseBenchmarkKeys(autoCloseModel),
+    );
     const signals = {
       ...standaloneGeminiFlashSignals(autoCloseModel, exchangeRate),
       ...(existing?.benchmarks.llm ?? {}),
@@ -1552,10 +1969,14 @@ function buildBenchmarkCandidates(
       provider: autoCloseModel.provider,
       name: existing?.name ?? autoCloseModel.displayName,
       benchmarks: { llm: signals },
-      pricing: hasTokenPricing(existing?.pricing ?? {})
-        ? existing!.pricing
-        : geminiAutoClosePricing(autoCloseModel, exchangeRate),
-      contextWindow: existing?.contextWindow ?? 1_000_000,
+      pricing: mergePricing(
+        registryModel?.pricing,
+        geminiAutoClosePricing(autoCloseModel, exchangeRate),
+        existing?.pricing,
+      ),
+      registryModel,
+      contextWindow:
+        existing?.contextWindow ?? registryModel?.contextWindow ?? 1_000_000,
       deprecated: autoCloseModel.deprecated,
       capabilities: {
         vision: true,
@@ -1697,14 +2118,18 @@ function benchmarkCandidateFromRegistry(input: {
   contextWindow?: number | null;
   capabilities?: Record<Capability, boolean> | null;
   deprecated?: boolean | null;
+  releaseDate?: string;
 }): BenchmarkCandidate {
   const model = input.registryModel;
   const deprecated = model?.deprecated ?? input.deprecated ?? null;
   const availability = input.benchmarks.llm
-    ? productionAvailabilityForTextModel(
-        input.id,
-        input.name,
-        input.benchmarks.llm,
+    ? mergeBenchmarkAvailability(
+        model?.availability,
+        productionAvailabilityForTextModel(
+          input.id,
+          input.name,
+          input.benchmarks.llm,
+        ),
       )
     : undefined;
   const recommendable = isBenchmarkCandidateRecommendable(
@@ -1715,6 +2140,7 @@ function benchmarkCandidateFromRegistry(input: {
     input.pricing,
     model,
     deprecated,
+    availability,
   );
 
   return {
@@ -1736,7 +2162,9 @@ function benchmarkCandidateFromRegistry(input: {
       inferredTextCapabilities(input.id, input.name, input.benchmarks.llm) ??
       null,
     modalities: model?.modalities ?? null,
-    ...(model?.releaseDate ? { releaseDate: model.releaseDate } : {}),
+    ...(model?.releaseDate || input.releaseDate
+      ? { releaseDate: model?.releaseDate ?? input.releaseDate }
+      : {}),
     ...(model?.knowledgeCutoff
       ? { knowledgeCutoff: model.knowledgeCutoff }
       : {}),
@@ -1813,6 +2241,7 @@ function isBenchmarkCandidateRecommendable(
   pricing: ModelPricing,
   registryModel?: RegistryModel,
   deprecated?: boolean | null,
+  availability?: ModelAvailabilityMetadata,
 ): boolean {
   if (!SUPPORTED_PROVIDERS.includes(provider)) return false;
   if (registryModel?.deprecated || deprecated === true) return false;
@@ -1836,7 +2265,8 @@ function isBenchmarkCandidateRecommendable(
   return (
     hasRecommendableTextBenchmarkBasics(benchmarks, pricing) &&
     isProductionAvailabilityAllowed(
-      productionAvailabilityForTextModel(id, name, benchmarks.llm),
+      availability ??
+        productionAvailabilityForTextModel(id, name, benchmarks.llm),
     )
   );
 }
@@ -1900,6 +2330,22 @@ function productionAvailabilityForTextModel(
   return benchmarkAvailability ?? heuristicAvailability;
 }
 
+function mergeBenchmarkAvailability(
+  registryAvailability: ModelAvailabilityMetadata | undefined,
+  benchmarkAvailability: ModelAvailabilityMetadata,
+): ModelAvailabilityMetadata {
+  if (
+    registryAvailability &&
+    !isProductionAvailabilityAllowed(registryAvailability)
+  ) {
+    return registryAvailability;
+  }
+  if (!isProductionAvailabilityAllowed(benchmarkAvailability)) {
+    return benchmarkAvailability;
+  }
+  return registryAvailability ?? benchmarkAvailability;
+}
+
 function isProductionAvailabilityAllowed(
   availability: ModelAvailabilityMetadata,
   filters?: ModelFilters,
@@ -1945,6 +2391,13 @@ function heuristicAvailabilityForTextModel(
       acceptedRisk: false,
       reason:
         "Preview-only models are excluded from default production recommendations.",
+    };
+  }
+  if (/\bbeta\b/.test(searchable)) {
+    return {
+      status: "beta",
+      acceptedRisk: false,
+      reason: "Beta models are excluded from default production recommendations.",
     };
   }
   if (searchable.includes("experimental") || /\bexp\b/.test(searchable)) {
@@ -2042,11 +2495,35 @@ function findRegistryModel(
   provider: ProviderId,
   aaKeys: Set<string>,
 ): RegistryModel | undefined {
-  return models.find(
-    (candidate) =>
-      candidate.provider === provider &&
-      modelKeys(candidate).some((key) => aaKeys.has(key)),
-  );
+  let best: RegistryModel | undefined;
+  let bestExactScore = 0;
+  let bestAliasScore = 0;
+
+  for (const candidate of models) {
+    if (candidate.provider !== provider) continue;
+    const exactScore = Math.max(
+      0,
+      ...[candidate.id, candidate.name]
+        .map(normalizeMatchKey)
+        .filter((key) => aaKeys.has(key))
+        .map((key) => key.length),
+    );
+    const aliasScore = Math.max(
+      0,
+      ...modelKeys(candidate)
+        .filter((key) => aaKeys.has(key))
+        .map((key) => key.length),
+    );
+    if (
+      exactScore > bestExactScore ||
+      (exactScore === bestExactScore && aliasScore > bestAliasScore)
+    ) {
+      best = candidate;
+      bestExactScore = exactScore;
+      bestAliasScore = aliasScore;
+    }
+  }
+  return best;
 }
 
 function efficiencySignalsForKeys(
@@ -2062,6 +2539,22 @@ function efficiencySignalsForKeys(
 
   return match
     ? benchmarkSignalsFromArtificialAnalysisEfficiency(match, exchangeRate)
+    : {};
+}
+
+function efficiencyPricingForKeys(
+  aaKeys: Set<string>,
+  exchangeRate?: ExchangeRate,
+): ModelPricing {
+  const match = (
+    AA_LLM_EFFICIENCY_MODELS as readonly ArtificialAnalysisLlmEfficiencyModel[]
+  ).find((efficiencyModel) => {
+    const efficiencyKeys = artificialAnalysisEfficiencyKeys(efficiencyModel);
+    return [...efficiencyKeys].some((key) => aaKeys.has(key));
+  });
+
+  return match
+    ? pricingFromArtificialAnalysisEfficiency(match, exchangeRate)
     : {};
 }
 
@@ -2117,6 +2610,7 @@ function pricingFromArtificialAnalysis(
   exchangeRate?: ExchangeRate,
 ): ModelPricing {
   const input = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "price_1m_input_tokens"],
     ["pricing", "input"],
     ["pricing", "inputPerMTok"],
     ["prices", "input"],
@@ -2128,6 +2622,7 @@ function pricingFromArtificialAnalysis(
     ["input_cost_per_million_tokens"],
   ]);
   const output = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "price_1m_output_tokens"],
     ["pricing", "output"],
     ["pricing", "outputPerMTok"],
     ["prices", "output"],
@@ -2138,15 +2633,28 @@ function pricingFromArtificialAnalysis(
     ["price_1m_output_tokens"],
     ["output_cost_per_million_tokens"],
   ]);
+  const cacheRead = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "price_1m_cache_hit_tokens"],
+    ["pricing", "cache_read"],
+    ["pricing", "cacheReadPerMTok"],
+  ]);
+  const cacheWrite = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "price_1m_cache_write_tokens"],
+    ["pricing", "cache_write"],
+    ["pricing", "cacheWritePerMTok"],
+  ]);
   const pricing: ModelPricing = {
     ...optionalTokenPrice("inputPerMTok", input),
     ...optionalTokenPrice("outputPerMTok", output),
+    ...optionalTokenPrice("cacheReadPerMTok", cacheRead),
+    ...optionalTokenPrice("cacheWritePerMTok", cacheWrite),
     ...optionalNumberPrice(
       "imageInputPer1kImages",
       positiveNumberOrUndefined(
-        numberOrUndefined(
-          (model as Record<string, unknown>).price_per_1k_1mp_images,
-        ),
+        firstNestedNumber(model as Record<string, unknown>, [
+          ["pricing", "price_per_1k_1mp_images"],
+          ["price_per_1k_1mp_images"],
+        ]),
       ),
     ),
   };
@@ -2183,20 +2691,19 @@ function pricingFromArtificialAnalysisEfficiency(
   return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
 }
 
-function withImagePricing(
-  pricing: ModelPricing,
-  imagePricing: ModelPricing,
+function mergePricing(
+  ...layers: Array<ModelPricing | undefined>
 ): ModelPricing {
-  if (
-    pricing.imageInputPer1kImages !== undefined ||
-    imagePricing.imageInputPer1kImages === undefined
-  ) {
-    return pricing;
+  const merged: ModelPricing = {};
+  for (const layer of layers) {
+    if (!layer) continue;
+    for (const [key, value] of Object.entries(layer)) {
+      if (value !== undefined) {
+        merged[key as keyof ModelPricing] = value;
+      }
+    }
   }
-  return {
-    ...pricing,
-    imageInputPer1kImages: imagePricing.imageInputPer1kImages,
-  };
+  return merged;
 }
 
 function pricingFromCustomerSupportRecommendation(
@@ -2310,14 +2817,24 @@ function speechToTextProviderRows(
 
 function benchmarkSignalsFromArtificialAnalysis(
   model: ArtificialAnalysisModel,
+  exchangeRate?: ExchangeRate,
 ): BenchmarkSignals {
   const evaluations = model.evaluations ?? {};
+  const source = model as Record<string, unknown>;
+  const rate = exchangeRate?.rate ?? 1;
   return {
     ...optionalSignal(
       "intelligence",
       firstScore(evaluations, [
         "artificial_analysis_intelligence_index",
         "intelligence_index",
+      ]),
+    ),
+    ...optionalSignal(
+      "agentic",
+      firstScore(evaluations, [
+        "artificial_analysis_agentic_index",
+        "agentic_index",
       ]),
     ),
     ...optionalSignal(
@@ -2370,16 +2887,71 @@ function benchmarkSignalsFromArtificialAnalysis(
     ...optionalSignal(
       "speed",
       positiveNumberOrUndefined(
-        numberOrUndefined(model.median_output_tokens_per_second),
+        firstNestedNumber(source, [
+          ["performance", "median_output_tokens_per_second"],
+          ["median_output_tokens_per_second"],
+        ]),
       ),
     ),
     ...optionalSignal(
       "latency",
       positiveNumberOrUndefined(
-        numberOrUndefined(
-          model.median_time_to_first_token_seconds ??
-            model.median_time_to_first_answer_token,
-        ),
+        firstNestedNumber(source, [
+          ["performance", "median_time_to_first_token_seconds"],
+          ["performance", "median_time_to_first_answer_token_seconds"],
+          ["performance", "median_time_to_first_answer_token"],
+          ["median_time_to_first_token_seconds"],
+          ["median_time_to_first_answer_token"],
+        ]),
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceRunAnswerCost",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          ["artificial_analysis_intelligence_index_cost", "answer_cost"],
+        ]),
+        rate,
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceRunReasoningCost",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          ["artificial_analysis_intelligence_index_cost", "reasoning_cost"],
+        ]),
+        rate,
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceRunInputCost",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          ["artificial_analysis_intelligence_index_cost", "input_cost"],
+        ]),
+        rate,
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceRunTotalCost",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          ["artificial_analysis_intelligence_index_cost", "total_cost"],
+        ]),
+        rate,
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceCostPerTask",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          [
+            "artificial_analysis_intelligence_index_cost",
+            "cost_per_task",
+            "total_cost",
+          ],
+        ]),
+        rate,
       ),
     ),
   };
@@ -2625,7 +3197,7 @@ function artificialAnalysisKeys(model: ArtificialAnalysisModel): Set<string> {
   return new Set(
     [model.id, model.name, model.slug]
       .filter((value): value is string => typeof value === "string")
-      .map(normalizeMatchKey),
+      .flatMap(modelJoinKeys),
   );
 }
 
@@ -2639,7 +3211,7 @@ function artificialAnalysisEfficiencyKeys(
       model.detailsUrl.split("/").filter(Boolean).at(-1),
     ]
       .filter((value): value is string => typeof value === "string")
-      .map(normalizeMatchKey),
+      .flatMap(modelJoinKeys),
   );
 }
 
@@ -2653,7 +3225,7 @@ function artificialAnalysisPricingKeys(
       model.detailsUrl.split("/").filter(Boolean).at(-1),
     ]
       .filter((value): value is string => typeof value === "string")
-      .map(normalizeMatchKey),
+      .flatMap(modelJoinKeys),
   );
 }
 
@@ -2661,12 +3233,23 @@ function autoCloseBenchmarkKeys(model: AiAutoCloseBenchmarkModel): Set<string> {
   return new Set(
     [model.id, model.modelKey, model.apiModel, model.displayName]
       .filter((value): value is string => typeof value === "string")
-      .map(normalizeMatchKey),
+      .flatMap(modelJoinKeys),
   );
 }
 
 function modelKeys(model: RegistryModel): string[] {
-  return [model.id, model.name].map(normalizeMatchKey);
+  return [model.id, model.name].flatMap(modelJoinKeys);
+}
+
+function modelJoinKeys(value: string): string[] {
+  const slug = slugFrom(value);
+  const baseSlug = slug
+    .replace(
+      /-(?:adaptive-reasoning|non-reasoning|reasoning|thinking|minimal|low|medium|high|xhigh|max)$/,
+      "",
+    )
+    .replace(/-(?:effort-)?(?:minimal|low|medium|high|xhigh|max)$/, "");
+  return [...new Set([normalizeMatchKey(slug), normalizeMatchKey(baseSlug)])];
 }
 
 function normalizeMatchKey(value: string): string {
@@ -3754,6 +4337,11 @@ function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
 function slugFrom(value: string): string {
   return value
     .toLowerCase()
@@ -3774,7 +4362,11 @@ function escapeRegExp(value: string): string {
 }
 
 function optionalTokenPrice(
-  key: "inputPerMTok" | "outputPerMTok" | "cacheReadPerMTok",
+  key:
+    | "inputPerMTok"
+    | "outputPerMTok"
+    | "cacheReadPerMTok"
+    | "cacheWritePerMTok",
   value: number | undefined,
 ): Partial<ModelPricing> {
   return value === undefined ? {} : { [key]: value };
@@ -3927,6 +4519,14 @@ function optionalString<K extends "releaseDate" | "knowledgeCutoff">(
   return typeof value === "string" && value.trim()
     ? ({ [key]: value.trim() } as Pick<RegistryModel, K>)
     : {};
+}
+
+function dateToIso(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+    ? `${trimmed}T00:00:00Z`
+    : trimmed;
 }
 
 function dateValue(value: string | undefined): number {

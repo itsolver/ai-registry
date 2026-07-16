@@ -501,8 +501,51 @@ export const HOME_HTML = String.raw`<!doctype html>
     .benchmark-panels {
       margin: 1.5rem 0 0;
     }
+    .mode-panel {
+      margin: 1.5rem 0 0;
+    }
+    .mode-panel[hidden] {
+      display: none;
+    }
     .benchmark-panel[hidden] {
       display: none;
+    }
+    .mode-role {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.08rem 0.42rem;
+      color: var(--muted);
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .mode-role.primary {
+      border-color: #8fbd83;
+      background: #e8f4e3;
+      color: #376b34;
+    }
+    .eligibility {
+      max-width: 240px;
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.35;
+      white-space: normal;
+    }
+    .eligibility.eligible { color: #376b34; }
+    .registry-capabilities {
+      max-width: 260px;
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.35;
+      white-space: normal;
+    }
+    .registry-date {
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.35;
+      white-space: normal;
     }
     .faq {
       margin: 1.2rem 0 2.2rem;
@@ -751,7 +794,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="models">browse registry models</option>
           </select>
         </div>
-        <div class="b-field">
+        <div class="b-field" data-endpoint-scope="recommend benchmarks">
           <label for="b-usecase">For use case</label>
           <select id="b-usecase">
             <option value="customer-support" selected>customer support</option>
@@ -760,7 +803,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="speech-to-text">speech to text</option>
           </select>
         </div>
-        <div class="b-field">
+        <div class="b-field" data-endpoint-scope="recommend benchmarks">
           <label for="b-tier">Recommendation priority</label>
           <select id="b-tier">
             <option value="balanced">balanced trade-off</option>
@@ -992,7 +1035,23 @@ export const HOME_HTML = String.raw`<!doctype html>
   </aside>
   <section class="benchmark-column" aria-labelledby="benchmarkTitle">
   <h2 id="benchmarkTitle">Customer Support Benchmark</h2>
-  <div class="benchmark-panels">
+  <div class="mode-panel" data-mode-panel="recommend">
+    <div class="voice-bench">
+      <div class="voice-head">
+        <strong>Primary and distinct failovers</strong>
+        <span id="recommendationSource">waiting for recommendation...</span>
+      </div>
+      <div class="voice-table-wrap">
+        <table class="voice-table">
+          <thead><tr id="recommendationHead"><th>Role</th><th>Model</th></tr></thead>
+          <tbody id="recommendationRows">
+            <tr><td class="empty" colspan="2">checking...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="benchmark-panels mode-panel" data-mode-panel="benchmarks" hidden>
     <div class="benchmark-panel" data-benchmark-panel="customer-support" hidden>
       <div class="voice-bench">
       <div class="voice-head">
@@ -1106,6 +1165,22 @@ export const HOME_HTML = String.raw`<!doctype html>
         </div>
       </div>
       <p class="bench-note">Speech-to-text models are ranked from Artificial Analysis STT rows. Lower AA-WER is better; price is normalized to AUD per 1,000 minutes of audio.</p>
+    </div>
+  </div>
+  <div class="mode-panel" data-mode-panel="models" hidden>
+    <div class="voice-bench">
+      <div class="voice-head">
+        <strong>Canonical deployable model families</strong>
+        <span id="registrySource">waiting for registry...</span>
+      </div>
+      <div class="voice-table-wrap">
+        <table class="voice-table">
+          <thead><tr></tr></thead>
+          <tbody id="registryRows">
+            <tr><td class="empty" colspan="8">checking...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
   <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, and Intelligence Index Task AUD.</p>
@@ -1381,7 +1456,12 @@ export const HOME_HTML = String.raw`<!doctype html>
     var textBenchmarkModels = null;
     var textBenchmarkModelsWithoutIts = null;
     var textBenchmarkRequest = 0;
-    var currentBrowseModels = null;
+    var modeResponses = {
+      recommend: null,
+      benchmarks: null,
+      models: null
+    };
+    var builderRequestSequence = 0;
     var voiceBenchmarkRows = null;
     var sttBenchmarkRows = null;
     var sttBenchmarkLoading = false;
@@ -1392,27 +1472,58 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function nonRecommendableReason(model) {
       if (model.recommendable !== false) return '';
+      if (typeof model.eligibilityReason === 'string' && model.eligibilityReason) {
+        return model.eligibilityReason.replace(/_/g, ' ');
+      }
+      if (typeof model.recommendabilityReason === 'string' && model.recommendabilityReason) {
+        return model.recommendabilityReason.replace(/_/g, ' ');
+      }
       if (model.deprecated === true) return 'deprecated';
+
+      var availability = model.availability || {};
+      if (
+        availability.status &&
+        availability.status !== 'production' &&
+        availability.acceptedRisk !== true
+      ) return availability.status;
 
       var pricing = model.pricing || {};
       if (model.benchmarks && model.benchmarks.voice) {
-        if (typeof pricing.benchmarkInputAudioPerHour !== 'number') return 'no audio pricing';
-        if (typeof pricing.audioOutputPerHour !== 'number' && typeof pricing.benchmarkCostPerTask !== 'number') return 'no audio pricing';
+        if (!(pricing.benchmarkInputAudioPerHour > 0)) return 'no audio pricing';
+        if (!(pricing.audioOutputPerHour > 0) && !(pricing.benchmarkCostPerTask > 0)) return 'no audio pricing';
       }
       if (model.benchmarks && model.benchmarks.speechToText) {
         if (typeof model.benchmarks.speechToText.aaWer !== 'number') return 'no STT score';
-        if (typeof pricing.transcriptionCostPer1kMinutes !== 'number') return 'no STT pricing';
+        if (!(pricing.transcriptionCostPer1kMinutes > 0)) return 'no STT pricing';
       }
       if (model.benchmarks && model.benchmarks.llm) {
-        if (typeof pricing.inputPerMTok !== 'number' || typeof pricing.outputPerMTok !== 'number') return 'no token pricing';
+        if (!(pricing.inputPerMTok > 0) || !(pricing.outputPerMTok > 0)) return 'no token pricing';
+        var signals = model.benchmarks.llm;
+        if (fields.usecase.value === 'customer-support') {
+          if (typeof signals.instructionFollowing !== 'number') return 'no instruction-following score';
+          if (![signals.agentic, signals.tauTelecom, signals.professional].some(function (value) { return typeof value === 'number'; })) return 'no support workflow signal';
+          if (includeItsBenchmark() && !signals.autoClose) return 'no ITS auto-close benchmark';
+        }
+        if (fields.usecase.value === 'document-processing' && typeof signals.visualReasoning !== 'number') {
+          return 'no visual reasoning score';
+        }
       }
 
       return 'not eligible';
     }
 
+    function renderEligibility(model) {
+      var reason = nonRecommendableReason(model);
+      return reason
+        ? '<div class="eligibility">Not eligible: ' + escapeHtml(reason) + '</div>'
+        : '<div class="eligibility eligible">Eligible</div>';
+    }
+
     function renderModelCell(model) {
       var reason = nonRecommendableReason(model);
-      var marker = reason ? '<span class="not-rec">' + escapeHtml(reason) + '</span>' : '';
+      var marker = reason && !isBrowsingBenchmarks()
+        ? '<span class="not-rec">' + escapeHtml(reason) + '</span>'
+        : '';
       return '<strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.provider) + '</div>' + marker;
     }
 
@@ -1455,7 +1566,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (!state || !tbody) return;
       if (!state.rows.length) {
         var headerCount = tbody.closest('table').querySelectorAll('thead th').length;
-        tbody.innerHTML = '<tr><td class="empty" colspan="' + (state.columns.length || headerCount || 1) + '">Benchmark data unavailable.</td></tr>';
+        var emptyLabel = tableId === 'registryRows' ? 'Registry models unavailable.' : 'Benchmark data unavailable.';
+        tbody.innerHTML = '<tr><td class="empty" colspan="' + (state.columns.length || headerCount || 1) + '">' + emptyLabel + '</td></tr>';
         return;
       }
 
@@ -1539,15 +1651,29 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function updateBenchmarkPanel(useCase) {
+      var mode = fields.endpoint.value;
+      document.querySelectorAll('[data-mode-panel]').forEach(function (panel) {
+        panel.hidden = panel.getAttribute('data-mode-panel') !== mode;
+      });
       var active = benchmarkPanelForUseCase(useCase);
       document.querySelectorAll('[data-benchmark-panel]').forEach(function (panel) {
         panel.hidden = panel.getAttribute('data-benchmark-panel') !== active;
       });
       var copy = benchmarkCopy(useCase);
-      setText('benchmarkTitle', copy.title);
+      if (mode === 'models') {
+        setText('benchmarkTitle', 'Registry Models');
+      } else if (mode === 'recommend') {
+        setText('benchmarkTitle', copy.title.replace(/ Benchmark$/, '') + ' Recommendation');
+      } else {
+        setText('benchmarkTitle', copy.title + ' Rows');
+      }
       var hint = document.getElementById('benchmarkHint');
       if (!hint) return;
-      hint.textContent = copy.hint;
+      hint.textContent = mode === 'models'
+        ? 'Registry rows show deployable base model metadata. Registry visibility does not imply recommendation eligibility.'
+        : mode === 'recommend'
+          ? 'The primary recommendation is followed by distinct failover model families for the same active filters.'
+          : copy.hint + ' Incomplete rows remain visible with an eligibility reason.';
     }
 
     function updateTierOptions(useCase) {
@@ -1600,9 +1726,14 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function updateFilterVisibility(useCase) {
+      var mode = fields.endpoint.value;
+      document.querySelectorAll('[data-endpoint-scope]').forEach(function (field) {
+        var endpoints = String(field.getAttribute('data-endpoint-scope') || '').split(/\s+/);
+        field.hidden = endpoints.indexOf(mode) === -1;
+      });
       document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
         var scopes = String(field.getAttribute('data-filter-scope') || '').split(/\s+/);
-        field.hidden = scopes.indexOf(useCase) === -1;
+        field.hidden = mode === 'models' || scopes.indexOf(useCase) === -1;
       });
     }
 
@@ -1616,10 +1747,6 @@ export const HOME_HTML = String.raw`<!doctype html>
           tableId === selectedBenchmark.tableId ? selectedBenchmark.modelId : '';
         drawSortableTable(tableId);
       });
-    }
-
-    function redrawBenchmarkTables() {
-      Object.keys(benchmarkTables).forEach(drawSortableTable);
     }
 
     function voiceCost(model) {
@@ -1683,7 +1810,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function voiceBenchmarkModels(models) {
       return models.filter(function (model) {
-        return model.recommendable !== false && model.benchmarks && model.benchmarks.voice;
+        return (isBrowsingBenchmarks() || model.recommendable !== false) && model.benchmarks && model.benchmarks.voice;
       });
     }
 
@@ -1702,15 +1829,19 @@ export const HOME_HTML = String.raw`<!doctype html>
 
       var voiceSort = voiceTableSort();
 
-      renderSortableTable('voiceRows', rows, [
-        { key: 'model', value: function (model) { return model.name; }, render: renderModelCell },
-        { key: 'agentic', value: function (model) { return voiceSignals(model).agenticPerformance; }, render: function (model) { return pct(voiceSignals(model).agenticPerformance); } },
-        { key: 'speech', value: function (model) { return voiceSignals(model).speechReasoning; }, render: function (model) { return pct(voiceSignals(model).speechReasoning); } },
-        { key: 'telecom', value: function (model) { return voiceSignals(model).telecomAgenticPerformance; }, render: function (model) { return pct(voiceSignals(model).telecomAgenticPerformance); } },
-        { key: 'ttfa', value: function (model) { return -(voiceTtfa(model) || Infinity); }, render: function (model) { return seconds(voiceTtfa(model)); } },
-        { key: 'inputCost', value: voiceCost, render: function (model) { return money(voiceCost(model)); } },
-        { key: 'outputCost', value: voiceOutputCost, render: function (model) { return money(voiceOutputCost(model)); } }
-      ], voiceSort.key, voiceSort.direction, voiceSort.compare);
+      var columns = [
+        { key: 'model', label: 'Model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'agentic', label: 'τ-Voice', value: function (model) { return voiceSignals(model).agenticPerformance; }, render: function (model) { return pct(voiceSignals(model).agenticPerformance); } },
+        { key: 'speech', label: 'Speech', value: function (model) { return voiceSignals(model).speechReasoning; }, render: function (model) { return pct(voiceSignals(model).speechReasoning); } },
+        { key: 'telecom', label: 'Telecom', value: function (model) { return voiceSignals(model).telecomAgenticPerformance; }, render: function (model) { return pct(voiceSignals(model).telecomAgenticPerformance); } },
+        { key: 'ttfa', label: 'TTFA', value: function (model) { return -(voiceTtfa(model) || Infinity); }, render: function (model) { return seconds(voiceTtfa(model)); } },
+        { key: 'inputCost', label: 'Input AUD/hr', value: voiceCost, render: function (model) { return money(voiceCost(model)); } },
+        { key: 'outputCost', label: 'Output AUD/hr', value: voiceOutputCost, render: function (model) { return money(voiceOutputCost(model)); } }
+      ];
+      if (isBrowsingBenchmarks()) {
+        columns.push({ key: 'eligibility', label: 'Eligibility', value: function (model) { return model.recommendable !== false ? 1 : 0; }, render: renderEligibility });
+      }
+      renderSortableTable('voiceRows', rows, columns, voiceSort.key, voiceSort.direction, voiceSort.compare);
     }
 
     function sttSignals(model) {
@@ -1743,7 +1874,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       var maxAaWer = aaWerCeiling();
       return models.filter(function (model) {
         var signals = model.benchmarks && model.benchmarks.speechToText;
-        if (model.recommendable === false || !signals) return false;
+        if (!signals || (!isBrowsingBenchmarks() && model.recommendable === false)) return false;
         if (
           maxTranscriptionCost !== undefined &&
           (typeof sttCost(model) !== 'number' || sttCost(model) > maxTranscriptionCost)
@@ -1778,6 +1909,9 @@ export const HOME_HTML = String.raw`<!doctype html>
         { key: 'speed', label: 'Speed', value: function (model) { return sttSignals(model).speedFactor; }, render: function (model) { return speedFactor(sttSignals(model).speedFactor); } },
         { key: 'cost', label: 'AUD/1k min', value: sttCost, render: function (model) { return money(sttCost(model)); } }
       );
+      if (isBrowsingBenchmarks()) {
+        columns.push({ key: 'eligibility', label: 'Eligibility', value: function (model) { return model.recommendable !== false ? 1 : 0; }, render: renderEligibility });
+      }
 
       var tier = fields.tier.value || 'balanced';
       renderSortableTable('sttRows', rows, columns, tier === 'fast' ? 'cost' : 'wer', 'asc');
@@ -2375,15 +2509,17 @@ export const HOME_HTML = String.raw`<!doctype html>
         : textBenchmarkModelsWithoutIts;
     }
 
-    function isBrowsingModels() {
-      return fields.endpoint.value === 'models';
-    }
-
     function isBrowsingBenchmarks() {
       return fields.endpoint.value === 'benchmarks';
     }
 
     function renderCurrentUseCaseBenchmarks() {
+      if (!isBrowsingBenchmarks()) return;
+      var response = modeResponses.benchmarks;
+      if (response && response.path === buildPath()) {
+        renderModeResponse('benchmarks', response.data);
+        return;
+      }
       if (fields.usecase.value === 'voice') {
         if (voiceBenchmarkRows) renderVoiceBenchmarks(voiceBenchmarkRows);
         return;
@@ -2397,20 +2533,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         return;
       }
 
-      var currentModels = currentTextBenchmarkModels();
-      if (isBrowsingModels() && currentBrowseModels) {
-        renderFilteredModelBenchmarks(currentBrowseModels);
-        return;
-      }
-      if (isBrowsingBenchmarks() && currentBrowseModels) {
-        renderFilteredModelBenchmarks(currentBrowseModels);
-        return;
-      }
-      if (!isBrowsingModels()) {
-        loadCurrentTextBenchmarks();
-        return;
-      }
-      if (currentModels) renderTextBenchmarks(currentModels);
+      loadCurrentTextBenchmarks();
     }
 
     function renderFilteredModelBenchmarks(models) {
@@ -2427,11 +2550,202 @@ export const HOME_HTML = String.raw`<!doctype html>
       renderFaq(models || []);
     }
 
+    function recommendationFamilyKey(model) {
+      var identity = model.family || model.registryModelId || model.name || model.id || '';
+      return String(model.provider || '') + ':' + String(identity)
+        .toLowerCase()
+        .replace(/\s*\((?:minimal|low|medium|high|xhigh|max|reasoning|thinking|adaptive reasoning|max effort|high effort)\)\s*/g, ' ')
+        .replace(/[-_](?:minimal|low|medium|high|xhigh|max|reasoning|thinking)$/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    }
+
+    function recommendationRowsFromResponse(data) {
+      var primary = data && data.recommendation;
+      if (!primary) return [];
+      var rows = [{ role: 'Primary', primary: true, model: primary }];
+      var seen = {};
+      seen[recommendationFamilyKey(primary)] = true;
+      var candidates = [];
+      if (primary.failover) candidates.push(primary.failover);
+      if (Array.isArray(data.failovers)) candidates = candidates.concat(data.failovers);
+      candidates.forEach(function (model) {
+        if (!model) return;
+        var key = recommendationFamilyKey(model);
+        if (!key || seen[key]) return;
+        seen[key] = true;
+        rows.push({ role: 'Failover ' + rows.length, primary: false, model: model });
+      });
+      return rows;
+    }
+
+    function recommendationColumns(useCase) {
+      var base = [
+        {
+          label: 'Role',
+          render: function (row) {
+            return '<span class="mode-role' + (row.primary ? ' primary' : '') + '">' + escapeHtml(row.role) + '</span>';
+          }
+        },
+        { label: 'Model', render: function (row) { return renderModelCell(row.model); } }
+      ];
+      if (useCase === 'voice') {
+        return base.concat([
+          { label: 'τ-Voice', render: function (row) { return pct(voiceSignals(row.model).agenticPerformance); } },
+          { label: 'TTFA', render: function (row) { return seconds(voiceTtfa(row.model)); } },
+          { label: 'Input AUD/hr', render: function (row) { return money(voiceCost(row.model)); } },
+          { label: 'Output AUD/hr', render: function (row) { return money(voiceOutputCost(row.model)); } }
+        ]);
+      }
+      if (useCase === 'speech-to-text') {
+        return base.concat([
+          { label: 'AA-WER', render: function (row) { return wer(sttSignals(row.model).aaWer); } },
+          { label: 'Speed', render: function (row) { return speedFactor(sttSignals(row.model).speedFactor); } },
+          { label: 'AUD/1k min', render: function (row) { return money(sttCost(row.model)); } }
+        ]);
+      }
+      if (useCase === 'document-processing') {
+        return base.concat([
+          { label: 'Visual', render: function (row) { return benchmarkScore(llmSignals(row).visualReasoning); } },
+          { label: 'IFBench', render: function (row) { return benchmarkScore(llmSignals(row).instructionFollowing); } },
+          { label: 'Image AUD/1k', render: function (row) { return money(imageInputCost(row)); } },
+          { label: 'Task AUD', render: function (row) { return money(runCost(row)); } },
+          { label: 'Latency', render: function (row) { return seconds(documentLatency(row)); } }
+        ]);
+      }
+      return base.concat([
+        { label: 'ITS FP', render: falsePositiveLabel },
+        { label: 'ITS Acc', render: accuracyLabel },
+        { label: 'IFBench', render: function (row) { return benchmarkScore(llmSignals(row).instructionFollowing); } },
+        { label: 'Task AUD', render: function (row) { return money(runCost(row)); } }
+      ]);
+    }
+
+    function renderRecommendationResponse(data) {
+      var rows = recommendationRowsFromResponse(data);
+      var columns = recommendationColumns(fields.usecase.value);
+      var head = document.getElementById('recommendationHead');
+      var body = document.getElementById('recommendationRows');
+      if (head) {
+        head.innerHTML = columns.map(function (column) { return '<th>' + escapeHtml(column.label) + '</th>'; }).join('');
+      }
+      if (body) {
+        body.innerHTML = rows.length
+          ? rows.map(function (row) {
+              return '<tr' + (row.primary ? ' class="selected"' : '') + '>' + columns.map(function (column) {
+                return '<td>' + column.render(row) + '</td>';
+              }).join('') + '</tr>';
+            }).join('')
+          : '<tr><td class="empty" colspan="' + columns.length + '">No recommendation matches the active filters.</td></tr>';
+      }
+      setText('recommendationSource', rows.length === 1
+        ? '1 primary; no distinct failover'
+        : rows.length + ' distinct model families');
+    }
+
+    function registryAvailability(model) {
+      if (model.availability && typeof model.availability === 'object') {
+        return model.availability.status || 'unknown';
+      }
+      if (typeof model.availability === 'string') return model.availability;
+      return model.deprecated ? 'deprecated' : 'active';
+    }
+
+    function registryDate(model) {
+      var released = model.releaseDate ? 'Released ' + String(model.releaseDate).slice(0, 10) : '';
+      var updated = model.updatedAt ? 'Updated ' + String(model.updatedAt).slice(0, 10) : '';
+      return [released, updated].filter(Boolean).join('<br>') || '-';
+    }
+
+    function registryCapabilities(model) {
+      var values = Object.keys(model.capabilities || {}).filter(function (key) {
+        return model.capabilities[key] === true;
+      }).map(function (key) {
+        return key.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+      });
+      return values.length ? values.join(', ') : '-';
+    }
+
+    function registryContext(value) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+      if (value >= 1000000) return (value / 1000000).toFixed(value % 1000000 ? 1 : 0) + 'M';
+      if (value >= 1000) return Math.round(value / 1000) + 'k';
+      return String(Math.round(value));
+    }
+
+    function renderRegistryModels(models, data) {
+      var columns = [
+        {
+          key: 'model', label: 'Model', value: function (model) { return model.name; }, render: function (model) {
+            return '<strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.id) + '</div>';
+          }
+        },
+        { key: 'provider', label: 'Provider', value: function (model) { return model.provider; }, render: function (model) { return escapeHtml(model.provider); } },
+        { key: 'date', label: 'Released / updated', value: function (model) { return model.releaseDate || model.updatedAt || ''; }, render: function (model) { return '<div class="registry-date">' + registryDate(model) + '</div>'; } },
+        { key: 'availability', label: 'Availability', value: registryAvailability, render: function (model) { return escapeHtml(registryAvailability(model)); } },
+        { key: 'context', label: 'Context', value: function (model) { return model.contextWindow; }, render: function (model) { return registryContext(model.contextWindow); } },
+        { key: 'input', label: 'Input AUD/MTok', value: function (model) { return (model.pricing || {}).inputPerMTok; }, render: function (model) { return money((model.pricing || {}).inputPerMTok); } },
+        { key: 'output', label: 'Output AUD/MTok', value: function (model) { return (model.pricing || {}).outputPerMTok; }, render: function (model) { return money((model.pricing || {}).outputPerMTok); } },
+        { key: 'capabilities', label: 'Capabilities', value: registryCapabilities, render: function (model) { return '<div class="registry-capabilities">' + escapeHtml(registryCapabilities(model)) + '</div>'; } }
+      ];
+      renderSortableTable('registryRows', models || [], columns, 'date', 'desc');
+      setText('registrySource', (models || []).length.toLocaleString() + ' registry models' + (data && data.generatedAt ? ' · refreshed ' + formatAge(data.generatedAt) : ''));
+    }
+
+    function renderModeResponse(mode, data) {
+      if (mode === 'recommend') {
+        renderRecommendationResponse(data || {});
+        return;
+      }
+      if (mode === 'benchmarks') {
+        renderFilteredModelBenchmarks((data && data.benchmarks) || []);
+        highlightBenchmark('', '');
+        return;
+      }
+      renderRegistryModels((data && data.models) || [], data || {});
+      highlightBenchmark('', '');
+    }
+
+    function renderModeLoading(mode) {
+      if (mode === 'recommend') {
+        setText('recommendationSource', 'checking...');
+        var recommendationRows = document.getElementById('recommendationRows');
+        if (recommendationRows) recommendationRows.innerHTML = '<tr><td class="empty" colspan="8">checking...</td></tr>';
+        return;
+      }
+      if (mode === 'models') {
+        setText('registrySource', 'checking...');
+        var registryRows = document.getElementById('registryRows');
+        if (registryRows) registryRows.innerHTML = '<tr><td class="empty" colspan="8">checking...</td></tr>';
+        return;
+      }
+      var tableId = benchmarkTableForUseCase(fields.usecase.value);
+      var benchmarkRows = document.getElementById(tableId);
+      if (benchmarkRows) benchmarkRows.innerHTML = '<tr><td class="empty" colspan="10">checking...</td></tr>';
+    }
+
+    function renderModeUnavailable(mode) {
+      if (mode === 'recommend') {
+        setText('recommendationSource', 'unavailable');
+        var recommendationRows = document.getElementById('recommendationRows');
+        if (recommendationRows) recommendationRows.innerHTML = '<tr><td class="empty" colspan="8">Recommendation unavailable.</td></tr>';
+      } else if (mode === 'models') {
+        setText('registrySource', 'unavailable');
+        var registryRows = document.getElementById('registryRows');
+        if (registryRows) registryRows.innerHTML = '<tr><td class="empty" colspan="8">Registry unavailable.</td></tr>';
+      } else {
+        var tableId = benchmarkTableForUseCase(fields.usecase.value);
+        var benchmarkRows = document.getElementById(tableId);
+        if (benchmarkRows) benchmarkRows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
+      }
+    }
+
     function textRows(models, useCase) {
       return models
         .filter(function (model) {
-          if (useCase === 'customer-support' && model.recommendable === false) return false;
+          if (!isBrowsingBenchmarks() && useCase === 'customer-support' && model.recommendable === false) return false;
           var signals = model.benchmarks && model.benchmarks.llm;
+          if (isBrowsingBenchmarks()) return Boolean(signals);
           if (useCase === 'document-processing') {
             return signals && typeof signals.visualReasoning === 'number';
           }
@@ -2460,7 +2774,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 
 	    function commonTextColumns(useCase, includeIts) {
       if (useCase === 'document-processing') {
-        return [
+        var documentColumns = [
           { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
           { key: 'score', label: 'Document Score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } },
           { key: 'visual', label: 'Visual', value: function (row) { return normalizedBenchmarkScore(llmSignals(row).visualReasoning); }, render: function (row) { return benchmarkScore(llmSignals(row).visualReasoning); } },
@@ -2470,6 +2784,10 @@ export const HOME_HTML = String.raw`<!doctype html>
           { key: 'runCost', label: 'Task AUD', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } },
           { key: 'latency', label: 'Latency', value: function (row) { return documentLatency(row); }, render: function (row) { return seconds(documentLatency(row)); } }
         ];
+        if (isBrowsingBenchmarks()) {
+          documentColumns.push({ key: 'eligibility', label: 'Eligibility', value: function (row) { return row.model.recommendable !== false ? 1 : 0; }, render: function (row) { return renderEligibility(row.model); } });
+        }
+        return documentColumns;
       }
 	      var base = [
 	        { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
@@ -2492,6 +2810,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       );
       if (includeIts) {
         base.push({ key: 'note', label: 'ITS Notes', value: autoCloseNote, render: function (row) { return '<div class="note-cell">' + escapeHtml(autoCloseNote(row)) + '</div>'; } });
+      }
+      if (isBrowsingBenchmarks()) {
+        base.push({ key: 'eligibility', label: 'Eligibility', value: function (row) { return row.model.recommendable !== false ? 1 : 0; }, render: function (row) { return renderEligibility(row.model); } });
       }
       return base;
     }
@@ -2560,7 +2881,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
         .then(function (data) {
           if (requestId !== textBenchmarkRequest) return;
-          if (isBrowsingModels()) return;
+          if (!isBrowsingBenchmarks()) return;
           var rows = data.benchmarks || [];
           renderTextBenchmarks(rows, fields.usecase.value === 'document-processing');
           renderFaq(rows);
@@ -2709,7 +3030,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
       .then(function (data) {
         voiceBenchmarkRows = data.benchmarks || [];
-        if (!isBrowsingModels() && fields.usecase.value === 'voice') {
+        if (isBrowsingBenchmarks() && fields.usecase.value === 'voice') {
           renderVoiceBenchmarks(voiceBenchmarkRows);
         }
       })
@@ -2728,7 +3049,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         .then(function (data) {
           sttBenchmarkRows = data.benchmarks || [];
           sttBenchmarkLoading = false;
-          if (!isBrowsingModels() && fields.usecase.value === 'speech-to-text') {
+          if (isBrowsingBenchmarks() && fields.usecase.value === 'speech-to-text') {
             renderSpeechToTextBenchmarks(sttBenchmarkRows);
           }
         })
@@ -2755,7 +3076,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       .then(function (responses) {
         textBenchmarkModels = responses[0].benchmarks || [];
         textBenchmarkModelsWithoutIts = responses[1].benchmarks || [];
-        if (fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();
+        var faqModels = currentTextBenchmarkModels();
+        if (faqModels) renderFaq(faqModels);
+        if (isBrowsingBenchmarks() && fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();
       })
       .catch(function () {
         ['supportRows'].forEach(function (id) {
@@ -2818,12 +3141,18 @@ export const HOME_HTML = String.raw`<!doctype html>
     });
 
     function buildPath() {
-      var endpoint = fields.endpoint.value === 'models'
+      var mode = fields.endpoint.value;
+      var endpoint = mode === 'models'
         ? '/v1/models'
-        : fields.endpoint.value === 'benchmarks'
+        : mode === 'benchmarks'
           ? '/v1/benchmarks'
           : '/v1/models/recommend';
       var params = new URLSearchParams();
+      if (mode === 'models') {
+        if (fields.provider.value) params.set('provider', fields.provider.value);
+        var registryQuery = params.toString();
+        return endpoint + (registryQuery ? '?' + registryQuery : '');
+      }
       if (fields.tier.value) params.set('tier', fields.tier.value);
       if (fields.provider.value) params.set('provider', fields.provider.value);
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
@@ -2929,54 +3258,55 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
     }
 
+    function isCurrentBuilderRequest(requestId, requestedMode, requestedPath) {
+      return requestId === builderRequestSequence &&
+        requestedMode === fields.endpoint.value &&
+        requestedPath === buildPath();
+    }
+
     var previewTimer = 0;
     function refreshBuilder() {
       syncRunCostRange();
       updateTierOptions(fields.usecase.value);
       var path = buildPath();
+      var mode = fields.endpoint.value;
       var full = origin + path;
       syncPageUrl(path);
       updateBenchmarkPanel(fields.usecase.value);
       updateFilterVisibility(fields.usecase.value);
-      if (!isBrowsingModels()) renderCurrentUseCaseBenchmarks();
-      redrawBenchmarkTables();
+      var cachedResponse = modeResponses[mode];
+      if (cachedResponse && cachedResponse.path === path) {
+        renderModeResponse(mode, cachedResponse.data);
+      } else {
+        renderModeLoading(mode);
+      }
       fields.url.textContent = full;
       fields.url.href = path;
       fields.open.href = path;
       fields.result.textContent = 'checking...';
       clearTimeout(previewTimer);
+      var requestId = ++builderRequestSequence;
       previewTimer = setTimeout(function () {
         var requestedPath = path;
-        var requestedUseCase = fields.usecase.value;
-        var requestedEndpoint = fields.endpoint.value;
-        var requestedBrowse = requestedEndpoint === 'models';
-        var requestedBenchmarkBrowse = requestedEndpoint === 'benchmarks';
-        if (!requestedBrowse && !requestedBenchmarkBrowse) currentBrowseModels = null;
-        fetch(path)
+        var requestedMode = mode;
+        fetch(path, { cache: 'no-store' })
           .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
           .then(function (data) {
-            if (requestedPath !== buildPath()) return;
-            if (data.recommendation) {
+            if (!isCurrentBuilderRequest(requestId, requestedMode, requestedPath)) return;
+            modeResponses[requestedMode] = { path: requestedPath, data: data };
+            if (requestedMode === 'recommend' && data.recommendation) {
               fields.result.textContent = data.recommendation.id;
-              highlightBenchmark(data.recommendation.id, requestedUseCase);
-            } else if (data.benchmarks) {
-              fields.result.textContent = (data.benchmarkCount || data.benchmarks.length || 0).toLocaleString() + ' benchmarks';
-              currentBrowseModels = data.benchmarks || [];
-              renderFilteredModelBenchmarks(currentBrowseModels);
-              highlightBenchmark('', '');
+            } else if (requestedMode === 'benchmarks') {
+              fields.result.textContent = (data.benchmarkCount || (data.benchmarks || []).length || 0).toLocaleString() + ' benchmarks';
             } else {
-              fields.result.textContent = (data.modelCount || 0).toLocaleString() + ' models';
-              if (requestedBrowse) {
-                currentBrowseModels = data.models || [];
-                renderFilteredModelBenchmarks(currentBrowseModels);
-              }
-              highlightBenchmark('', '');
+              fields.result.textContent = (data.modelCount || (data.models || []).length || 0).toLocaleString() + ' models';
             }
+            renderModeResponse(requestedMode, data);
           })
           .catch(function () {
-            if (requestedPath !== buildPath()) return;
+            if (!isCurrentBuilderRequest(requestId, requestedMode, requestedPath)) return;
             fields.result.textContent = 'unavailable';
-            highlightBenchmark('', '');
+            renderModeUnavailable(requestedMode);
           });
       }, 180);
     }

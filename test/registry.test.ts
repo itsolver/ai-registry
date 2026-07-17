@@ -5,17 +5,22 @@ import {
   normalizeArtificialAnalysisCatalog,
   normalizeModelsDevCatalog,
   parseFilters,
+  rankedRecommendedModels,
   recommendModel,
   recommendModelFailovers,
   recommendationFamilyKey,
   type BenchmarkCandidate,
   type Catalog,
+  type ModelsDevDocument,
+  type ProviderId,
 } from "../src/registry";
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
 import { AI_AUTOCLOSE_BENCHMARKS } from "../src/generated/ai-autoclose-benchmarks";
+import { parseArtificialAnalysisSpeechToSpeechApi } from "../src/aa-speech-to-speech";
 import {
   artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
+  artificialAnalysisSpeechToSpeechApiFixture,
   artificialAnalysisSpeechToTextFixture,
   modelsDevFixture,
 } from "./fixtures";
@@ -215,6 +220,402 @@ describe("filter parsing", () => {
     ).toMatchObject({
       unsupportedProvider: true,
     });
+    expect(
+      parseFilters(
+        new URLSearchParams("allowUnbenchmarkedLatest=true"),
+      ).allowUnbenchmarkedLatest,
+    ).toBe(true);
+    expect(parseFilters(new URLSearchParams()).allowUnbenchmarkedLatest).toBe(
+      false,
+    );
+  });
+});
+
+describe("latest unbenchmarked recommendations", () => {
+  const generatedAt = "2026-07-17T00:00:00Z";
+  const voiceRows = parseArtificialAnalysisSpeechToSpeechApi(
+    artificialAnalysisSpeechToSpeechApiFixture,
+  );
+  const catalog = normalizeModelsDevCatalog(
+    modelsDevFixture,
+    generatedAt,
+    undefined,
+    [],
+    [],
+    voiceRows,
+    {
+      state: "live",
+      origin: "aa_public_page",
+      fetchedAt: generatedAt,
+      rowCount: voiceRows.length,
+    },
+  );
+
+  it("lists current audio models without inventing benchmark evidence", () => {
+    const realtime = catalog.models.find(
+      (model) => model.id === "gpt-realtime-2.1",
+    );
+    const candidate = benchmarkCandidates(catalog, { useCase: "voice" }).find(
+      (model) => model.id === "gpt-realtime-2.1",
+    );
+
+    expect(realtime).toMatchObject({
+      pricing: { audioInputPerMTok: 32, audioOutputPerMTok: 64 },
+    });
+    expect(candidate).toMatchObject({
+      source: "models.dev",
+      recommendable: false,
+      registryModelId: "gpt-realtime-2.1",
+    });
+    expect(candidate?.benchmarks.voice).toBeUndefined();
+  });
+
+  it("uses the newest unbenchmarked release only for opted-in best", () => {
+    expect(recommendModel(catalog, { useCase: "voice", tier: "best" })?.id).toBe(
+      "gpt-realtime-2-high",
+    );
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      releaseDate: "2026-07-06",
+    });
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "fast",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("openai-gpt-realtime-mini");
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "balanced",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({ source: "artificialanalysis" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+        minIntelligence: 1,
+      })?.id,
+    ).not.toBe("gpt-realtime-2.1");
+  });
+
+  it("honours provider and capability filters for the latest heuristic", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-2.2"] = {
+      ...base,
+      id: "gpt-realtime-2.2",
+      name: "GPT-Realtime-2.2",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      tool_call: false,
+    };
+    const compatibleCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(compatibleCatalog, {
+        useCase: "voice",
+        tier: "best",
+        provider: "openai",
+        capability: "toolCalling",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      provider: "openai",
+      capabilities: { toolCalling: true },
+    });
+    expect(
+      recommendModel(compatibleCatalog, {
+        useCase: "voice",
+        tier: "best",
+        provider: "google",
+        allowUnbenchmarkedLatest: true,
+      })?.provider,
+    ).toBe("google");
+  });
+
+  it("keeps previews, latest aliases, and reduced variants behind a flagship", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-3-preview"] = {
+      ...base,
+      id: "gpt-realtime-3-preview",
+      name: "GPT-Realtime-3 Preview",
+      release_date: "2026-07-14",
+      last_updated: "2026-07-14",
+    };
+    source.openai.models!["gpt-realtime-latest"] = {
+      ...base,
+      id: "gpt-realtime-latest",
+      name: "GPT-Realtime Latest",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+    };
+    source.openai.models!["gpt-realtime-3-mini"] = {
+      ...base,
+      id: "gpt-realtime-3-mini",
+      name: "GPT-Realtime-3 Mini",
+      release_date: "2026-07-16",
+      last_updated: "2026-07-16",
+    };
+    source.google.models!["gemini-3-flash-native-audio"] = {
+      ...base,
+      id: "gemini-3-flash-native-audio",
+      name: "Gemini 3 Flash Native Audio",
+      family: "gemini",
+      release_date: "2026-07-17",
+      last_updated: "2026-07-17",
+    };
+    const riskCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(riskCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("gpt-realtime-2.1");
+  });
+
+  it("uses voice pricing only when breaking otherwise equal latest ties", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-2.2-a"] = {
+      ...base,
+      id: "gpt-realtime-2.2-a",
+      name: "GPT-Realtime-2.2 A",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      cost: { ...base?.cost, output: 100, output_audio: 70 },
+    };
+    source.openai.models!["gpt-realtime-2.2-b"] = {
+      ...base,
+      id: "gpt-realtime-2.2-b",
+      name: "GPT-Realtime-2.2 B",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      cost: { ...base?.cost, output: 1, output_audio: 80 },
+    };
+    const priceCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(priceCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("gpt-realtime-2.2-b");
+  });
+
+  it("keeps an already-benchmarked latest model on benchmark selection", () => {
+    const benchmarkedRows = [
+      ...voiceRows,
+      {
+        ...voiceRows[0],
+        id: "voice-latest",
+        name: "GPT-Realtime-2.1",
+        shortName: "GPT-Realtime-2.1",
+        slug: "gpt-realtime-2.1",
+        modelSlug: "gpt-realtime-2.1",
+        provider: "openai",
+        providerName: "OpenAI",
+        s2sQualityIndex: 100,
+        bbaScore: 1,
+        tauVoiceAggScore: 1,
+        fdbScore: 1,
+      },
+    ];
+    const benchmarkedCatalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      benchmarkedRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: benchmarkedRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(benchmarkedCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      source: "artificialanalysis",
+      registryModelId: "gpt-realtime-2.1",
+      benchmarks: { voice: expect.any(Object) },
+    });
+  });
+
+  it("allows a named token-priced speech-to-text release without AA evidence", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-6-transcribe"] = {
+      ...base,
+      id: "gpt-6-transcribe",
+      name: "GPT-6 Transcribe",
+      family: "gpt-transcribe",
+      release_date: "2026-07-16",
+      last_updated: "2026-07-16",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 2, output: 8 },
+    };
+    source.elevenlabs = {
+      models: {
+        "scribe-v3": {
+          ...base,
+          id: "scribe-v3",
+          name: "Scribe V3",
+          family: "scribe",
+          release_date: "2026-07-18",
+          last_updated: "2026-07-18",
+          modalities: { input: ["audio"], output: ["text"] },
+          cost: { input: 3, output: 9 },
+        },
+      },
+    };
+    source.nvidia.models!["parakeet-v4"] = {
+      ...base,
+      id: "parakeet-v4",
+      name: "Parakeet V4",
+      family: "parakeet",
+      open_weights: false,
+      release_date: "2026-07-20",
+      last_updated: "2026-07-20",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 1, output: 4 },
+    };
+    source.nvidia.models!["canary-v3"] = {
+      ...base,
+      id: "canary-v3",
+      name: "Canary V3",
+      family: "canary",
+      open_weights: false,
+      release_date: "2026-07-19",
+      last_updated: "2026-07-19",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 1, output: 4 },
+    };
+    source.google.models!["gemini-4-multimodal"] = {
+      ...base,
+      id: "gemini-4-multimodal",
+      name: "Gemini 4 Multimodal",
+      family: "gemini",
+      release_date: "2026-07-21",
+      last_updated: "2026-07-21",
+      modalities: { input: ["text", "audio"], output: ["text"] },
+      cost: { input: 4, output: 12 },
+    };
+    const speechCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    const latestSpeechToText = (provider?: ProviderId) =>
+      recommendModel(speechCatalog, {
+        useCase: "speech-to-text",
+        tier: "best",
+        ...(provider ? { provider } : {}),
+        allowUnbenchmarkedLatest: true,
+      });
+
+    expect(latestSpeechToText("openai")).toMatchObject({
+      id: "gpt-6-transcribe",
+      provider: "openai",
+      pricing: { inputPerMTok: 2, outputPerMTok: 8 },
+    });
+    expect(latestSpeechToText("elevenlabs")).toMatchObject({
+      id: "scribe-v3",
+      provider: "elevenlabs",
+    });
+    expect(latestSpeechToText("nvidia")).toMatchObject({
+      id: "parakeet-v4",
+      provider: "nvidia",
+    });
+    expect(latestSpeechToText("google")).toMatchObject({
+      source: "artificialanalysis",
+    });
+    expect(latestSpeechToText("google")?.id).not.toBe(
+      "gemini-4-multimodal",
+    );
   });
 });
 
@@ -1778,6 +2179,61 @@ describe("Artificial Analysis catalog", () => {
         maxAudioInputCostPerHour: 2,
       })?.id,
     ).toBe("cheapest");
+  });
+
+  it("orders best voice candidates by quality index with missing values last", () => {
+    const candidate = (
+      id: string,
+      qualityIndex: number | undefined,
+      agenticPerformance: number,
+    ): BenchmarkCandidate => ({
+      id,
+      provider: "xai",
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        voice: {
+          ...(qualityIndex === undefined ? {} : { qualityIndex }),
+          agenticPerformance,
+          speechReasoning: 0.8,
+          source: "artificialanalysis",
+          extractedAt: "2026-07-17T00:00:00Z",
+        },
+      },
+      pricing: {
+        benchmarkInputAudioPerHour: 1,
+        audioOutputPerHour: 1,
+      },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-07-17T00:00:00Z",
+      modelCount: 3,
+      activeModelCount: 3,
+      providers: [{ provider: "xai", total: 3, active: 3 }],
+      models: [],
+      benchmarkCandidates: [
+        candidate("missing-index", undefined, 1),
+        candidate("index-70", 70, 0.6),
+        candidate("index-80", 80, 0.5),
+      ],
+    };
+
+    expect(
+      rankedRecommendedModels(catalog, {
+        useCase: "voice",
+        tier: "best",
+      }).map(({ id }) => id),
+    ).toEqual(["index-80", "index-70", "missing-index"]);
   });
 
   it("uses Artificial Analysis speech-to-text data for STT recommendations", () => {

@@ -30,6 +30,30 @@ export const modelsDevFixture = {
         limit: { context: 1_050_000, output: 128_000 },
         cost: { input: 5, output: 30 },
       },
+      "gpt-realtime-2.1": {
+        id: "gpt-realtime-2.1",
+        name: "GPT-Realtime-2.1",
+        family: "gpt-realtime",
+        attachment: true,
+        reasoning: true,
+        tool_call: true,
+        structured_output: false,
+        release_date: "2026-07-06",
+        last_updated: "2026-07-06",
+        modalities: {
+          input: ["text", "audio", "image"],
+          output: ["text", "audio"],
+        },
+        open_weights: false,
+        limit: { context: 128_000, input: 96_000, output: 32_000 },
+        cost: {
+          input: 4,
+          output: 24,
+          cache_read: 0.4,
+          input_audio: 32,
+          output_audio: 64,
+        },
+      },
     },
   },
   anthropic: {
@@ -116,6 +140,207 @@ export const modelsDevFixture = {
     },
   },
 };
+
+export const artificialAnalysisSpeechToSpeechRecordFixture = {
+  id: "voice-high",
+  name: "GPT-Realtime-2 (High)",
+  shortName: "GPT-Realtime-2 (High)",
+  slug: "gpt-realtime-2-high",
+  model: { slug: "gpt-realtime-2-high" },
+  host: { name: "OpenAI", slug: "openai" },
+  s2sQualityIndex: 77.216,
+  bbaScore: 0.966,
+  tauVoiceAggScore: 0.398,
+  tauVoiceScoresByCategory: {
+    telecom: { avg_reward: 0.287 },
+    retail: { avg_reward: 0.333 },
+    airline: { avg_reward: 0.627 },
+  },
+  fdbScore: 0.953,
+  timeToFirstAudioSeconds: 1.14,
+  costPerHourOfInputAudio: 4.143,
+  pricePerHourInput: 1.152,
+  pricePerHourOutput: 4.608,
+  defaultSelected: true,
+  averageCostPerTask: 0.0214,
+};
+
+function speechToSpeechApiModel(input: {
+  id: string;
+  name: string;
+  slug: string;
+  creator: string;
+  provider: string;
+  bba: number;
+  tau: number;
+  fdb: number;
+  inputPrice: number;
+  outputPrice: number;
+  ttfa: number;
+}) {
+  return {
+    id: input.id,
+    name: input.name,
+    slug: input.slug,
+    model_creator: { id: `${input.provider}-creator`, name: input.creator },
+    bba_score: input.bba,
+    tau_voice_score: input.tau,
+    fdb_score: input.fdb,
+    providers: [
+      {
+        id: `${input.provider}-host`,
+        name: input.creator,
+        slug: input.provider,
+        price_per_hour_input: input.inputPrice,
+        price_per_hour_output: input.outputPrice,
+        time_to_first_audio_seconds: input.ttfa,
+      },
+    ],
+  };
+}
+
+export const artificialAnalysisSpeechToSpeechApiFixture = {
+  data: [
+    speechToSpeechApiModel({
+      id: "voice-high",
+      name: "GPT-Realtime-2 (High)",
+      slug: "gpt-realtime-2-high",
+      creator: "OpenAI",
+      provider: "openai",
+      bba: 0.966,
+      tau: 0.398,
+      fdb: 0.953,
+      inputPrice: 1.152,
+      outputPrice: 4.608,
+      ttfa: 1.14,
+    }),
+    speechToSpeechApiModel({
+      id: "voice-cheap",
+      name: "GPT Realtime Mini",
+      slug: "openai-gpt-realtime-mini",
+      creator: "OpenAI",
+      provider: "openai",
+      bba: 0.64,
+      tau: 0.15,
+      fdb: 0.95,
+      inputPrice: 0.3,
+      outputPrice: 1.2,
+      ttfa: 0.8,
+    }),
+    speechToSpeechApiModel({
+      id: "voice-medium",
+      name: "GPT-Realtime-2 (Medium)",
+      slug: "gpt-realtime-2-medium",
+      creator: "OpenAI",
+      provider: "openai",
+      bba: 0.9,
+      tau: 0.35,
+      fdb: 0.95,
+      inputPrice: 1.152,
+      outputPrice: 4.608,
+      ttfa: 1.4,
+    }),
+    speechToSpeechApiModel({
+      id: "voice-minimal",
+      name: "GPT-Realtime-2 (Minimal)",
+      slug: "gpt-realtime-2-minimal",
+      creator: "OpenAI",
+      provider: "openai",
+      bba: 0.7,
+      tau: 0.3,
+      fdb: 0.96,
+      inputPrice: 1.152,
+      outputPrice: 4.608,
+      ttfa: 1,
+    }),
+    speechToSpeechApiModel({
+      id: "voice-google-high",
+      name: "Gemini Live (High)",
+      slug: "gemini-live-high",
+      creator: "Google",
+      provider: "google",
+      bba: 0.95,
+      tau: 0.36,
+      fdb: 0.8,
+      inputPrice: 0.35,
+      outputPrice: 1.4,
+      ttfa: 1.3,
+    }),
+    speechToSpeechApiModel({
+      id: "voice-google-minimal",
+      name: "Gemini Live (Minimal)",
+      slug: "gemini-live-minimal",
+      creator: "Google",
+      provider: "google",
+      bba: 0.7,
+      tau: 0.25,
+      fdb: 0.75,
+      inputPrice: 0.4,
+      outputPrice: 1.5,
+      ttfa: 0.9,
+    }),
+    speechToSpeechApiModel({
+      id: "voice-xai-high",
+      name: "Grok Voice (High)",
+      slug: "grok-voice-high",
+      creator: "xAI",
+      provider: "xai",
+      bba: 0.85,
+      tau: 0.32,
+      fdb: 0.82,
+      inputPrice: 0.8,
+      outputPrice: 2.5,
+      ttfa: 1.1,
+    }),
+    speechToSpeechApiModel({
+      id: "voice-xai-fast",
+      name: "Grok Voice (Fast)",
+      slug: "grok-voice-fast",
+      creator: "xAI",
+      provider: "xai",
+      bba: 0.75,
+      tau: 0.28,
+      fdb: 0.78,
+      inputPrice: 0.7,
+      outputPrice: 2.2,
+      ttfa: 0.7,
+    }),
+  ],
+};
+
+const artificialAnalysisSpeechToSpeechPageRecords = [
+  artificialAnalysisSpeechToSpeechRecordFixture,
+  ...artificialAnalysisSpeechToSpeechApiFixture.data.slice(1).map((model) => {
+    const provider = model.providers[0];
+    const qualityIndex =
+      ((model.bba_score + model.tau_voice_score + model.fdb_score) / 3) * 100;
+    return {
+      id: model.id,
+      name: model.name,
+      shortName: model.name,
+      slug: model.slug,
+      model: { slug: model.slug },
+      host: { name: provider.name, slug: provider.slug },
+      s2sQualityIndex: qualityIndex,
+      bbaScore: model.bba_score,
+      tauVoiceAggScore: model.tau_voice_score,
+      fdbScore: model.fdb_score,
+      timeToFirstAudioSeconds: provider.time_to_first_audio_seconds,
+      costPerHourOfInputAudio: provider.price_per_hour_input,
+      pricePerHourInput: provider.price_per_hour_input,
+      pricePerHourOutput: provider.price_per_hour_output,
+      defaultSelected: false,
+    };
+  }),
+];
+
+export const artificialAnalysisSpeechToSpeechPageFixture =
+  artificialAnalysisSpeechToSpeechPageRecords
+    .map(
+      (record) =>
+        `<script>self.__next_f.push([1,"${JSON.stringify(record).replaceAll('"', '\\"')}"])</script>`,
+    )
+    .join("");
 
 export const artificialAnalysisFreeFixture = {
   tier: "free",

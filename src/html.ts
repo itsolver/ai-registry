@@ -803,6 +803,13 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="speech-to-text">speech to text</option>
           </select>
         </div>
+        <div class="b-field check-field" id="b-allowlatest-field" hidden>
+          <label for="b-allowlatest">Evidence policy</label>
+          <label class="check-row">
+            <input type="checkbox" id="b-allowlatest">
+            <span>Allow latest full-size model without benchmark evidence (best only)</span>
+          </label>
+        </div>
         <div class="b-field" data-endpoint-scope="recommend benchmarks">
           <label for="b-tier">Recommendation priority</label>
           <select id="b-tier">
@@ -1125,6 +1132,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             <thead>
               <tr>
                 <th data-table="voiceRows" data-sort="model">Model</th>
+                <th data-table="voiceRows" data-sort="quality">AA Index</th>
                 <th data-table="voiceRows" data-sort="agentic">τ-Voice</th>
                 <th data-table="voiceRows" data-sort="speech">Speech</th>
                 <th data-table="voiceRows" data-sort="telecom">Telecom</th>
@@ -1134,12 +1142,12 @@ export const HOME_HTML = String.raw`<!doctype html>
               </tr>
             </thead>
             <tbody id="voiceRows">
-              <tr><td class="empty" colspan="7">loading...</td></tr>
+              <tr><td class="empty" colspan="8">loading...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
-      <p class="bench-note">Speech-to-speech (voice) models are ranked from the cached Artificial Analysis extract. The useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
+      <p class="bench-note">Speech-to-speech (voice) models rank by Artificial Analysis's Speech-to-Speech Index first, with τ-Voice, speech reasoning, telecom performance, latency, and audio cost shown as supporting evidence. Current audio models without an AA benchmark remain visible as awaiting benchmark evidence.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="speech-to-text" hidden>
       <div class="voice-bench">
@@ -1195,13 +1203,13 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>fast</dt>
       <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. For document processing, fast and cheap prioritizes image/input/output cost and latency after usable visual reasoning. For speech to speech (voice), fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Document processing blends visual reasoning, image/text cost, and latency. Speech to speech (voice) picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Document processing blends visual reasoning, image/text cost, and latency. Speech to speech (voice) picks the middle filtered candidate after AA Speech-to-Speech Index ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For document processing, highest accuracy prioritizes AA visual reasoning, then instruction following and intelligence. For speech to speech (voice), highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For document processing, highest accuracy prioritizes AA visual reasoning, then instruction following and intelligence. For speech to speech (voice), highest quality prioritizes the AA Speech-to-Speech Index, with τ-Voice and the other voice signals as tie-breakers. For speech to text, highest accuracy prioritizes lower AA-WER. The optional latest-model evidence policy replaces these benchmark rankings with a capability-first release heuristic only when the selected latest full-size candidate has no qualifying benchmark.</dd>
       <dt>AA Support Score</dt>
       <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS safety score.</dd>
       <dt>cost caps</dt>
-      <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
+      <dd>Maximum prices are hard filters, not scoring hints. Under the default benchmark-required policy, the endpoint returns no model when every benchmark-backed candidate is over the cap.</dd>
       <dt>AUD/MTok</dt>
       <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
       <dt>Task AUD</dt>
@@ -1209,11 +1217,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>Image AUD/1k</dt>
       <dd>Australian dollars per 1,000 one-megapixel image inputs where Artificial Analysis exposes image pricing.</dd>
       <dt>speech-to-speech (voice) AUD/hr</dt>
-      <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
+      <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available, otherwise the structured API input list price.</dd>
       <dt>STT AUD/1k min</dt>
       <dd>Australian dollars per 1,000 minutes of speech-to-text audio, converted from Artificial Analysis provider pricing where available.</dd>
       <dt>benchmark table</dt>
-      <dd>The live recommendation for customer support, document processing, speech to speech (voice), or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
+      <dd>Benchmark-required recommendations appear in the matching table. An opted-in best-tier latest release can instead appear there as a benchmark-pending registry row with an explicit capability-first warning.</dd>
       <dt>IT Solver auto-close benchmark</dt>
       <dd><a href="/its-eval">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
       <dt>web development benchmark composite</dt>
@@ -1222,8 +1230,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dd>False positives are unresolved tickets predicted as resolved. Accuracy is overall classifier correctness on the auto-close replay set.</dd>
       <dt>ITS columns</dt>
       <dd><code>ITS</code> marks IT Solver auto-close benchmark fields. <code>ITS FP</code>, <code>ITS Acc</code>, and <code>ITS Notes</code> come from our Zendesk ticket-classification replay, not Artificial Analysis.</dd>
-      <dt>IFBench / Agentic / Bench Telecom / τ-Voice / TTFA</dt>
-      <dd>IFBench measures instruction following, Agentic measures multi-step task performance, Bench Telecom is the AA τ2 telecom benchmark, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
+      <dt>AA Index / IFBench / Agentic / Bench Telecom / τ-Voice / TTFA</dt>
+      <dd>AA Index is Artificial Analysis's source-provided Speech-to-Speech Index. IFBench measures instruction following, Agentic measures multi-step task performance, Bench Telecom is the AA τ2 telecom benchmark, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
       <dt>AA-WER / Speed</dt>
       <dd>AA-WER is Artificial Analysis word error rate for STT, where lower is better. Speed is input audio seconds transcribed per processing second.</dd>
     </dl>
@@ -1243,11 +1251,11 @@ export const HOME_HTML = String.raw`<!doctype html>
   </div>
   <div class="endpoint">
     <code>GET /v1/models</code>
-    <p>Raw registry model rows. Use <code>/v1/benchmarks</code> when you want the benchmark-backed table rows shown on this page.</p>
+    <p>Raw registry model rows. Use <code>/v1/benchmarks</code> for benchmark and benchmark-pending table rows shown on this page.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/benchmarks</code>
-    <p>Benchmark-backed rows for customer support, document processing, speech to speech (voice), and speech to text. Filter by provider, capability, cost caps, and minimum intelligence where relevant.</p>
+    <p>Benchmark rows for customer support, document processing, speech to speech (voice), and speech to text, plus relevant registry rows still awaiting evidence. Filter by provider, capability, cost caps, and minimum intelligence where relevant.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
@@ -1321,7 +1329,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     <li>OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq are exposed.</li>
     <li>Each model includes AUD pricing and benchmark costs converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
-    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Document processing, speech-to-speech (voice), and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
+    <li>By default, customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals; document processing, speech-to-speech (voice), and speech-to-text use their relevant benchmark-backed candidate sets. Opted-in best-tier requests may instead use the visibly labelled latest-release heuristic while benchmark evidence is pending.</li>
     <li>Use <code>recommendation.failover</code> as the simple next distinct model for the same filters. Top-level <code>failovers</code> remains for existing customer-support clients that expect two overload fallbacks.</li>
   </ul>
 
@@ -1384,6 +1392,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       imagecostany: document.getElementById('b-imagecost-any'),
       minctx: document.getElementById('b-minctx'),
       maxctx: document.getElementById('b-maxctx'),
+      allowlatest: document.getElementById('b-allowlatest'),
+      allowlatestfield: document.getElementById('b-allowlatest-field'),
       contextminrange: document.getElementById('b-context-min-range'),
       contextmaxrange: document.getElementById('b-context-max-range'),
       contextlabel: document.getElementById('b-context-label'),
@@ -1463,6 +1473,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     };
     var builderRequestSequence = 0;
     var voiceBenchmarkRows = null;
+    var voiceSourceStatus = null;
     var sttBenchmarkRows = null;
     var sttBenchmarkLoading = false;
 
@@ -1489,8 +1500,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 
       var pricing = model.pricing || {};
       if (model.benchmarks && model.benchmarks.voice) {
-        if (!(pricing.benchmarkInputAudioPerHour > 0)) return 'no audio pricing';
-        if (!(pricing.audioOutputPerHour > 0) && !(pricing.benchmarkCostPerTask > 0)) return 'no audio pricing';
+        if (!(pricing.benchmarkInputAudioPerHour > 0) && !(pricing.audioInputPerHour > 0)) return 'no audio pricing';
       }
       if (model.benchmarks && model.benchmarks.speechToText) {
         if (typeof model.benchmarks.speechToText.aaWer !== 'number') return 'no STT score';
@@ -1633,7 +1643,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (useCase === 'voice') {
         return {
           title: 'Speech-To-Speech (Voice) Benchmark',
-          hint: 'Speech-to-speech (voice) priorities are explicit: fast and cheap sorts by input AUD/hr, output AUD/hr, then TTFA; highest quality sorts by τ-Voice, speech reasoning, and telecom score; balanced highlights the middle filtered quality row.'
+          hint: 'Speech-to-speech (voice) priorities are explicit: fast and cheap sorts by input AUD/hr, output AUD/hr, then TTFA; highest quality sorts by the AA Speech-to-Speech Index, with τ-Voice and the other voice signals as tie-breakers; balanced highlights the middle filtered AA Index row.'
         };
       }
       if (useCase === 'speech-to-text') {
@@ -1737,6 +1747,12 @@ export const HOME_HTML = String.raw`<!doctype html>
       });
     }
 
+    function updateLatestOptionVisibility() {
+      var visible = fields.endpoint.value === 'recommend' && fields.tier.value === 'best';
+      fields.allowlatestfield.hidden = !visible;
+      if (!visible) fields.allowlatest.checked = false;
+    }
+
     function highlightBenchmark(modelId, useCase) {
       selectedBenchmark = {
         tableId: benchmarkTableForUseCase(useCase),
@@ -1751,7 +1767,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function voiceCost(model) {
       var pricing = model.pricing || {};
-      return pricing.benchmarkInputAudioPerHour || Infinity;
+      return pricing.benchmarkInputAudioPerHour || pricing.audioInputPerHour || Infinity;
     }
 
     function voiceOutputCost(model) {
@@ -1761,6 +1777,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function voiceScore(model) {
       var voice = (model.benchmarks && model.benchmarks.voice) || {};
+      if (typeof voice.qualityIndex === 'number') return voice.qualityIndex;
       var agentic = typeof voice.agenticPerformance === 'number' ? voice.agenticPerformance : 0;
       var speech = typeof voice.speechReasoning === 'number' ? voice.speechReasoning : 0;
       var telecom = typeof voice.telecomAgenticPerformance === 'number' ? voice.telecomAgenticPerformance : 0;
@@ -1782,6 +1799,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       var leftVoice = voiceSignals(left);
       var rightVoice = voiceSignals(right);
       return (
+        compareNumberDesc(leftVoice.qualityIndex, rightVoice.qualityIndex) ||
         compareNumberDesc(leftVoice.agenticPerformance, rightVoice.agenticPerformance) ||
         compareNumberDesc(leftVoice.speechReasoning, rightVoice.speechReasoning) ||
         compareNumberDesc(leftVoice.telecomAgenticPerformance, rightVoice.telecomAgenticPerformance) ||
@@ -1805,32 +1823,56 @@ export const HOME_HTML = String.raw`<!doctype html>
     function voiceTableSort() {
       var tier = fields.tier.value || 'balanced';
       if (tier === 'fast') return { key: 'inputCost', direction: 'asc', compare: voiceFastRowCompare };
-      return { key: 'agentic', direction: 'desc', compare: voiceQualityRowCompare };
+      return { key: 'quality', direction: 'desc', compare: voiceQualityRowCompare };
     }
 
     function voiceBenchmarkModels(models) {
       return models.filter(function (model) {
-        return (isBrowsingBenchmarks() || model.recommendable !== false) && model.benchmarks && model.benchmarks.voice;
+        var hasBenchmark = Boolean(model.benchmarks && model.benchmarks.voice);
+        if (!isBrowsingBenchmarks()) return model.recommendable !== false && hasBenchmark;
+        return hasBenchmark || model.eligibilityReason === 'missing_voice_benchmark';
       });
     }
 
-    function renderVoiceBenchmarks(models) {
+    function voiceSourceLabel(status) {
+      if (!status) return 'source status unavailable';
+      var stateLabels = {
+        live: 'live',
+        fallback_fresh: 'fresh fallback',
+        fallback_stale: 'stale fallback',
+        unavailable: 'unavailable'
+      };
+      var originLabels = {
+        aa_api: 'AA API',
+        aa_public_page: 'AA public page',
+        kv_last_known_good: 'last-known-good cache',
+        bundled_snapshot: 'bundled snapshot'
+      };
+      var parts = [
+        stateLabels[status.state] || status.state || 'unknown',
+        originLabels[status.origin] || status.origin || 'unknown source'
+      ];
+      if (typeof status.rowCount === 'number') {
+        parts.push(status.rowCount.toLocaleString() + (status.rowCount === 1 ? ' row' : ' rows'));
+      }
+      if (status.fetchedAt) parts.push(formatAge(status.fetchedAt));
+      return parts.join(' · ');
+    }
+
+    function renderVoiceBenchmarks(models, sourceStatus) {
+      var status = sourceStatus || voiceSourceStatus;
+      setText('voiceSource', voiceSourceLabel(status));
       var rows = voiceBenchmarkModels(models);
       if (!rows.length) {
-        renderSortableTable('voiceRows', [], [], 'agentic');
-        setText('voiceSource', 'unavailable');
+        renderSortableTable('voiceRows', [], [], 'quality');
         return;
-      }
-
-      var source = rows[0].benchmarks && rows[0].benchmarks.voice;
-      if (source && source.extractedAt) {
-        setText('voiceSource', 'AA extract ' + formatAge(source.extractedAt));
       }
 
       var voiceSort = voiceTableSort();
 
       var columns = [
         { key: 'model', label: 'Model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'quality', label: 'AA Index', value: function (model) { return voiceSignals(model).qualityIndex; }, render: function (model) { return benchmarkScore(voiceSignals(model).qualityIndex); } },
         { key: 'agentic', label: 'τ-Voice', value: function (model) { return voiceSignals(model).agenticPerformance; }, render: function (model) { return pct(voiceSignals(model).agenticPerformance); } },
         { key: 'speech', label: 'Speech', value: function (model) { return voiceSignals(model).speechReasoning; }, render: function (model) { return pct(voiceSignals(model).speechReasoning); } },
         { key: 'telecom', label: 'Telecom', value: function (model) { return voiceSignals(model).telecomAgenticPerformance; }, render: function (model) { return pct(voiceSignals(model).telecomAgenticPerformance); } },
@@ -1952,7 +1994,12 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function compareNumberDesc(left, right) {
-      return compareNumberAsc(right, left);
+      var a = typeof left === 'number' && Number.isFinite(left) ? left : undefined;
+      var b = typeof right === 'number' && Number.isFinite(right) ? right : undefined;
+      if (a === undefined && b === undefined) return 0;
+      if (a === undefined) return 1;
+      if (b === undefined) return -1;
+      return b - a;
     }
 
     function customerSupportSafetyRowCompare(left, right) {
@@ -2521,7 +2568,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         return;
       }
       if (fields.usecase.value === 'voice') {
-        if (voiceBenchmarkRows) renderVoiceBenchmarks(voiceBenchmarkRows);
+        if (voiceBenchmarkRows) renderVoiceBenchmarks(voiceBenchmarkRows, voiceSourceStatus);
         return;
       }
       if (fields.usecase.value === 'speech-to-text') {
@@ -2536,9 +2583,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       loadCurrentTextBenchmarks();
     }
 
-    function renderFilteredModelBenchmarks(models) {
+    function renderFilteredModelBenchmarks(models, sourceStatus) {
       if (fields.usecase.value === 'voice') {
-        renderVoiceBenchmarks(models || []);
+        renderVoiceBenchmarks(models || [], sourceStatus && sourceStatus.voice);
         return;
       }
       if (fields.usecase.value === 'speech-to-text') {
@@ -2601,6 +2648,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       ];
       if (useCase === 'voice') {
         return base.concat([
+          { label: 'AA Index', render: function (row) { return benchmarkScore(voiceSignals(row.model).qualityIndex); } },
           { label: 'τ-Voice', render: function (row) { return pct(voiceSignals(row.model).agenticPerformance); } },
           { label: 'TTFA', render: function (row) { return seconds(voiceTtfa(row.model)); } },
           { label: 'Input AUD/hr', render: function (row) { return money(voiceCost(row.model)); } },
@@ -2648,9 +2696,17 @@ export const HOME_HTML = String.raw`<!doctype html>
             }).join('')
           : '<tr><td class="empty" colspan="' + columns.length + '">No recommendation matches the active filters.</td></tr>';
       }
-      setText('recommendationSource', rows.length === 1
-        ? '1 primary; no distinct failover'
-        : rows.length + ' distinct model families');
+      var meta = data && data.recommendationMeta;
+      if (meta && meta.selectionBasis === 'latest_release') {
+        setText(
+          'recommendationSource',
+          'Latest full-size release heuristic · benchmark evidence pending · capability-first, not value-optimised'
+        );
+      } else {
+        setText('recommendationSource', rows.length === 1
+          ? '1 primary; no distinct failover'
+          : rows.length + ' distinct model families');
+      }
     }
 
     function registryAvailability(model) {
@@ -2708,7 +2764,10 @@ export const HOME_HTML = String.raw`<!doctype html>
         return;
       }
       if (mode === 'benchmarks') {
-        renderFilteredModelBenchmarks((data && data.benchmarks) || []);
+        renderFilteredModelBenchmarks(
+          (data && data.benchmarks) || [],
+          (data && data.sourceStatus) || null
+        );
         highlightBenchmark('', '');
         return;
       }
@@ -2987,14 +3046,14 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'Which speech-to-speech (voice) model is strongest overall?',
           a: voice[0]
-            ? modelName(voice[0]) + ' currently ranks highest for speech-to-speech (voice) in this registry based on τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
+            ? modelName(voice[0]) + ' currently ranks highest for speech-to-speech (voice) in this registry based first on the AA Speech-to-Speech Index, with τ-Voice, speech reasoning, telecom score, time to first audio, and input-audio price as supporting evidence.'
             : 'No speech-to-speech (voice) benchmark data is currently available.'
         },
         {
-          q: 'Which speech-to-speech (voice) model is cheapest on benchmark input audio?',
+          q: 'Which speech-to-speech (voice) model has the lowest AA input-audio price?',
           a: cheapestVoice[0]
-            ? modelName(cheapestVoice[0]) + ' is the cheapest speech-to-speech (voice) candidate on AA benchmark input-audio cost at ' + money(voiceCost(cheapestVoice[0])) + ' AUD/hr.'
-            : 'No speech-to-speech (voice) benchmark pricing is currently available.'
+            ? modelName(cheapestVoice[0]) + ' has the lowest AA input-audio price at ' + money(voiceCost(cheapestVoice[0])) + ' AUD/hr (benchmark cost when available, otherwise API list price).'
+            : 'No speech-to-speech (voice) input-audio pricing is currently available.'
         },
         {
           q: 'How do I choose the best speech to text model?',
@@ -3009,8 +3068,8 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'How are recommendations compared here?',
           a: includeIts
-            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Speech-to-speech (voice) uses AA speech-to-speech benchmark pricing and latency.'
-            : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Speech-to-speech (voice) uses AA speech-to-speech benchmark pricing and latency.'
+            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Speech-to-speech (voice) uses AA speech-to-speech quality, pricing, and latency.'
+            : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Speech-to-speech (voice) uses AA speech-to-speech quality, pricing, and latency.'
         }
       ];
 
@@ -3040,13 +3099,16 @@ export const HOME_HTML = String.raw`<!doctype html>
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
       .then(function (data) {
         voiceBenchmarkRows = data.benchmarks || [];
+        voiceSourceStatus = data.sourceStatus && data.sourceStatus.voice
+          ? data.sourceStatus.voice
+          : null;
         if (isBrowsingBenchmarks() && fields.usecase.value === 'voice') {
-          renderVoiceBenchmarks(voiceBenchmarkRows);
+          renderVoiceBenchmarks(voiceBenchmarkRows, voiceSourceStatus);
         }
       })
       .catch(function () {
         var rows = document.getElementById('voiceRows');
-        if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Speech-to-speech (voice) benchmarks unavailable.</td></tr>';
+        if (rows) rows.innerHTML = '<tr><td class="empty" colspan="8">Speech-to-speech (voice) benchmarks unavailable.</td></tr>';
         setText('voiceSource', 'unavailable');
       });
 
@@ -3164,6 +3226,11 @@ export const HOME_HTML = String.raw`<!doctype html>
         return endpoint + (registryQuery ? '?' + registryQuery : '');
       }
       if (fields.tier.value) params.set('tier', fields.tier.value);
+      if (
+        mode === 'recommend' &&
+        fields.tier.value === 'best' &&
+        fields.allowlatest.checked
+      ) params.set('allowUnbenchmarkedLatest', 'true');
       if (fields.provider.value) params.set('provider', fields.provider.value);
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
       if (
@@ -3236,6 +3303,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       setSelectValue(fields.provider, params.get('provider'));
       setSelectValue(fields.capability, params.get('capability'));
       setSelectValue(fields.usecase, params.get('useCase'));
+      fields.allowlatest.checked =
+        params.get('allowUnbenchmarkedLatest') === 'true';
       if (
         fields.includeits &&
         (params.get('includeItsEval') === 'false' ||
@@ -3278,6 +3347,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     function refreshBuilder() {
       syncRunCostRange();
       updateTierOptions(fields.usecase.value);
+      updateLatestOptionVisibility();
       var path = buildPath();
       var mode = fields.endpoint.value;
       var full = origin + path;

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-07-17
+
+### Added
+
+- Added automatic Artificial Analysis speech-to-speech refreshes with authenticated API, public-page, last-known-good KV, and bundled emergency-snapshot fallback stages.
+- Added models.dev audio input/output token pricing and visible `missing_voice_benchmark` rows for current audio models that Artificial Analysis has not evaluated yet.
+- Added the best-tier `allowUnbenchmarkedLatest=true` option and homepage evidence-policy control, with response metadata that distinguishes a `latest_release` heuristic from benchmark-backed and value-optimized selections.
+
+### Changed
+
+- Ranked best-tier benchmark-backed voice models by Artificial Analysis's Speech-to-Speech Index and kept missing quality values last.
+- Limited fallback voice evidence to 14 days for recommendation purposes; older rows remain visible as `stale_voice_benchmark` but cannot drive a recommendation.
+- Made the opted-in latest-model path capability-first by preferring full-size variants before release recency and use-case-specific tie-breakers, while preserving benchmark-required behavior for fast, balanced, and non-opted-in best requests.
+
+### Fixed
+
+- Rejected truncated Artificial Analysis voice and models.dev refreshes using persisted coverage high-water marks (separate for the voice API and public page), required complete same-row voice evidence, and kept KV write failures inside the fallback chain.
+- Re-evaluated the 14-day voice fallback cutoff whenever a cached catalog is read, and used structured API input list pricing when page-only benchmark cost is unavailable.
+
 ## 2026-07-16
 
 ### Added

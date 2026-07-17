@@ -2,6 +2,15 @@ import { HOME_HTML } from "./html";
 import { ITS_BENCHMARK_HTML } from "./its-benchmark";
 import { WEBDEV_BENCHMARK_HTML } from "./webdev-benchmark";
 import {
+  normalizeArtificialAnalysisSpeechToSpeechRecords,
+  parseArtificialAnalysisSpeechToSpeechApi,
+  parseArtificialAnalysisSpeechToSpeechPage,
+} from "./aa-speech-to-speech";
+import {
+  AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+  AA_SPEECH_TO_SPEECH_MODELS,
+} from "./generated/aa-speech-to-speech";
+import {
   asProvider,
   benchmarkCandidateEligibilityReason,
   benchmarkCandidates,
@@ -14,17 +23,25 @@ import {
   recommendModelFailovers,
   rankedRecommendedModels,
   type ArtificialAnalysisModel,
+  type ArtificialAnalysisSpeechToSpeechModel,
   type ArtificialAnalysisSpeechToTextModel,
   type Catalog,
   type ExchangeRate,
   type ModelsDevDocument,
   type ProviderId,
   type RecommendedModel,
+  type VoiceSourceStatus,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v28";
+const CACHE_KEY = "catalog:v29";
+const VOICE_CACHE_KEY = "aa:s2s:last-known-good:v1";
+const MODELS_DEV_COVERAGE_KEY = "models-dev:provider-high-water:v1";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
+const VOICE_FALLBACK_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const VOICE_MIN_COVERAGE_RATIO = 0.5;
+const VOICE_INITIAL_API_MIN_ROW_COUNT = 8;
+const MODELS_DEV_MIN_COVERAGE_RATIO = 0.5;
 const DEFAULT_FX_RATE_URL =
   "https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD";
 const DEFAULT_MODELS_DEV_URL = "https://models.dev/api.json";
@@ -34,6 +51,10 @@ const DEFAULT_ARTIFICIAL_ANALYSIS_FREE_LLM_URL =
   "https://artificialanalysis.ai/api/v2/language/models/free";
 const DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL =
   "https://artificialanalysis.ai/api/v2/media/speech-to-text/models";
+const DEFAULT_ARTIFICIAL_ANALYSIS_S2S_URL =
+  "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models";
+const DEFAULT_ARTIFICIAL_ANALYSIS_S2S_PAGE_URL =
+  "https://artificialanalysis.ai/speech-to-speech";
 const REQUIRED_MODELS_DEV_PROVIDERS = [
   "openai",
   "google",
@@ -51,6 +72,8 @@ export interface Env {
   ARTIFICIAL_ANALYSIS_LLM_URL?: string;
   ARTIFICIAL_ANALYSIS_FREE_LLM_URL?: string;
   ARTIFICIAL_ANALYSIS_STT_URL?: string;
+  ARTIFICIAL_ANALYSIS_S2S_URL?: string;
+  ARTIFICIAL_ANALYSIS_S2S_PAGE_URL?: string;
 }
 
 export default {
@@ -129,11 +152,15 @@ export async function handleRequest(
 }
 
 export async function refreshCatalog(env: Env): Promise<Catalog> {
-  const cached = await readCachedCatalog(env);
-  const catalog = await fetchCatalog(env);
-  assertProviderCoverage(catalog, cached);
-  await writeCachedCatalog(env, catalog);
-  return catalog;
+  const [cached, highWater] = await Promise.all([
+    readCachedCatalog(env),
+    readProviderCoverageHighWater(env),
+  ]);
+  const fetched = await fetchCatalog(env);
+  assertProviderCoverage(fetched, cached, highWater);
+  const nextHighWater = providerCoverageHighWater(fetched, cached, highWater);
+  await writeCatalogState(env, fetched, nextHighWater);
+  return fetched;
 }
 
 function withoutNestedFailover(model: RecommendedModel): RecommendedModel {
@@ -253,6 +280,14 @@ async function routeApi(
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
       recommendation: recommendationWithFailover,
+      ...(filters.useCase
+        ? {
+            recommendationMeta: recommendationMeta(
+              filters,
+              recommendation,
+            ),
+          }
+        : {}),
       failovers,
       failoverStatus,
     });
@@ -304,12 +339,31 @@ async function routeApi(
   return jsonResponse({ error: "not_found" }, 404);
 }
 
+function recommendationMeta(
+  filters: ReturnType<typeof parseFilters>,
+  recommendation: RecommendedModel,
+): Record<string, unknown> {
+  const latestRelease =
+    filters.allowUnbenchmarkedLatest === true && !("source" in recommendation);
+  const tier = filters.tier ?? "fast";
+  return {
+    policy: latestRelease
+      ? "allow_unbenchmarked_latest"
+      : "benchmark_required",
+    selectionBasis: latestRelease ? "latest_release" : "benchmark",
+    benchmarkEligible:
+      "source" in recommendation ? recommendation.recommendable : false,
+    valueOptimized: !latestRelease && tier !== "best",
+  };
+}
+
 function catalogResponseMetadata(catalog: Catalog): Record<string, unknown> {
   return {
     generatedAt: catalog.generatedAt,
     pricingCurrency: catalog.exchangeRate?.quote ?? "USD",
     sourcePricingCurrency: catalog.exchangeRate?.base ?? "USD",
     ...(catalog.exchangeRate ? { exchangeRate: catalog.exchangeRate } : {}),
+    ...(catalog.sourceStatus ? { sourceStatus: catalog.sourceStatus } : {}),
   };
 }
 
@@ -317,16 +371,24 @@ async function getCatalog(
   env: Env,
   ctx?: Pick<ExecutionContext, "waitUntil">,
 ): Promise<Catalog> {
-  const cached = await readCachedCatalog(env);
+  const [cached, highWater] = await Promise.all([
+    readCachedCatalog(env),
+    readProviderCoverageHighWater(env),
+  ]);
   if (cached && isFresh(cached)) return cached;
 
   try {
-    const catalog = await fetchCatalog(env);
-    assertProviderCoverage(catalog, cached);
-    const write = writeCachedCatalog(env, catalog);
+    const fetched = await fetchCatalog(env);
+    assertProviderCoverage(fetched, cached, highWater);
+    const nextHighWater = providerCoverageHighWater(
+      fetched,
+      cached,
+      highWater,
+    );
+    const write = writeCatalogState(env, fetched, nextHighWater);
     if (ctx) ctx.waitUntil(write);
     else await write;
-    return catalog;
+    return fetched;
   } catch (error) {
     if (cached) return cached;
     throw error;
@@ -338,7 +400,7 @@ async function readCachedCatalog(env: Env): Promise<Catalog | undefined> {
   if (!value) return undefined;
 
   try {
-    return JSON.parse(value) as Catalog;
+    return applyCurrentVoiceFallbackAge(JSON.parse(value) as Catalog);
   } catch {
     return undefined;
   }
@@ -350,32 +412,98 @@ async function writeCachedCatalog(env: Env, catalog: Catalog): Promise<void> {
   });
 }
 
+type ProviderCoverageHighWater = Partial<Record<ProviderId, number>>;
+
+async function readProviderCoverageHighWater(
+  env: Env,
+): Promise<ProviderCoverageHighWater | undefined> {
+  const value = await env.MODEL_CACHE?.get(MODELS_DEV_COVERAGE_KEY);
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const highWater: ProviderCoverageHighWater = {};
+    for (const [key, count] of Object.entries(parsed)) {
+      const provider = asProvider(key);
+      if (
+        provider &&
+        typeof count === "number" &&
+        Number.isFinite(count) &&
+        count > 0
+      ) {
+        highWater[provider] = Math.floor(count);
+      }
+    }
+    return Object.keys(highWater).length ? highWater : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeCatalogState(
+  env: Env,
+  catalog: Catalog,
+  highWater: ProviderCoverageHighWater,
+): Promise<void> {
+  await env.MODEL_CACHE?.put(
+    MODELS_DEV_COVERAGE_KEY,
+    JSON.stringify(highWater),
+  );
+  await writeCachedCatalog(env, catalog);
+}
+
 function assertProviderCoverage(
   catalog: Catalog,
   cached: Catalog | undefined,
+  highWater: ProviderCoverageHighWater | undefined,
 ): void {
-  if (
-    !cached ||
-    !Array.isArray(cached.models) ||
-    cached.models.length === 0 ||
-    !Array.isArray(cached.providers)
-  ) {
-    return;
+  const baseline: ProviderCoverageHighWater = { ...(highWater ?? {}) };
+  if (Array.isArray(cached?.providers)) {
+    for (const provider of cached.providers) {
+      baseline[provider.provider] = Math.max(
+        baseline[provider.provider] ?? 0,
+        provider.total,
+      );
+    }
   }
 
-  const currentProviders = new Set(
-    catalog.providers
-      .filter((provider) => provider.total > 0)
-      .map((provider) => provider.provider),
-  );
-  const missingProvider = cached.providers.find(
-    (provider) => provider.total > 0 && !currentProviders.has(provider.provider),
-  );
-  if (missingProvider) {
-    throw new Error(
-      `models.dev refresh dropped cached provider ${missingProvider.provider}`,
+  for (const [provider, rowCount] of Object.entries(baseline) as Array<
+    [ProviderId, number]
+  >) {
+    if (rowCount <= 0) continue;
+    const current =
+      catalog.providers.find(
+        (summary) => summary.provider === provider,
+      )?.total ?? 0;
+    if (
+      current <
+      Math.max(1, Math.ceil(rowCount * MODELS_DEV_MIN_COVERAGE_RATIO))
+    ) {
+      throw new Error(
+        `models.dev refresh dropped cached provider coverage for ${provider}`,
+      );
+    }
+  }
+}
+
+function providerCoverageHighWater(
+  catalog: Catalog,
+  cached: Catalog | undefined,
+  highWater: ProviderCoverageHighWater | undefined,
+): ProviderCoverageHighWater {
+  const next: ProviderCoverageHighWater = { ...(highWater ?? {}) };
+  for (const provider of cached?.providers ?? []) {
+    next[provider.provider] = Math.max(
+      next[provider.provider] ?? 0,
+      provider.total,
     );
   }
+  for (const provider of catalog.providers) {
+    next[provider.provider] = Math.max(
+      next[provider.provider] ?? 0,
+      provider.total,
+    );
+  }
+  return next;
 }
 
 async function fetchCatalog(env: Env): Promise<Catalog> {
@@ -385,12 +513,14 @@ async function fetchCatalog(env: Env): Promise<Catalog> {
     legacyArtificialAnalysisModels,
     currentArtificialAnalysisModels,
     artificialAnalysisSpeechToTextModels,
+    artificialAnalysisSpeechToSpeech,
   ] = await Promise.all([
     fetchModelsDev(env),
     fetchUsdAudRate(env),
     fetchArtificialAnalysisModels(env),
     fetchArtificialAnalysisFreeModels(env),
     fetchArtificialAnalysisSpeechToTextModels(env),
+    fetchArtificialAnalysisSpeechToSpeechModels(env),
   ]);
 
   return normalizeModelsDevCatalog(
@@ -402,6 +532,8 @@ async function fetchCatalog(env: Env): Promise<Catalog> {
       ...currentArtificialAnalysisModels,
     ],
     artificialAnalysisSpeechToTextModels,
+    artificialAnalysisSpeechToSpeech.models,
+    artificialAnalysisSpeechToSpeech.status,
   );
 }
 
@@ -612,6 +744,321 @@ async function fetchArtificialAnalysisSpeechToTextModels(
   } catch {
     return [];
   }
+}
+
+interface SpeechToSpeechSource {
+  models: ArtificialAnalysisSpeechToSpeechModel[];
+  status: VoiceSourceStatus;
+}
+
+type LiveVoiceOrigin = "aa_api" | "aa_public_page";
+type VoiceCoverageHighWater = Partial<Record<LiveVoiceOrigin, number>>;
+
+interface LastKnownGoodVoiceSource {
+  fetchedAt: string;
+  origin?: LiveVoiceOrigin;
+  highWaterRowCounts: VoiceCoverageHighWater;
+  models: ArtificialAnalysisSpeechToSpeechModel[];
+}
+
+async function fetchArtificialAnalysisSpeechToSpeechModels(
+  env: Env,
+): Promise<SpeechToSpeechSource> {
+  const fetchedAt = new Date().toISOString();
+  const cached = await readLastKnownGoodVoiceSource(env);
+  const bundled = [
+    ...(AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]),
+  ];
+  const coverageHighWater = cached?.highWaterRowCounts ?? {};
+
+  if (env.ARTIFICIAL_ANALYSIS_API_KEY) {
+    try {
+      const response = await fetch(
+        env.ARTIFICIAL_ANALYSIS_S2S_URL ||
+          DEFAULT_ARTIFICIAL_ANALYSIS_S2S_URL,
+        {
+          headers: {
+            Accept: "application/json",
+            "x-api-key": env.ARTIFICIAL_ANALYSIS_API_KEY,
+          },
+        },
+      );
+      if (response.ok) {
+        const models = parseArtificialAnalysisSpeechToSpeechApi(
+          await response.json(),
+        );
+        if (
+          validLiveVoiceModels(
+            models,
+            minimumVoiceRowCount(
+              coverageHighWater.aa_api,
+              VOICE_INITIAL_API_MIN_ROW_COUNT,
+            ),
+          )
+        ) {
+          return await persistLiveVoiceSource(
+            env,
+            models,
+            fetchedAt,
+            "aa_api",
+            coverageHighWater,
+          );
+        }
+      }
+    } catch {
+      // The public page is the automatic secondary source.
+    }
+  }
+
+  try {
+    const response = await fetch(
+      env.ARTIFICIAL_ANALYSIS_S2S_PAGE_URL ||
+        DEFAULT_ARTIFICIAL_ANALYSIS_S2S_PAGE_URL,
+      {
+        headers: {
+          Accept: "text/html",
+          "User-Agent": "IT Solver AI Registry automatic refresh",
+        },
+      },
+    );
+    if (response.ok) {
+      const models = parseArtificialAnalysisSpeechToSpeechPage(
+        await response.text(),
+      );
+      if (
+        validLiveVoiceModels(
+          models,
+          minimumVoiceRowCount(
+            coverageHighWater.aa_public_page,
+            Math.max(
+              1,
+              Math.ceil(bundled.length * VOICE_MIN_COVERAGE_RATIO),
+            ),
+          ),
+        )
+      ) {
+        return await persistLiveVoiceSource(
+          env,
+          models,
+          fetchedAt,
+          "aa_public_page",
+          coverageHighWater,
+        );
+      }
+    }
+  } catch {
+    // Last-known-good KV and the bundled snapshot remain available below.
+  }
+
+  if (cached) {
+    const status = fallbackVoiceStatus(
+      "kv_last_known_good",
+      cached.fetchedAt,
+      cached.models.length,
+    );
+    console.warn("Artificial Analysis voice refresh using KV fallback", status);
+    return { models: cached.models, status };
+  }
+
+  const status = fallbackVoiceStatus(
+    "bundled_snapshot",
+    AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+    bundled.length,
+  );
+  console.warn("Artificial Analysis voice refresh using bundled fallback", status);
+  return { models: bundled, status };
+}
+
+async function persistLiveVoiceSource(
+  env: Env,
+  models: ArtificialAnalysisSpeechToSpeechModel[],
+  fetchedAt: string,
+  origin: LiveVoiceOrigin,
+  highWaterRowCounts: VoiceCoverageHighWater,
+): Promise<SpeechToSpeechSource> {
+  const nextHighWaterRowCounts = {
+    ...highWaterRowCounts,
+    [origin]: Math.max(highWaterRowCounts[origin] ?? 0, models.length),
+  };
+  await env.MODEL_CACHE?.put(
+    VOICE_CACHE_KEY,
+    JSON.stringify({
+      fetchedAt,
+      origin,
+      highWaterRowCounts: nextHighWaterRowCounts,
+      models,
+    }),
+  );
+  return {
+    models,
+    status: { state: "live", origin, fetchedAt, rowCount: models.length },
+  };
+}
+
+async function readLastKnownGoodVoiceSource(
+  env: Env,
+): Promise<LastKnownGoodVoiceSource | undefined> {
+  const value = await env.MODEL_CACHE?.get(VOICE_CACHE_KEY);
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as {
+      fetchedAt?: unknown;
+      origin?: unknown;
+      highWaterRowCount?: unknown;
+      highWaterRowCounts?: unknown;
+      models?: unknown;
+    };
+    if (typeof parsed.fetchedAt !== "string") return undefined;
+    const models = normalizeArtificialAnalysisSpeechToSpeechRecords(
+      parsed.models,
+    );
+    if (!models.length) return undefined;
+    const origin = isLiveVoiceOrigin(parsed.origin) ? parsed.origin : undefined;
+    const highWaterRowCounts = parseVoiceCoverageHighWater(
+      parsed.highWaterRowCounts,
+    );
+    const legacyHighWaterRowCount =
+      typeof parsed.highWaterRowCount === "number" &&
+      Number.isFinite(parsed.highWaterRowCount)
+        ? Math.max(models.length, Math.floor(parsed.highWaterRowCount))
+        : models.length;
+    if (origin) {
+      highWaterRowCounts[origin] = Math.max(
+        highWaterRowCounts[origin] ?? 0,
+        legacyHighWaterRowCount,
+      );
+    }
+    return {
+      fetchedAt: parsed.fetchedAt,
+      ...(origin ? { origin } : {}),
+      highWaterRowCounts,
+      models,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function minimumVoiceRowCount(
+  highWaterRowCount: number | undefined,
+  initialMinimum: number,
+): number {
+  return highWaterRowCount === undefined
+    ? initialMinimum
+    : Math.max(
+        1,
+        Math.ceil(highWaterRowCount * VOICE_MIN_COVERAGE_RATIO),
+      );
+}
+
+function parseVoiceCoverageHighWater(value: unknown): VoiceCoverageHighWater {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const record = value as Record<string, unknown>;
+  const highWater: VoiceCoverageHighWater = {};
+  for (const origin of ["aa_api", "aa_public_page"] as const) {
+    const rowCount = record[origin];
+    if (
+      typeof rowCount === "number" &&
+      Number.isFinite(rowCount) &&
+      rowCount > 0
+    ) {
+      highWater[origin] = Math.floor(rowCount);
+    }
+  }
+  return highWater;
+}
+
+function isLiveVoiceOrigin(value: unknown): value is LiveVoiceOrigin {
+  return value === "aa_api" || value === "aa_public_page";
+}
+
+function validLiveVoiceModels(
+  models: ArtificialAnalysisSpeechToSpeechModel[],
+  minimumRowCount: number,
+): boolean {
+  const requiredCompleteRows = Math.ceil(models.length / 2);
+  const completeRows = models.filter(
+    (model) =>
+      (model.s2sQualityIndex ?? 0) > 0 &&
+      ((model.costPerHourOfInputAudio ?? 0) > 0 ||
+        (model.pricePerHourInput ?? 0) > 0) &&
+      (model.pricePerHourOutput ?? 0) > 0,
+  ).length;
+  return (
+    models.length >= minimumRowCount &&
+    completeRows >= requiredCompleteRows
+  );
+}
+
+function applyCurrentVoiceFallbackAge(catalog: Catalog): Catalog {
+  const voice = catalog.sourceStatus?.voice;
+  if (
+    !voice ||
+    voice.state !== "fallback_fresh" ||
+    (voice.origin !== "kv_last_known_good" &&
+      voice.origin !== "bundled_snapshot") ||
+    !voice.fetchedAt
+  ) {
+    return catalog;
+  }
+
+  const currentStatus = fallbackVoiceStatus(
+    voice.origin,
+    voice.fetchedAt,
+    voice.rowCount,
+  );
+  if (currentStatus.state !== "fallback_stale") return catalog;
+
+  const benchmarkCandidates = catalog.benchmarkCandidates?.map((candidate) =>
+    candidate.benchmarks.voice
+      ? {
+          ...candidate,
+          recommendable: false,
+          benchmarks: {
+            ...candidate.benchmarks,
+            voice: { ...candidate.benchmarks.voice, stale: true },
+          },
+        }
+      : candidate,
+  );
+  const models = catalog.models.map((model) =>
+    model.benchmarks?.voice
+      ? {
+          ...model,
+          benchmarks: {
+            ...model.benchmarks,
+            voice: { ...model.benchmarks.voice, stale: true },
+          },
+        }
+      : model,
+  );
+
+  return {
+    ...catalog,
+    ...(benchmarkCandidates ? { benchmarkCandidates } : {}),
+    models,
+    sourceStatus: {
+      ...catalog.sourceStatus,
+      voice: currentStatus,
+    },
+  };
+}
+
+function fallbackVoiceStatus(
+  origin: "kv_last_known_good" | "bundled_snapshot",
+  fetchedAt: string,
+  rowCount: number,
+): VoiceSourceStatus {
+  const timestamp = Date.parse(fetchedAt);
+  const fresh =
+    Number.isFinite(timestamp) &&
+    Date.now() - timestamp <= VOICE_FALLBACK_MAX_AGE_MS;
+  return {
+    state: fresh ? "fallback_fresh" : "fallback_stale",
+    origin,
+    fetchedAt,
+    rowCount,
+  };
 }
 
 async function fetchUsdAudRate(env: Env): Promise<ExchangeRate | undefined> {

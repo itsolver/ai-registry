@@ -2,11 +2,15 @@ import { parseArtificialAnalysisSpeechToSpeechApi } from "./aa-speech-to-speech"
 import { AA_SPEECH_TO_SPEECH_MODELS } from "./generated/aa-speech-to-speech";
 import { AA_SPEECH_TO_TEXT_MODELS } from "./generated/aa-speech-to-text";
 import {
-  bundledVoiceSourceStatus,
   type ArtificialAnalysisSpeechToSpeechModel,
   type ArtificialAnalysisSpeechToTextModel,
   type VoiceSourceStatus,
 } from "./registry";
+
+export interface VoiceFallbackSource {
+  models: ArtificialAnalysisSpeechToSpeechModel[];
+  status: VoiceSourceStatus;
+}
 
 export interface CatalogSpeechSources {
   speechToTextModels: ArtificialAnalysisSpeechToTextModel[];
@@ -85,7 +89,7 @@ function validFreeSpeechToSpeechRow(value: unknown): boolean {
   );
 }
 
-function hasPricedSpeechToTextProviders(
+function hasCompleteSpeechToTextProviders(
   rows: ArtificialAnalysisSpeechToTextModel[],
 ): boolean {
   return rows.every((row) => {
@@ -94,8 +98,14 @@ function hasPricedSpeechToTextProviders(
       Array.isArray(providers) &&
       providers.length > 0 &&
       providers.every((provider) => {
-        const price = objectValue(provider)?.price_per_1k_minutes;
-        return finiteNumber(price) && (price as number) > 0;
+        const providerRow = objectValue(provider);
+        const price = providerRow?.price_per_1k_minutes;
+        return (
+          finiteNumber(price) &&
+          (price as number) > 0 &&
+          (finiteNumber(providerRow?.aa_wer_index) ||
+            finiteNumber(row.aa_wer_index))
+        );
       })
     );
   });
@@ -115,6 +125,7 @@ export function catalogSpeechSources(
   sttBody: Record<string, unknown>,
   s2sBody: Record<string, unknown>,
   evidenceTime: string,
+  voiceFallback: VoiceFallbackSource,
 ): CatalogSpeechSources {
   const speechToTextRows = apiRows<ArtificialAnalysisSpeechToTextModel>(
     sttBody,
@@ -145,9 +156,7 @@ export function catalogSpeechSources(
     );
   }
   const speechToSpeechModels = freeSpeechToSpeech
-    ? [
-        ...(AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]),
-      ]
+    ? voiceFallback.models
     : parseArtificialAnalysisSpeechToSpeechApi(s2sBody);
   if (speechToSpeechModels.length === 0) {
     throw new Error("AA S2S is empty or invalid");
@@ -155,12 +164,12 @@ export function catalogSpeechSources(
 
   return {
     speechToTextModels:
-      !freeSpeechToText && hasPricedSpeechToTextProviders(speechToTextRows)
+      !freeSpeechToText && hasCompleteSpeechToTextProviders(speechToTextRows)
         ? speechToTextRows
         : [],
     speechToSpeechModels,
     voiceStatus: freeSpeechToSpeech
-      ? bundledVoiceSourceStatus(evidenceTime)
+      ? voiceFallback.status
       : {
           state: "live",
           origin: "aa_api",

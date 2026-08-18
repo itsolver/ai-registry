@@ -8,6 +8,15 @@ import {
 } from "./fixtures";
 
 describe("catalog refresh speech sources", () => {
+  const voiceFallback = {
+    models: [...AA_SPEECH_TO_SPEECH_MODELS],
+    status: {
+      state: "fallback_fresh" as const,
+      origin: "kv_last_known_good" as const,
+      fetchedAt: "2026-08-17T06:00:00.000Z",
+      rowCount: AA_SPEECH_TO_SPEECH_MODELS.length,
+    },
+  };
   const freeSttRows = Array.from(
     {
       length: Math.ceil(AA_SPEECH_TO_TEXT_MODELS.length * 0.5),
@@ -45,25 +54,31 @@ describe("catalog refresh speech sources", () => {
         data: freeS2sRows,
       },
       "2026-08-18T06:00:00.000Z",
+      voiceFallback,
     );
 
     expect(result.speechToTextModels).toEqual([]);
-    expect(result.speechToSpeechModels).toEqual(AA_SPEECH_TO_SPEECH_MODELS);
-    expect(result.voiceStatus.origin).toBe("bundled_snapshot");
+    expect(result.speechToSpeechModels).toEqual(voiceFallback.models);
+    expect(result.voiceStatus).toEqual(voiceFallback.status);
     expect(result.shouldPersistVoiceCapture).toBe(false);
   });
 
   it("uses and persists priced Pro speech responses", () => {
     const pricedSpeechToText = {
       ...artificialAnalysisSpeechToTextFixture,
-      data: artificialAnalysisSpeechToTextFixture.data.filter((row) =>
-        row.providers.every(
+      data: artificialAnalysisSpeechToTextFixture.data.filter((row) => {
+        const modelWer =
+          "aa_wer_index" in row && typeof row.aa_wer_index === "number";
+        return row.providers.every(
           (provider) =>
             "price_per_1k_minutes" in provider &&
             typeof provider.price_per_1k_minutes === "number" &&
-            provider.price_per_1k_minutes > 0,
-        ),
-      ),
+            provider.price_per_1k_minutes > 0 &&
+            (modelWer ||
+              ("aa_wer_index" in provider &&
+                typeof provider.aa_wer_index === "number")),
+        );
+      }),
     };
     const result = catalogSpeechSources(
       pricedSpeechToText as unknown as Record<string, unknown>,
@@ -72,6 +87,7 @@ describe("catalog refresh speech sources", () => {
         unknown
       >,
       "2026-08-18T06:00:00.000Z",
+      voiceFallback,
     );
 
     expect(result.speechToTextModels).toHaveLength(
@@ -92,6 +108,7 @@ describe("catalog refresh speech sources", () => {
         { tier: "free", data: [] },
         { tier: "free", data: [{}] },
         "2026-08-18T06:00:00.000Z",
+        voiceFallback,
       ),
     ).toThrow("AA STT is empty or invalid");
   });
@@ -102,6 +119,7 @@ describe("catalog refresh speech sources", () => {
         { tier: "free", data: [{}] },
         { tier: "free", data: freeS2sRows },
         "2026-08-18T06:00:00.000Z",
+        voiceFallback,
       ),
     ).toThrow("AA STT Free rows are invalid");
 
@@ -110,6 +128,7 @@ describe("catalog refresh speech sources", () => {
         { tier: "free", data: freeSttRows },
         { tier: "free", data: [freeS2sRows[0]] },
         "2026-08-18T06:00:00.000Z",
+        voiceFallback,
       ),
     ).toThrow("AA S2S Free coverage is partial");
   });
@@ -132,6 +151,7 @@ describe("catalog refresh speech sources", () => {
         unknown
       >,
       "2026-08-18T06:00:00.000Z",
+      voiceFallback,
     );
     expect(result.speechToTextModels).toEqual([]);
 
@@ -143,7 +163,39 @@ describe("catalog refresh speech sources", () => {
           unknown
         >,
         "2026-08-18T06:00:00.000Z",
+        voiceFallback,
       ),
     ).toThrow("AA STT has an unknown tier");
+  });
+
+  it("keeps bundled STT data when priced Pro rows lack WER evidence", () => {
+    const missingWer = {
+      tier: "pro",
+      data: [
+        {
+          id: "stt-missing-wer",
+          name: "Missing WER",
+          model_creator: { name: "OpenAI", slug: "openai" },
+          providers: [
+            {
+              id: "provider-openai",
+              name: "OpenAI",
+              slug: "openai",
+              price_per_1k_minutes: 3,
+            },
+          ],
+        },
+      ],
+    };
+    const result = catalogSpeechSources(
+      missingWer,
+      artificialAnalysisSpeechToSpeechApiFixture as unknown as Record<
+        string,
+        unknown
+      >,
+      "2026-08-18T06:00:00.000Z",
+      voiceFallback,
+    );
+    expect(result.speechToTextModels).toEqual([]);
   });
 });

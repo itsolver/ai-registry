@@ -1006,7 +1006,7 @@ async function fetchArtificialAnalysisSpeechToTextModels(
   }
 }
 
-interface SpeechToSpeechSource {
+export interface SpeechToSpeechSource {
   models: ArtificialAnalysisSpeechToSpeechModel[];
   status: VoiceSourceStatus;
 }
@@ -1147,6 +1147,14 @@ async function fetchArtificialAnalysisSpeechToSpeechModels(
     // Last-known-good KV and the bundled snapshot remain available below.
   }
 
+  return loadArtificialAnalysisVoiceFallback(env, cached);
+}
+
+export async function loadArtificialAnalysisVoiceFallback(
+  env: Env,
+  cachedVoice?: LastKnownGoodVoiceSource,
+): Promise<SpeechToSpeechSource> {
+  const cached = cachedVoice ?? (await readLastKnownGoodVoiceSource(env));
   if (cached) {
     const status = fallbackVoiceStatus(
       "kv_last_known_good",
@@ -1157,6 +1165,9 @@ async function fetchArtificialAnalysisSpeechToSpeechModels(
     return { models: cached.models, status };
   }
 
+  const bundled = [
+    ...(AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]),
+  ];
   const status = fallbackVoiceStatus(
     "bundled_snapshot",
     AA_SPEECH_TO_SPEECH_EXTRACTED_AT,

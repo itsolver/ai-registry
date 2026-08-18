@@ -8,6 +8,7 @@ import { catalogSpeechSources } from "../src/refresh-speech-sources";
 import {
   fetchModelsDev,
   fetchUsdAudRate,
+  loadArtificialAnalysisVoiceFallback,
   persistArtificialAnalysisVoiceCapture,
   persistFetchedCatalog,
   type Env,
@@ -187,13 +188,14 @@ async function main(): Promise<void> {
     throw new Error("Raw AA capture manifest is outside the allowed age");
   }
 
-  const [modelsDev, exchangeRate, freeModels, sttBody, s2sBody] =
+  const [modelsDev, exchangeRate, freeModels, sttBody, s2sBody, voiceFallback] =
     await Promise.all([
       fetchModelsDev({} as Env),
       fetchUsdAudRate({} as Env),
       capturedFreeModels(manifest),
       capturedJson(manifest, "stt"),
       capturedJson(manifest, "s2s"),
+      loadArtificialAnalysisVoiceFallback({ MODEL_CACHE: remoteKv }),
     ]);
   const legacyBody = manifest.sources.llm
     ? await capturedJson(manifest, "llm")
@@ -205,6 +207,7 @@ async function main(): Promise<void> {
     sttBody,
     s2sBody,
     manifest.capturedAt,
+    voiceFallback,
   );
   const sttModels = speechSources.speechToTextModels;
   const s2sModels = speechSources.speechToSpeechModels;

@@ -57,8 +57,12 @@ const DEFAULT_ARTIFICIAL_ANALYSIS_FREE_LLM_URL =
   "https://artificialanalysis.ai/api/v2/language/models/free";
 const DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL =
   "https://artificialanalysis.ai/api/v2/media/speech-to-text/models";
+const DEFAULT_ARTIFICIAL_ANALYSIS_FREE_STT_URL =
+  "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free";
 const DEFAULT_ARTIFICIAL_ANALYSIS_S2S_URL =
   "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models";
+const DEFAULT_ARTIFICIAL_ANALYSIS_FREE_S2S_URL =
+  "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models/free";
 const DEFAULT_ARTIFICIAL_ANALYSIS_S2S_PAGE_URL =
   "https://artificialanalysis.ai/speech-to-speech";
 const REQUIRED_MODELS_DEV_PROVIDERS = [
@@ -277,12 +281,16 @@ export async function captureArtificialAnalysisRawSources(
     })),
     {
       name: "stt",
-      url: env.ARTIFICIAL_ANALYSIS_STT_URL || DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL,
+      url:
+        env.ARTIFICIAL_ANALYSIS_STT_URL ||
+        DEFAULT_ARTIFICIAL_ANALYSIS_FREE_STT_URL,
       required: true,
     },
     {
       name: "s2s",
-      url: env.ARTIFICIAL_ANALYSIS_S2S_URL || DEFAULT_ARTIFICIAL_ANALYSIS_S2S_URL,
+      url:
+        env.ARTIFICIAL_ANALYSIS_S2S_URL ||
+        DEFAULT_ARTIFICIAL_ANALYSIS_FREE_S2S_URL,
       required: true,
     },
   ];
@@ -998,7 +1006,7 @@ async function fetchArtificialAnalysisSpeechToTextModels(
   }
 }
 
-interface SpeechToSpeechSource {
+export interface SpeechToSpeechSource {
   models: ArtificialAnalysisSpeechToSpeechModel[];
   status: VoiceSourceStatus;
 }
@@ -1139,6 +1147,14 @@ async function fetchArtificialAnalysisSpeechToSpeechModels(
     // Last-known-good KV and the bundled snapshot remain available below.
   }
 
+  return loadArtificialAnalysisVoiceFallback(env, cached);
+}
+
+export async function loadArtificialAnalysisVoiceFallback(
+  env: Env,
+  cachedVoice?: LastKnownGoodVoiceSource,
+): Promise<SpeechToSpeechSource> {
+  const cached = cachedVoice ?? (await readLastKnownGoodVoiceSource(env));
   if (cached) {
     const status = fallbackVoiceStatus(
       "kv_last_known_good",
@@ -1149,6 +1165,9 @@ async function fetchArtificialAnalysisSpeechToSpeechModels(
     return { models: cached.models, status };
   }
 
+  const bundled = [
+    ...(AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]),
+  ];
   const status = fallbackVoiceStatus(
     "bundled_snapshot",
     AA_SPEECH_TO_SPEECH_EXTRACTED_AT,

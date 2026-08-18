@@ -57,15 +57,25 @@ function validCreator(value: unknown): boolean {
 }
 
 function assertFreeCoverage(
-  rowCount: number,
+  rows: unknown[],
   bundledRowCount: number,
   source: string,
 ): void {
+  const distinctIds = new Set(
+    rows.map((row) =>
+      String(objectValue(row)?.id ?? "")
+        .trim()
+        .toLowerCase(),
+    ),
+  );
+  if (distinctIds.size !== rows.length) {
+    throw new Error(`${source} Free rows contain duplicate IDs`);
+  }
   const minimum = Math.max(
     1,
     Math.ceil(bundledRowCount * MINIMUM_FREE_COVERAGE_RATIO),
   );
-  if (rowCount < minimum) {
+  if (distinctIds.size < minimum) {
     throw new Error(`${source} Free coverage is partial`);
   }
 }
@@ -144,7 +154,7 @@ export function catalogSpeechSources(
       throw new Error("AA STT Free rows are invalid");
     }
     assertFreeCoverage(
-      speechToTextRows.length,
+      speechToTextRows,
       AA_SPEECH_TO_TEXT_MODELS.length,
       "AA STT",
     );
@@ -154,7 +164,7 @@ export function catalogSpeechSources(
       throw new Error("AA S2S Free rows are invalid");
     }
     assertFreeCoverage(
-      speechToSpeechRows.length,
+      speechToSpeechRows,
       AA_SPEECH_TO_SPEECH_MODELS.length,
       "AA S2S",
     );

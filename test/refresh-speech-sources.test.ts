@@ -133,6 +133,38 @@ describe("catalog refresh speech sources", () => {
     ).toThrow("AA S2S Free coverage is partial");
   });
 
+  it("rejects duplicate Free model identities", () => {
+    expect(() =>
+      catalogSpeechSources(
+        {
+          tier: "free",
+          data: freeSttRows.map((row) => ({
+            ...row,
+            id: "duplicate-stt",
+          })),
+        },
+        { tier: "free", data: freeS2sRows },
+        "2026-08-18T06:00:00.000Z",
+        voiceFallback,
+      ),
+    ).toThrow("AA STT Free rows contain duplicate IDs");
+
+    expect(() =>
+      catalogSpeechSources(
+        { tier: "free", data: freeSttRows },
+        {
+          tier: "free",
+          data: freeS2sRows.map((row) => ({
+            ...row,
+            id: "DUPLICATE-S2S",
+          })),
+        },
+        "2026-08-18T06:00:00.000Z",
+        voiceFallback,
+      ),
+    ).toThrow("AA S2S Free rows contain duplicate IDs");
+  });
+
   it("keeps bundled STT data for unknown or unpriced Pro responses", () => {
     const unpriced = {
       ...artificialAnalysisSpeechToTextFixture,

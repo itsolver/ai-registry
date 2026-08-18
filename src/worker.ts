@@ -41,6 +41,8 @@ const MODELS_DEV_COVERAGE_KEY = "models-dev:provider-high-water:v1";
 const RAW_CAPTURE_MANIFEST_KEY = "raw:aa:manifest:v1";
 const CACHE_FRESHNESS_MS = 60 * 60 * 1000;
 const CACHE_LAST_GOOD_TTL_SECONDS = 7 * 24 * 60 * 60;
+const RAW_CAPTURE_MAX_ATTEMPTS = 3;
+const RAW_CAPTURE_RETRY_BASE_MS = 250;
 const ARTIFICIAL_ANALYSIS_MIN_COVERAGE_RATIO = 0.5;
 const VOICE_FALLBACK_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const VOICE_MIN_COVERAGE_RATIO = 0.5;
@@ -188,6 +190,64 @@ interface RawCaptureManifest {
   sources: Record<string, string>;
 }
 
+interface RawCaptureSource {
+  name: string;
+  url: string;
+  required: boolean;
+}
+
+class RawCaptureHttpError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+  }
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function captureArtificialAnalysisRawSource(
+  env: Env,
+  source: RawCaptureSource,
+  captureId: string,
+  headers: Record<string, string>,
+): Promise<string> {
+  const key = `raw:aa:${captureId}:${source.name}`;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= RAW_CAPTURE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(source.url, { headers });
+      if (!response.ok || !response.body) {
+        if (response.body) {
+          await response.body.cancel().catch(() => undefined);
+        }
+        throw new RawCaptureHttpError(
+          `${source.name} returned ${response.status}`,
+          response.status === 408 ||
+            response.status === 429 ||
+            response.status >= 500,
+        );
+      }
+      await env.MODEL_CACHE!.put(key, response.body, {
+        expirationTtl: CACHE_LAST_GOOD_TTL_SECONDS,
+      });
+      return key;
+    } catch (error) {
+      lastError = error;
+      const retryable =
+        !(error instanceof RawCaptureHttpError) || error.retryable;
+      if (!retryable || attempt === RAW_CAPTURE_MAX_ATTEMPTS) throw error;
+      await wait(RAW_CAPTURE_RETRY_BASE_MS * 2 ** (attempt - 1));
+    }
+  }
+
+  throw lastError;
+}
+
 export async function captureArtificialAnalysisRawSources(
   env: Env,
 ): Promise<RawCaptureManifest> {
@@ -200,7 +260,7 @@ export async function captureArtificialAnalysisRawSources(
     Accept: "application/json",
     "x-api-key": env.ARTIFICIAL_ANALYSIS_API_KEY,
   };
-  const sourceDefinitions = [
+  const sourceDefinitions: RawCaptureSource[] = [
     {
       name: "llm",
       url: env.ARTIFICIAL_ANALYSIS_LLM_URL || DEFAULT_ARTIFICIAL_ANALYSIS_LLM_URL,
@@ -227,23 +287,18 @@ export async function captureArtificialAnalysisRawSources(
     },
   ];
   const sources: Record<string, string> = {};
-  await Promise.all(
-    sourceDefinitions.map(async (source) => {
-      const key = `raw:aa:${captureId}:${source.name}`;
-      try {
-        const response = await fetch(source.url, { headers });
-        if (!response.ok || !response.body) {
-          throw new Error(`${source.name} returned ${response.status}`);
-        }
-        await env.MODEL_CACHE!.put(key, response.body, {
-          expirationTtl: CACHE_LAST_GOOD_TTL_SECONDS,
-        });
-        sources[source.name] = key;
-      } catch (error) {
-        if (source.required) throw error;
-      }
-    }),
-  );
+  for (const source of sourceDefinitions) {
+    try {
+      sources[source.name] = await captureArtificialAnalysisRawSource(
+        env,
+        source,
+        captureId,
+        headers,
+      );
+    } catch (error) {
+      if (source.required) throw error;
+    }
+  }
   const manifest = { capturedAt, sources };
   await env.MODEL_CACHE.put(
     RAW_CAPTURE_MANIFEST_KEY,

@@ -5252,7 +5252,9 @@ function dateValue(value: string | undefined): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function bundledVoiceSourceStatus(generatedAt: string): VoiceSourceStatus {
+export function bundledVoiceSourceStatus(
+  generatedAt: string,
+): VoiceSourceStatus {
   const extracted = dateValue(AA_SPEECH_TO_SPEECH_EXTRACTED_AT);
   const generated = dateValue(generatedAt);
   const ageDays = (generated - extracted) / (24 * 60 * 60 * 1000);

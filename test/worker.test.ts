@@ -1042,6 +1042,48 @@ describe("worker routes", () => {
     }
   });
 
+  it("captures the documented Free speech endpoints by default", async () => {
+    const kv = memoryKv();
+    const realFetch = globalThis.fetch;
+    const requestedUrls: string[] = [];
+    const freeSttUrl =
+      "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free";
+    const freeS2sUrl =
+      "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models/free";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url === freeSttUrl) {
+          return new Response(
+            JSON.stringify({ tier: "free", data: [{ id: "stt-free" }] }),
+          );
+        }
+        if (url === freeS2sUrl) {
+          return new Response(
+            JSON.stringify({ tier: "free", data: [{ id: "s2s-free" }] }),
+          );
+        }
+        return realFetch(input, init);
+      },
+    );
+    const captureEnv = {
+      ...env(),
+      MODEL_CACHE: kv.namespace,
+    };
+    delete captureEnv.ARTIFICIAL_ANALYSIS_STT_URL;
+    delete captureEnv.ARTIFICIAL_ANALYSIS_S2S_URL;
+
+    try {
+      await captureArtificialAnalysisRawSources(captureEnv);
+      expect(requestedUrls).toContain(freeSttUrl);
+      expect(requestedUrls).toContain(freeS2sUrl);
+      expect(kv.values.has("raw:aa:manifest:v1")).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("cancels and retries transient required AA source failures", async () => {
     const kv = memoryKv();
     const retryUrl = "https://aa.test/stt-transient";

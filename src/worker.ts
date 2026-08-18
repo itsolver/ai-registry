@@ -57,8 +57,12 @@ const DEFAULT_ARTIFICIAL_ANALYSIS_FREE_LLM_URL =
   "https://artificialanalysis.ai/api/v2/language/models/free";
 const DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL =
   "https://artificialanalysis.ai/api/v2/media/speech-to-text/models";
+const DEFAULT_ARTIFICIAL_ANALYSIS_FREE_STT_URL =
+  "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free";
 const DEFAULT_ARTIFICIAL_ANALYSIS_S2S_URL =
   "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models";
+const DEFAULT_ARTIFICIAL_ANALYSIS_FREE_S2S_URL =
+  "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models/free";
 const DEFAULT_ARTIFICIAL_ANALYSIS_S2S_PAGE_URL =
   "https://artificialanalysis.ai/speech-to-speech";
 const REQUIRED_MODELS_DEV_PROVIDERS = [
@@ -277,12 +281,16 @@ export async function captureArtificialAnalysisRawSources(
     })),
     {
       name: "stt",
-      url: env.ARTIFICIAL_ANALYSIS_STT_URL || DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL,
+      url:
+        env.ARTIFICIAL_ANALYSIS_STT_URL ||
+        DEFAULT_ARTIFICIAL_ANALYSIS_FREE_STT_URL,
       required: true,
     },
     {
       name: "s2s",
-      url: env.ARTIFICIAL_ANALYSIS_S2S_URL || DEFAULT_ARTIFICIAL_ANALYSIS_S2S_URL,
+      url:
+        env.ARTIFICIAL_ANALYSIS_S2S_URL ||
+        DEFAULT_ARTIFICIAL_ANALYSIS_FREE_S2S_URL,
       required: true,
     },
   ];

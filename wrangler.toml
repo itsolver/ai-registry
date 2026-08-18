@@ -1,4 +1,5 @@
 name = "ai-registry"
+account_id = "e3f231c059742b2edc70f8c0f07fee72"
 main = "src/worker.ts"
 compatibility_date = "2026-05-19"
 workers_dev = false

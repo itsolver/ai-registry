@@ -15,8 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Changed the catalog refresh schedule from daily to hourly.
-- Kept successful catalog entries for seven days as last-good data, while requests refresh data after one hour and mark older served data as stale.
+- Moved complete catalog construction to an hourly GitHub Actions job. The Worker now streams authenticated Artificial Analysis responses into KV before the Action validates and normalizes them.
+- Kept successful catalog entries for seven days as last-good data. Requests do not run source refreshes and mark data older than one hour as stale.
 - Rejected Artificial Analysis refreshes that return less than half of the last-good row coverage.
+
+### Fixed
+
+- Prevented request and scheduled events on the Workers Free plan from running the CPU-heavy complete catalog build.
+- Kept the previous raw-source manifest and normalized catalog when a required source is missing, partial, invalid, or more than two hours old.
 
 ## 2026-07-17
 

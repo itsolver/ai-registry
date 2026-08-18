@@ -165,6 +165,81 @@ describe("catalog refresh speech sources", () => {
     ).toThrow("AA S2S Free rows contain duplicate IDs");
   });
 
+  it("accepts nullable Free benchmark rows when benchmark coverage remains complete", () => {
+    const result = catalogSpeechSources(
+      {
+        tier: "free",
+        data: [
+          ...freeSttRows,
+          {
+            id: "stt-free-null-wer",
+            name: "Free STT without WER",
+            model_creator: { id: "openai", name: "OpenAI" },
+            aa_wer_index: null,
+          },
+        ],
+      },
+      {
+        tier: "free",
+        data: [
+          ...freeS2sRows,
+          {
+            id: "s2s-free-null-scores",
+            name: "Free S2S without scores",
+            slug: "free-s2s-null-scores",
+            model_creator: { id: "openai", name: "OpenAI" },
+            bba_score: null,
+            fdb_score: null,
+            tau_voice_score: null,
+          },
+        ],
+      },
+      "2026-08-18T07:00:00.000Z",
+      voiceFallback,
+    );
+
+    expect(result.speechToTextModels).toEqual([]);
+    expect(result.speechToSpeechModels).toEqual(voiceFallback.models);
+  });
+
+  it("rejects Free sources without enough benchmark-bearing rows", () => {
+    expect(() =>
+      catalogSpeechSources(
+        {
+          tier: "free",
+          data: freeSttRows.map((row, index) => ({
+            ...row,
+            aa_wer_index: index === 0 ? row.aa_wer_index : null,
+          })),
+        },
+        { tier: "free", data: freeS2sRows },
+        "2026-08-18T07:00:00.000Z",
+        voiceFallback,
+      ),
+    ).toThrow("AA STT benchmark Free coverage is partial");
+
+    expect(() =>
+      catalogSpeechSources(
+        { tier: "free", data: freeSttRows },
+        {
+          tier: "free",
+          data: freeS2sRows.map((row, index) =>
+            index === 0
+              ? row
+              : {
+                  ...row,
+                  bba_score: null,
+                  fdb_score: null,
+                  tau_voice_score: null,
+                },
+          ),
+        },
+        "2026-08-18T07:00:00.000Z",
+        voiceFallback,
+      ),
+    ).toThrow("AA S2S benchmark Free coverage is partial");
+  });
+
   it("keeps bundled STT data for unknown or unpriced Pro responses", () => {
     const unpriced = {
       ...artificialAnalysisSpeechToTextFixture,

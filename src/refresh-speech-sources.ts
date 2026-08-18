@@ -49,6 +49,16 @@ function nonNegativeFiniteNumber(value: unknown): boolean {
   return finiteNumber(value) && (value as number) >= 0;
 }
 
+function explicitNullableNonNegativeNumber(
+  row: Record<string, unknown>,
+  key: string,
+): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(row, key) &&
+    (row[key] === null || nonNegativeFiniteNumber(row[key]))
+  );
+}
+
 function validCreator(value: unknown): boolean {
   const creator = objectValue(value);
   return Boolean(
@@ -87,7 +97,7 @@ function validFreeSpeechToTextRow(value: unknown): boolean {
       nonEmptyString(row.id) &&
       nonEmptyString(row.name) &&
       validCreator(row.model_creator) &&
-      nonNegativeFiniteNumber(row.aa_wer_index),
+      explicitNullableNonNegativeNumber(row, "aa_wer_index"),
   );
 }
 
@@ -99,7 +109,9 @@ function validFreeSpeechToSpeechRow(value: unknown): boolean {
       nonEmptyString(row.name) &&
       nonEmptyString(row.slug) &&
       validCreator(row.model_creator) &&
-      [row.bba_score, row.fdb_score, row.tau_voice_score].some(finiteNumber),
+      ["bba_score", "fdb_score", "tau_voice_score"].every((key) =>
+        explicitNullableNonNegativeNumber(row, key),
+      ),
   );
 }
 
@@ -158,6 +170,13 @@ export function catalogSpeechSources(
       AA_SPEECH_TO_TEXT_MODELS.length,
       "AA STT",
     );
+    assertFreeCoverage(
+      speechToTextRows.filter((row) =>
+        nonNegativeFiniteNumber(row.aa_wer_index),
+      ),
+      AA_SPEECH_TO_TEXT_MODELS.length,
+      "AA STT benchmark",
+    );
   }
   if (freeSpeechToSpeech) {
     if (!speechToSpeechRows.every(validFreeSpeechToSpeechRow)) {
@@ -167,6 +186,19 @@ export function catalogSpeechSources(
       speechToSpeechRows,
       AA_SPEECH_TO_SPEECH_MODELS.length,
       "AA S2S",
+    );
+    assertFreeCoverage(
+      speechToSpeechRows.filter((value) => {
+        const row = objectValue(value);
+        return Boolean(
+          row &&
+            [row.bba_score, row.fdb_score, row.tau_voice_score].some(
+              nonNegativeFiniteNumber,
+            ),
+        );
+      }),
+      AA_SPEECH_TO_SPEECH_MODELS.length,
+      "AA S2S benchmark",
     );
   }
   const speechToSpeechModels = freeSpeechToSpeech

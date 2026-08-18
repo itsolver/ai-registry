@@ -1516,6 +1516,33 @@ describe("worker routes", () => {
     }
   });
 
+  it("treats the daily catalog as fresh for 24 hours", async () => {
+    const cached = supportCatalog([supportCandidate("cached", 0, 0.9, 10, 2)]);
+    cached.generatedAt = "2026-08-18T20:10:00.000Z";
+
+    await withSystemTime("2026-08-19T20:09:59.999Z", async () => {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        envWithCachedCatalog(cached),
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ catalogState: "fresh" });
+    });
+
+    await withSystemTime("2026-08-19T20:10:00.001Z", async () => {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        envWithCachedCatalog(cached),
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ catalogState: "stale" });
+    });
+  });
+
   it("fails a production cache miss without running request source work", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")

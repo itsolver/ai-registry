@@ -1427,7 +1427,22 @@ describe("Artificial Analysis catalog", () => {
       registryModelId: "gpt-5.6-sol",
       family: "gpt-sol",
       recommendable: true,
+      benchmarks: {
+        llm: {
+          autoClose: expect.objectContaining({
+            modelKey: "codex:gpt-5.6-sol-high",
+            total: 81,
+            falsePositiveCount: 4,
+            benchmarkReport: "GPT_5_6_AUTOSOLVE_REPORT.md",
+          }),
+        },
+      },
     });
+    expect(
+      benchmarkCandidates(catalog, { useCase: "customer-support" }).map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(expect.arrayContaining(["gpt-5-6-sol-high"]));
     expect(
       benchmarkCandidates(catalog, { useCase: "customer-support" }).map(
         (candidate) => candidate.id,
@@ -2016,6 +2031,23 @@ describe("Artificial Analysis catalog", () => {
       falsePositiveCount: 0,
       falseNegativeCount: 16,
       invalidCount: 0,
+    });
+    expect(
+      AI_AUTOCLOSE_BENCHMARKS.filter((row) =>
+        row.apiModel.startsWith("gpt-5.6-"),
+      ),
+    ).toHaveLength(15);
+    expect(byId.get("gpt-5-6-terra-medium")).toMatchObject({
+      modelKey: "codex:gpt-5.6-terra-medium",
+      total: 81,
+      correctCount: 68,
+      falsePositiveCount: 3,
+      falseNegativeCount: 10,
+      benchmarkReport: "GPT_5_6_AUTOSOLVE_REPORT.md",
+      availability: expect.objectContaining({
+        status: "production",
+        acceptedRisk: false,
+      }),
     });
     expect(byId.get("gemini-3-flash-reasoning")).toMatchObject({
       modelKey: "gemini:gemini-3-flash-preview",

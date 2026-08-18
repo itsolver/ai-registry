@@ -209,17 +209,17 @@ input/output pricing on at least half their rows. Cached voice fallback age is
 re-evaluated at request time. `refresh:aa-voice` only maintains the bundled
 emergency snapshot.
 
-The Worker captures authenticated Artificial Analysis responses into KV at the
-start of each hour. It streams each response without normalizing it so that the
-capture stays within the Workers Free CPU limit. A GitHub Actions job starts at
-minute 10, reads one complete capture, fetches models.dev and the AUD exchange
-rate, validates all source coverage, and writes the normalized catalog. The
-manifest pointer changes only after all required raw sources are stored. The
-Action rejects captures older than two hours and never replaces the last-good
-catalog with partial source data.
+The Worker captures authenticated Artificial Analysis responses into KV each
+day at 06:00 Australia/Brisbane. It streams each response without normalizing it
+so that the capture stays within the Workers Free CPU limit. A GitHub Actions
+job starts at 06:10 Australia/Brisbane, reads one complete capture, fetches
+models.dev and the AUD exchange rate, validates all source coverage, and writes
+the normalized catalog. The manifest pointer changes only after all required
+raw sources are stored. The Action rejects captures older than two hours and
+never replaces the last-good catalog with partial source data.
 
 Requests do not rebuild the catalog. They reuse the complete catalog for up to
-seven days and mark it `catalogState: "stale"` after one hour. The
+seven days and mark it `catalogState: "stale"` after 24 hours. The
 `latest-cost-quality` policy requires Artificial Analysis evidence no older
 than 24 hours, so stale data cannot promote a new model. If the scheduled
 capture or Action fails, the prior catalog stays available until its seven-day
@@ -255,7 +255,7 @@ Deploy:
 npm run deploy
 ```
 
-GitHub Actions deploys the Worker on pushes to `main`. A separate hourly Action
+GitHub Actions deploys the Worker on pushes to `main`. A separate daily Action
 builds the complete production catalog from the raw KV capture. Configure these
 repository secrets for both workflows:
 
@@ -272,7 +272,7 @@ Optional benchmark-aware recommendations use Artificial Analysis. Configure:
 wrangler secret put ARTIFICIAL_ANALYSIS_API_KEY
 ```
 
-The key enables the hourly raw capture for the language, speech-to-text, and
+The key enables the daily raw capture for the language, speech-to-text, and
 speech-to-speech APIs. `ARTIFICIAL_ANALYSIS_LLM_URL`,
 `ARTIFICIAL_ANALYSIS_FREE_LLM_URL`, `ARTIFICIAL_ANALYSIS_STT_URL`, and
 `ARTIFICIAL_ANALYSIS_S2S_URL` may override source URLs for controlled

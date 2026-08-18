@@ -120,7 +120,7 @@ time, then `fallback_stale`. Stale voice rows remain browseable, carry
 `stale_voice_benchmark`, and cannot be recommended. `sourceStatus.voice` exposes
 the state, origin, fetch time, and row count in catalog response metadata and
 `/v1/health`. The age boundary is re-evaluated whenever a cached catalog is read,
-so the hourly catalog refresh cannot extend recommendation eligibility.
+so the daily catalog refresh cannot extend recommendation eligibility.
 
 Best-tier benchmark-backed voice ranking starts with Artificial Analysis's
 source-provided Speech-to-Speech Index; absent quality values sort last. The
@@ -202,9 +202,10 @@ the complete live catalog across Worker deployments and prevents older response
 shapes from being served. A models.dev failure or per-provider coverage drop
 below the persisted 50% high-water threshold always prevents a cache write.
 The provider high-water counts live in the separate non-expiring
-`models-dev:provider-high-water:v1` key. The Worker refreshes each hour, treats
-catalog data as fresh for one hour, and keeps a complete last-good catalog for
-seven days.
+`models-dev:provider-high-water:v1` key. The Worker captures source data daily at
+06:00 Australia/Brisbane, the GitHub Action rebuilds the catalog at 06:10, and
+catalog data stays fresh for 24 hours. A complete last-good catalog remains
+available for seven days.
 When an Artificial Analysis key is configured, failure of any current-free page
 or an LLM row-count drop below half of the last-good catalog also prevents a
 cache write; legacy LLM and speech-to-text failures may use

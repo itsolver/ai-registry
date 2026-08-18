@@ -39,7 +39,7 @@ const CACHE_KEY = "catalog:v31";
 const VOICE_CACHE_KEY = "aa:s2s:last-known-good:v1";
 const MODELS_DEV_COVERAGE_KEY = "models-dev:provider-high-water:v1";
 const RAW_CAPTURE_MANIFEST_KEY = "raw:aa:manifest:v1";
-const CACHE_FRESHNESS_MS = 60 * 60 * 1000;
+const CACHE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 const CACHE_LAST_GOOD_TTL_SECONDS = 7 * 24 * 60 * 60;
 const RAW_CAPTURE_MAX_ATTEMPTS = 3;
 const RAW_CAPTURE_RETRY_BASE_MS = 250;
@@ -572,7 +572,7 @@ async function getCatalog(
   const cached = await readCachedCatalog(env);
   // Request events have a much lower CPU allowance than scheduled events.
   // Serve the valid seven-day last-good catalog even when it is marked stale;
-  // the hourly scheduled handler is the only automatic refresh path.
+  // the daily scheduled handler is the only automatic refresh path.
   if (cached) return cached;
   if (env.MODEL_CACHE) {
     throw new Error("No valid cached catalog is available");

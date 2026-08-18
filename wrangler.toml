@@ -9,7 +9,8 @@ routes = [
 ]
 
 [triggers]
-crons = ["0 * * * *"]
+# 06:00 Australia/Brisbane (UTC+10).
+crons = ["0 20 * * *"]
 
 [vars]
 FX_RATE_URL = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD"

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added the completed GPT-5.6 Luna, Terra, and Sol Codex auto-close benchmark evidence for all supported reasoning efforts, with the failed zero-false-positive gate stated on every row.
 - Added the opt-in `selectionPolicy=latest-cost-quality` customer-support policy. It selects a newer stable Artificial Analysis configuration only when task cost does not increase, Intelligence does not decrease, required capabilities are present, and comparable IT Solver evidence does not show a safety regression.
 - Added complete recommendation audit metadata for the incumbent, selected configuration, release date, Artificial Analysis cost per task, Intelligence, and evidence time.
 - Added `front-end-web-dev` benchmark browsing and recommendations from Arena Frontend Code, with Claude Opus 5 Max as the current preference leader.
@@ -17,9 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Changed the catalog refresh schedule from daily to hourly.
-- Moved complete catalog construction to an hourly GitHub Actions job. The Worker now streams authenticated Artificial Analysis responses into KV before the Action validates and normalizes them.
-- Kept successful catalog entries for seven days as last-good data. Requests do not run source refreshes and mark data older than one hour as stale.
+- Set the catalog refresh schedule to daily: the Worker captures sources at 06:00 Australia/Brisbane and GitHub Actions rebuilds the catalog at 06:10.
+- Moved complete catalog construction to a daily GitHub Actions job. The Worker now streams authenticated Artificial Analysis responses into KV before the Action validates and normalizes them.
+- Kept successful catalog entries for seven days as last-good data. Requests do not run source refreshes and mark data older than 24 hours as stale.
 - Rejected Artificial Analysis refreshes that return less than half of the last-good row coverage.
 - Refreshed `/webdev` with the August 15 Arena snapshot and the August 13 Vibe Code Bench functional cross-check; unavailable and stale boards are excluded rather than blended.
 - Added a 30-day fail-closed freshness gate so the Arena extract cannot keep driving recommendations after it becomes stale.
@@ -35,8 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Prevented request and scheduled events on the Workers Free plan from running the CPU-heavy complete catalog build.
-- Processed the hourly Artificial Analysis source capture sequentially and retried transient source failures. This keeps the capture within Worker connection limits and does not publish a manifest unless all required sources succeed.
-- Used the Artificial Analysis Free speech endpoints for hourly capture. Free speech rows validate source completeness but keep the priced bundled speech snapshot until a configured Pro response is available.
+- Processed the daily Artificial Analysis source capture sequentially and retried transient source failures. This keeps the capture within Worker connection limits and does not publish a manifest unless all required sources succeed.
+- Used the Artificial Analysis Free speech endpoints for daily capture. Free speech rows validate source completeness but keep the priced bundled speech snapshot until a configured Pro response is available.
 - Kept the previous raw-source manifest and normalized catalog when a required source is missing, partial, invalid, or more than two hours old.
 - Reconciled the repository cache key with the live `catalog:v31` production key so a Worker deployment keeps the existing last-good catalog.
 

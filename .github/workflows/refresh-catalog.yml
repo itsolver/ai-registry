@@ -2,7 +2,8 @@ name: Refresh Production Catalog
 
 on:
   schedule:
-    - cron: "10 * * * *"
+    # 06:10 Australia/Brisbane (UTC+10), after the 06:00 Worker capture.
+    - cron: "10 20 * * *"
   workflow_dispatch:
 
 permissions:

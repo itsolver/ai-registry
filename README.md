@@ -9,7 +9,7 @@ Production URL:
 https://ai.itsolver.au
 ```
 
-The Worker rebuilds a canonical base-model registry from
+The registry rebuilds a canonical base-model registry from
 [models.dev](https://models.dev/api.json), then enriches it with Artificial
 Analysis data for OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq.
 Each catalog refresh reads both the legacy Artificial Analysis LLM endpoint for
@@ -192,11 +192,21 @@ input/output pricing on at least half their rows. Cached voice fallback age is
 re-evaluated at request time. `refresh:aa-voice` only maintains the bundled
 emergency snapshot.
 
-The Worker refreshes the complete live catalog each hour. It treats catalog
-data as ready for request reuse for one hour. If a refresh fails, it can serve
-the last complete catalog for up to seven days and marks the response
-`catalogState: "stale"`. The `latest-cost-quality` policy requires evidence no
-older than 24 hours, so stale data cannot promote a new model.
+The Worker captures authenticated Artificial Analysis responses into KV at the
+start of each hour. It streams each response without normalizing it so that the
+capture stays within the Workers Free CPU limit. A GitHub Actions job starts at
+minute 10, reads one complete capture, fetches models.dev and the AUD exchange
+rate, validates all source coverage, and writes the normalized catalog. The
+manifest pointer changes only after all required raw sources are stored. The
+Action rejects captures older than two hours and never replaces the last-good
+catalog with partial source data.
+
+Requests do not rebuild the catalog. They reuse the complete catalog for up to
+seven days and mark it `catalogState: "stale"` after one hour. The
+`latest-cost-quality` policy requires Artificial Analysis evidence no older
+than 24 hours, so stale data cannot promote a new model. If the scheduled
+capture or Action fails, the prior catalog stays available until its seven-day
+limit.
 
 Do not run a new Anthropic customer-support auto-close benchmark from this repo
 without a manual approval checkpoint. A benchmark proposal may list candidate
@@ -228,7 +238,9 @@ Deploy:
 npm run deploy
 ```
 
-GitHub Actions deploys the Worker on pushes to `main`. Configure repository secrets:
+GitHub Actions deploys the Worker on pushes to `main`. A separate hourly Action
+builds the complete production catalog from the raw KV capture. Configure these
+repository secrets for both workflows:
 
 ```text
 CLOUDFLARE_API_TOKEN
@@ -243,7 +255,10 @@ Optional benchmark-aware recommendations use Artificial Analysis. Configure:
 wrangler secret put ARTIFICIAL_ANALYSIS_API_KEY
 ```
 
-The key enables the preferred speech-to-speech API path; the public page remains
-the automatic live fallback. `ARTIFICIAL_ANALYSIS_S2S_URL` and
-`ARTIFICIAL_ANALYSIS_S2S_PAGE_URL` may override those source URLs for controlled
-environments and tests.
+The key enables the hourly raw capture for the language, speech-to-text, and
+speech-to-speech APIs. `ARTIFICIAL_ANALYSIS_LLM_URL`,
+`ARTIFICIAL_ANALYSIS_FREE_LLM_URL`, `ARTIFICIAL_ANALYSIS_STT_URL`, and
+`ARTIFICIAL_ANALYSIS_S2S_URL` may override source URLs for controlled
+environments and tests. The public speech-to-speech page remains available to
+manual catalog rebuilds as a fallback, but it is not part of the low-CPU raw
+capture.

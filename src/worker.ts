@@ -38,6 +38,7 @@ import {
 const CACHE_KEY = "catalog:v29";
 const VOICE_CACHE_KEY = "aa:s2s:last-known-good:v1";
 const MODELS_DEV_COVERAGE_KEY = "models-dev:provider-high-water:v1";
+const RAW_CAPTURE_MANIFEST_KEY = "raw:aa:manifest:v1";
 const CACHE_FRESHNESS_MS = 60 * 60 * 1000;
 const CACHE_LAST_GOOD_TTL_SECONDS = 7 * 24 * 60 * 60;
 const ARTIFICIAL_ANALYSIS_MIN_COVERAGE_RATIO = 0.5;
@@ -93,7 +94,7 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
-    ctx.waitUntil(refreshCatalog(env));
+    ctx.waitUntil(captureArtificialAnalysisRawSources(env));
   },
 };
 
@@ -160,10 +161,96 @@ export async function refreshCatalog(env: Env): Promise<Catalog> {
     readProviderCoverageHighWater(env),
   ]);
   const fetched = await fetchCatalog(env);
-  assertProviderCoverage(fetched, cached, highWater);
-  const nextHighWater = providerCoverageHighWater(fetched, cached, highWater);
+  return persistFetchedCatalog(env, fetched, cached, highWater);
+}
+
+export async function persistFetchedCatalog(
+  env: Env,
+  fetched: Catalog,
+  cached?: Catalog,
+  highWater?: ProviderCoverageHighWater,
+): Promise<Catalog> {
+  const currentCached = cached ?? (await readCachedCatalog(env));
+  const currentHighWater =
+    highWater ?? (await readProviderCoverageHighWater(env));
+  assertProviderCoverage(fetched, currentCached, currentHighWater);
+  const nextHighWater = providerCoverageHighWater(
+    fetched,
+    currentCached,
+    currentHighWater,
+  );
   await writeCatalogState(env, fetched, nextHighWater);
   return fetched;
+}
+
+interface RawCaptureManifest {
+  capturedAt: string;
+  sources: Record<string, string>;
+}
+
+export async function captureArtificialAnalysisRawSources(
+  env: Env,
+): Promise<RawCaptureManifest> {
+  if (!env.MODEL_CACHE || !env.ARTIFICIAL_ANALYSIS_API_KEY) {
+    throw new Error("Artificial Analysis raw capture is not configured");
+  }
+  const capturedAt = new Date().toISOString();
+  const captureId = String(Date.now());
+  const headers = {
+    Accept: "application/json",
+    "x-api-key": env.ARTIFICIAL_ANALYSIS_API_KEY,
+  };
+  const sourceDefinitions = [
+    {
+      name: "llm",
+      url: env.ARTIFICIAL_ANALYSIS_LLM_URL || DEFAULT_ARTIFICIAL_ANALYSIS_LLM_URL,
+      required: false,
+    },
+    ...[1, 2, 3, 4].map((page) => ({
+      name: `free-${page}`,
+      url: paginatedUrl(
+        env.ARTIFICIAL_ANALYSIS_FREE_LLM_URL ||
+          DEFAULT_ARTIFICIAL_ANALYSIS_FREE_LLM_URL,
+        page,
+      ),
+      required: page === 1,
+    })),
+    {
+      name: "stt",
+      url: env.ARTIFICIAL_ANALYSIS_STT_URL || DEFAULT_ARTIFICIAL_ANALYSIS_STT_URL,
+      required: true,
+    },
+    {
+      name: "s2s",
+      url: env.ARTIFICIAL_ANALYSIS_S2S_URL || DEFAULT_ARTIFICIAL_ANALYSIS_S2S_URL,
+      required: true,
+    },
+  ];
+  const sources: Record<string, string> = {};
+  await Promise.all(
+    sourceDefinitions.map(async (source) => {
+      const key = `raw:aa:${captureId}:${source.name}`;
+      try {
+        const response = await fetch(source.url, { headers });
+        if (!response.ok || !response.body) {
+          throw new Error(`${source.name} returned ${response.status}`);
+        }
+        await env.MODEL_CACHE!.put(key, response.body, {
+          expirationTtl: CACHE_LAST_GOOD_TTL_SECONDS,
+        });
+        sources[source.name] = key;
+      } catch (error) {
+        if (source.required) throw error;
+      }
+    }),
+  );
+  const manifest = { capturedAt, sources };
+  await env.MODEL_CACHE.put(
+    RAW_CAPTURE_MANIFEST_KEY,
+    JSON.stringify(manifest),
+    { expirationTtl: CACHE_LAST_GOOD_TTL_SECONDS },
+  );
+  return manifest;
 }
 
 function withoutNestedFailover(model: RecommendedModel): RecommendedModel {
@@ -657,7 +744,7 @@ async function fetchCatalog(env: Env): Promise<Catalog> {
   );
 }
 
-async function fetchModelsDev(env: Env): Promise<ModelsDevDocument> {
+export async function fetchModelsDev(env: Env): Promise<ModelsDevDocument> {
   const response = await fetch(env.MODELS_DEV_URL || DEFAULT_MODELS_DEV_URL, {
     headers: { Accept: "application/json" },
   });
@@ -879,6 +966,43 @@ interface LastKnownGoodVoiceSource {
   origin?: LiveVoiceOrigin;
   highWaterRowCounts: VoiceCoverageHighWater;
   models: ArtificialAnalysisSpeechToSpeechModel[];
+}
+
+export async function persistArtificialAnalysisVoiceCapture(
+  env: Env,
+  models: ArtificialAnalysisSpeechToSpeechModel[],
+  fetchedAt: string,
+): Promise<void> {
+  const [cachedVoice, cachedCatalog] = await Promise.all([
+    readLastKnownGoodVoiceSource(env),
+    readCachedCatalog(env),
+  ]);
+  const highWaterRowCounts = cachedVoice?.highWaterRowCounts ?? {};
+  const catalogVoice = cachedCatalog?.sourceStatus?.voice;
+  const catalogApiHighWater =
+    catalogVoice?.origin === "aa_api" ? catalogVoice.rowCount : undefined;
+  const apiHighWater = Math.max(
+    highWaterRowCounts.aa_api ?? 0,
+    catalogApiHighWater ?? 0,
+  );
+  if (
+    !validLiveVoiceModels(
+      models,
+      minimumVoiceRowCount(
+        apiHighWater > 0 ? apiHighWater : undefined,
+        VOICE_INITIAL_API_MIN_ROW_COUNT,
+      ),
+    )
+  ) {
+    throw new Error("Artificial Analysis voice capture is partial or invalid");
+  }
+  await persistLiveVoiceSource(
+    env,
+    models,
+    fetchedAt,
+    "aa_api",
+    highWaterRowCounts,
+  );
 }
 
 async function fetchArtificialAnalysisSpeechToSpeechModels(
@@ -1181,7 +1305,9 @@ function fallbackVoiceStatus(
   };
 }
 
-async function fetchUsdAudRate(env: Env): Promise<ExchangeRate | undefined> {
+export async function fetchUsdAudRate(
+  env: Env,
+): Promise<ExchangeRate | undefined> {
   const response = await fetch(env.FX_RATE_URL || DEFAULT_FX_RATE_URL, {
     headers: { Accept: "application/json" },
   });

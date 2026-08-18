@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import worker, {
+  captureArtificialAnalysisRawSources,
   handleRequest,
+  persistArtificialAnalysisVoiceCapture,
   refreshCatalog,
   type Env,
 } from "../src/worker";
@@ -98,11 +100,21 @@ function memoryKv(initial: Record<string, string> = {}) {
     get: async (key: string) => values.get(key) ?? null,
     put: async (
       key: string,
-      value: string,
+      value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
       options?: KVNamespacePutOptions,
     ) => {
-      values.set(key, value);
-      puts.push({ key, value, options });
+      let textValue: string;
+      if (typeof value === "string") {
+        textValue = value;
+      } else if (value instanceof ReadableStream) {
+        textValue = await new Response(value).text();
+      } else if (ArrayBuffer.isView(value)) {
+        textValue = new TextDecoder().decode(value);
+      } else {
+        textValue = new TextDecoder().decode(value);
+      }
+      values.set(key, textValue);
+      puts.push({ key, value: textValue, options });
     },
   } as unknown as KVNamespace;
 
@@ -943,7 +955,7 @@ describe("worker routes", () => {
     }
   });
 
-  it("runs the automatic voice refresh from the scheduled handler", async () => {
+  it("captures complete raw AA sources from the scheduled handler", async () => {
     const kv = memoryKv();
     const pending: Promise<unknown>[] = [];
     const scheduledCtx = {
@@ -952,33 +964,129 @@ describe("worker routes", () => {
       },
     } as unknown as ExecutionContext;
 
+    const freeFixture = {
+      ...artificialAnalysisFreeFixture,
+      pagination: {
+        page: 1,
+        per_page: 100,
+        total_pages: 1,
+        total_count: artificialAnalysisFreeFixture.data.length,
+        has_more: false,
+      },
+    };
+    const captureEnv = {
+      ...env(),
+      MODEL_CACHE: kv.namespace,
+      ARTIFICIAL_ANALYSIS_FREE_LLM_URL:
+        "data:application/json," +
+        encodeURIComponent(JSON.stringify(freeFixture)),
+    };
+
     await withSystemTime("2026-07-17T06:00:00Z", async () => {
       await worker.scheduled(
         {} as ScheduledController,
-        { ...env(), MODEL_CACHE: kv.namespace },
+        captureEnv,
         scheduledCtx,
       );
       await Promise.all(pending);
     });
 
-    const catalogWrite = kv.puts.find(({ key }) => key.startsWith("catalog:"));
-    const sourceWrite = kv.puts.find(({ key }) => key === voiceCacheKey);
-    const catalog = JSON.parse(catalogWrite?.value ?? "null");
+    const manifestWrite = kv.puts.find(
+      ({ key }) => key === "raw:aa:manifest:v1",
+    );
+    const manifest = JSON.parse(manifestWrite?.value ?? "null");
 
     expect(pending).toHaveLength(1);
-    expect(sourceWrite).toBeDefined();
-    expect(catalogWrite).toBeDefined();
-    expect(catalogWrite?.options).toMatchObject({ expirationTtl: 604800 });
-    expect(catalog).toMatchObject({
-      generatedAt: "2026-07-17T06:00:00.000Z",
-      sourceStatus: {
-        voice: {
-          state: "live",
-          origin: "aa_api",
-          fetchedAt: "2026-07-17T06:00:00.000Z",
-          rowCount: 8,
-        },
+    expect(manifestWrite?.options).toMatchObject({ expirationTtl: 604800 });
+    expect(manifest).toMatchObject({
+      capturedAt: "2026-07-17T06:00:00.000Z",
+      sources: {
+        llm: expect.stringMatching(/^raw:aa:\d+:llm$/),
+        "free-1": expect.stringMatching(/^raw:aa:\d+:free-1$/),
+        stt: expect.stringMatching(/^raw:aa:\d+:stt$/),
+        s2s: expect.stringMatching(/^raw:aa:\d+:s2s$/),
       },
+    });
+    expect(kv.puts.some(({ key }) => key.startsWith("catalog:"))).toBe(false);
+    expect(kv.values.get(manifest.sources["free-1"])).toContain('"data"');
+  });
+
+  it("does not replace the raw manifest when a required AA source fails", async () => {
+    const originalManifest = JSON.stringify({
+      capturedAt: "2026-07-17T05:00:00.000Z",
+      sources: { "free-1": "old-free", stt: "old-stt", s2s: "old-s2s" },
+    });
+    const kv = memoryKv({ "raw:aa:manifest:v1": originalManifest });
+    const failedUrl = "https://aa.test/stt-failure";
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === failedUrl) {
+          return new Response("unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+
+    try {
+      await expect(
+        captureArtificialAnalysisRawSources({
+          ...env(),
+          MODEL_CACHE: kv.namespace,
+          ARTIFICIAL_ANALYSIS_STT_URL: failedUrl,
+        }),
+      ).rejects.toThrow("stt returned 503");
+      expect(kv.values.get("raw:aa:manifest:v1")).toBe(originalManifest);
+      expect(
+        kv.puts.filter(({ key }) => key === "raw:aa:manifest:v1"),
+      ).toHaveLength(0);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("requires the AA API key before raw capture", async () => {
+    const kv = memoryKv();
+    await expect(
+      captureArtificialAnalysisRawSources({ MODEL_CACHE: kv.namespace }),
+    ).rejects.toThrow("raw capture is not configured");
+    expect(kv.puts).toHaveLength(0);
+  });
+
+  it("rejects a partial voice capture against the last-good high-water mark", async () => {
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt: "2026-07-17T05:00:00.000Z",
+        origin: "aa_api",
+        highWaterRowCounts: { aa_api: 20 },
+        models: completeVoiceSnapshot,
+      }),
+    });
+
+    await expect(
+      persistArtificialAnalysisVoiceCapture(
+        { MODEL_CACHE: kv.namespace },
+        completeVoiceSnapshot.slice(0, 8),
+        "2026-07-17T06:00:00.000Z",
+      ),
+    ).rejects.toThrow("voice capture is partial or invalid");
+    expect(
+      kv.puts.filter(({ key }) => key === voiceCacheKey),
+    ).toHaveLength(0);
+  });
+
+  it("persists a complete voice capture for catalog construction", async () => {
+    const kv = memoryKv();
+    await persistArtificialAnalysisVoiceCapture(
+      { MODEL_CACHE: kv.namespace },
+      completeVoiceSnapshot,
+      "2026-07-17T06:00:00.000Z",
+    );
+
+    expect(JSON.parse(kv.values.get(voiceCacheKey) ?? "null")).toMatchObject({
+      fetchedAt: "2026-07-17T06:00:00.000Z",
+      origin: "aa_api",
+      highWaterRowCounts: { aa_api: completeVoiceSnapshot.length },
     });
   });
 

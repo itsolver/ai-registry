@@ -4972,10 +4972,7 @@ function candidateVoiceCost(candidate: BenchmarkCandidate): number | undefined {
 function candidateAudioOutputCost(
   candidate: BenchmarkCandidate,
 ): number | undefined {
-  return (
-    candidate.pricing.audioOutputPerHour ??
-    candidateAudioInputCost(candidate)
-  );
+  return candidate.pricing.audioOutputPerHour;
 }
 
 function candidateAudioInputCost(
@@ -4990,9 +4987,12 @@ function audioInputPrice(pricing: ModelPricing): number | undefined {
 
 function hasPositiveCandidateAudioPrice(pricing: ModelPricing): boolean {
   const input = audioInputPrice(pricing);
-  const output = pricing.audioOutputPerHour ?? input;
+  const output = pricing.audioOutputPerHour;
   return (
-    (input !== undefined && input > 0) || (output !== undefined && output > 0)
+    input !== undefined &&
+    input > 0 &&
+    output !== undefined &&
+    output > 0
   );
 }
 

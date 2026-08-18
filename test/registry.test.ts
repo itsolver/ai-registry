@@ -2425,6 +2425,39 @@ describe("Artificial Analysis catalog", () => {
     ).toBe("cheapest");
   });
 
+  it("does not recommend a voice row without an explicit output price", () => {
+    const incomplete: BenchmarkCandidate = {
+      id: "missing-output-price",
+      provider: "xai",
+      name: "Missing output price",
+      source: "artificialanalysis",
+      benchmarks: {
+        voice: {
+          source: "artificialanalysis",
+          extractedAt: "2026-08-18T00:00:00Z",
+          qualityIndex: 90,
+        },
+      },
+      pricing: { benchmarkInputAudioPerHour: 1 },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    };
+
+    expect(
+      isBenchmarkCandidateRecommendedForFilters(incomplete, {
+        useCase: "voice",
+      }),
+    ).toBe(false);
+  });
+
   it("orders best voice candidates by quality index with missing values last", () => {
     const candidate = (
       id: string,

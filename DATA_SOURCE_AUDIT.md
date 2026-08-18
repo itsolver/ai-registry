@@ -69,7 +69,7 @@ time, then `fallback_stale`. Stale voice rows remain browseable, carry
 `stale_voice_benchmark`, and cannot be recommended. `sourceStatus.voice` exposes
 the state, origin, fetch time, and row count in catalog response metadata and
 `/v1/health`. The age boundary is re-evaluated whenever a cached catalog is read,
-so the eight-hour catalog TTL cannot extend recommendation eligibility.
+so the hourly catalog refresh cannot extend recommendation eligibility.
 
 Best-tier benchmark-backed voice ranking starts with Artificial Analysis's
 source-provided Speech-to-Speech Index; absent quality values sort last. The

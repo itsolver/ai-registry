@@ -1318,7 +1318,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 }</code></pre></div>
 
   <h2>Freshness</h2>
-  <p>The Worker refreshes Artificial Analysis data every morning at 06:00 UTC and caches the normalized result at the edge.</p>
+  <p>The Worker refreshes models.dev and Artificial Analysis data every hour and keeps a seven-day last-good catalog at the edge.</p>
 
   <h2>Cost</h2>
   <p><span class="pill">$0.00-ish</span> - runs on Cloudflare Workers. Pricing data still belongs to the providers, so production cost decisions should verify current provider pricing directly.</p>

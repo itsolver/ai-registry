@@ -931,7 +931,7 @@ describe("worker routes", () => {
     await refreshCatalog(fullEnv);
     const cached = JSON.parse(kv.values.get(catalogCacheKey) ?? "null");
     cached.providers.push({
-      provider: "moonshotai",
+      provider: "retired-ai",
       total: 10,
       active: 10,
     });
@@ -940,7 +940,7 @@ describe("worker routes", () => {
     const refreshed = await refreshCatalog(fullEnv);
 
     expect(refreshed.providers).not.toContainEqual(
-      expect.objectContaining({ provider: "moonshotai" }),
+      expect.objectContaining({ provider: "retired-ai" }),
     );
     expect(kv.values.has(catalogCacheKey)).toBe(true);
   });

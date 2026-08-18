@@ -198,4 +198,49 @@ describe("catalog refresh speech sources", () => {
     );
     expect(result.speechToTextModels).toEqual([]);
   });
+
+  it("rejects negative WER evidence", () => {
+    expect(() =>
+      catalogSpeechSources(
+        {
+          tier: "free",
+          data: freeSttRows.map((row, index) =>
+            index === 0 ? { ...row, aa_wer_index: -1 } : row,
+          ),
+        },
+        { tier: "free", data: freeS2sRows },
+        "2026-08-18T06:00:00.000Z",
+        voiceFallback,
+      ),
+    ).toThrow("AA STT Free rows are invalid");
+
+    const result = catalogSpeechSources(
+      {
+        tier: "pro",
+        data: [
+          {
+            id: "stt-negative-wer",
+            name: "Negative WER",
+            aa_wer_index: -1,
+            model_creator: { name: "OpenAI", slug: "openai" },
+            providers: [
+              {
+                id: "provider-openai",
+                name: "OpenAI",
+                slug: "openai",
+                price_per_1k_minutes: 3,
+              },
+            ],
+          },
+        ],
+      },
+      artificialAnalysisSpeechToSpeechApiFixture as unknown as Record<
+        string,
+        unknown
+      >,
+      "2026-08-18T06:00:00.000Z",
+      voiceFallback,
+    );
+    expect(result.speechToTextModels).toEqual([]);
+  });
 });

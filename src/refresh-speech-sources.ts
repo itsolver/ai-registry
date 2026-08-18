@@ -45,6 +45,10 @@ function finiteNumber(value: unknown): boolean {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function nonNegativeFiniteNumber(value: unknown): boolean {
+  return finiteNumber(value) && (value as number) >= 0;
+}
+
 function validCreator(value: unknown): boolean {
   const creator = objectValue(value);
   return Boolean(
@@ -73,7 +77,7 @@ function validFreeSpeechToTextRow(value: unknown): boolean {
       nonEmptyString(row.id) &&
       nonEmptyString(row.name) &&
       validCreator(row.model_creator) &&
-      finiteNumber(row.aa_wer_index),
+      nonNegativeFiniteNumber(row.aa_wer_index),
   );
 }
 
@@ -103,8 +107,8 @@ function hasCompleteSpeechToTextProviders(
         return (
           finiteNumber(price) &&
           (price as number) > 0 &&
-          (finiteNumber(providerRow?.aa_wer_index) ||
-            finiteNumber(row.aa_wer_index))
+          (nonNegativeFiniteNumber(providerRow?.aa_wer_index) ||
+            nonNegativeFiniteNumber(row.aa_wer_index))
         );
       })
     );

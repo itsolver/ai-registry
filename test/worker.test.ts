@@ -2336,7 +2336,7 @@ describe("worker routes", () => {
     newer.modalities = { ...incumbent.modalities };
     delete newer.benchmarks.llm?.autoClose;
     const snapshot = supportCatalog([incumbent, newer]);
-    snapshot.generatedAt = "2026-08-18T00:00:00Z";
+    snapshot.generatedAt = "2026-08-18T11:30:00Z";
 
     await withSystemTime("2026-08-18T12:00:00Z", async () => {
       const strictResponse = await handleRequest(
@@ -2379,7 +2379,7 @@ describe("worker routes", () => {
         releaseDate: "2026-08-01",
         aaTaskCostAud: 0.2,
         aaIntelligence: 80,
-        evidenceTime: "2026-08-18T00:00:00Z",
+        evidenceTime: "2026-08-18T11:30:00Z",
         catalogFresh: true,
       });
     });

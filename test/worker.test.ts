@@ -672,6 +672,26 @@ describe("worker routes", () => {
     ).toBe(3);
   });
 
+  it("ignores cached provider coverage that the current registry no longer supports", async () => {
+    const kv = memoryKv();
+    const fullEnv = { ...env(), MODEL_CACHE: kv.namespace };
+    await refreshCatalog(fullEnv);
+    const cached = JSON.parse(kv.values.get(catalogCacheKey) ?? "null");
+    cached.providers.push({
+      provider: "moonshotai",
+      total: 10,
+      active: 10,
+    });
+    kv.values.set(catalogCacheKey, JSON.stringify(cached));
+
+    const refreshed = await refreshCatalog(fullEnv);
+
+    expect(refreshed.providers).not.toContainEqual(
+      expect.objectContaining({ provider: "moonshotai" }),
+    );
+    expect(kv.values.has(catalogCacheKey)).toBe(true);
+  });
+
   it("requires quality and both prices on the same complete voice rows", async () => {
     const fetchedAt = "2026-07-16T00:00:00.000Z";
     const kv = memoryKv({

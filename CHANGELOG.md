@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-08-18
+
+### Added
+
+- Added the opt-in `selectionPolicy=latest-cost-quality` customer-support policy. It selects a newer stable Artificial Analysis configuration only when task cost does not increase, Intelligence does not decrease, required capabilities are present, and comparable IT Solver evidence does not show a safety regression.
+- Added complete recommendation audit metadata for the incumbent, selected configuration, release date, Artificial Analysis cost per task, Intelligence, and evidence time.
+
+### Changed
+
+- Changed the catalog refresh schedule from daily to hourly.
+- Kept successful catalog entries for seven days as last-good data, while requests refresh data after one hour and mark older served data as stale.
+- Rejected Artificial Analysis refreshes that return less than half of the last-good row coverage.
+
 ## 2026-07-17
 
 ### Added

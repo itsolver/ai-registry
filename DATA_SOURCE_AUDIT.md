@@ -150,10 +150,12 @@ The normalized KV cache uses `catalog:v29` so older response shapes cannot be
 served after deployment. A models.dev failure or per-provider coverage drop
 below the persisted 50% high-water threshold always prevents a cache write.
 The provider high-water counts live in the separate non-expiring
-`models-dev:provider-high-water:v1` key, so expiry of the eight-hour catalog cache
-cannot reset the guard before the daily scheduled refresh.
+`models-dev:provider-high-water:v1` key. The Worker refreshes each hour, treats
+catalog data as fresh for one hour, and keeps a complete last-good catalog for
+seven days.
 When an Artificial Analysis key is configured, failure of any current-free page
-also prevents a cache write; legacy LLM and speech-to-text failures may use
+or an LLM row-count drop below half of the last-good catalog also prevents a
+cache write; legacy LLM and speech-to-text failures may use
 checked-in fallback extracts. Speech-to-speech has the independent validated
 live/page/KV/bundled fallback sequence described above. If a valid older catalog
 is already cached, the Worker continues serving it rather than overwriting it

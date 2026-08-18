@@ -114,7 +114,18 @@ Example:
 
 ```bash
 curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"
+curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&selectionPolicy=latest-cost-quality"
 ```
+
+`latest-cost-quality` first selects the normal IT Solver benchmark-backed tier
+model as the incumbent. It then evaluates newer stable Artificial Analysis
+configurations. A configuration can replace the incumbent only when its
+Intelligence Index task cost is not higher, its Intelligence score is not
+lower, its release date is later, its canonical models.dev mapping and required
+capabilities are present, and comparable IT Solver evidence does not show a
+higher false-positive rate. Missing IT Solver evidence does not block the
+candidate. Missing or stale Artificial Analysis evidence does block it. The
+default policy remains benchmark-required.
 
 Recommendation responses keep the primary model in `recommendation` and the
 next operationally distinct model for the same filters, including `provider`,
@@ -150,6 +161,7 @@ useCase=customer-support|document-processing|voice|speech-to-text  # stt is acce
 includeItsBenchmark=false              # omit IT Solver auto-close ranking for customer support
 allowPreview=true                      # allow preview models in customer-support recommendations
 allowUnbenchmarkedLatest=true          # best only: allow latest eligible full-size model without benchmark evidence
+selectionPolicy=latest-cost-quality    # customer support: newer AA model with no cost or Intelligence regression
 ```
 
 ## Local Development
@@ -173,12 +185,18 @@ npm run refresh:aa-voice
 
 Production speech-to-speech rows refresh automatically during catalog rebuilds;
 normal upstream changes require no extractor command, commit, or deployment.
-Live voice and models.dev inputs must retain at least 50% of their persisted
+Live voice, LLM Artificial Analysis, and models.dev inputs must retain at least 50% of their persisted
 coverage high-water marks (tracked separately for the voice API and public
 page); voice sources must also have complete quality and
 input/output pricing on at least half their rows. Cached voice fallback age is
 re-evaluated at request time. `refresh:aa-voice` only maintains the bundled
 emergency snapshot.
+
+The Worker refreshes the complete live catalog each hour. It treats catalog
+data as ready for request reuse for one hour. If a refresh fails, it can serve
+the last complete catalog for up to seven days and marks the response
+`catalogState: "stale"`. The `latest-cost-quality` policy requires evidence no
+older than 24 hours, so stale data cannot promote a new model.
 
 Do not run a new Anthropic customer-support auto-close benchmark from this repo
 without a manual approval checkpoint. A benchmark proposal may list candidate

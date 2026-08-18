@@ -16,6 +16,7 @@ import {
   benchmarkCandidates,
   filterModels,
   isBenchmarkCandidateRecommendedForFilters,
+  latestCostQualitySelection,
   latestForProvider,
   normalizeModelsDevCatalog,
   parseFilters,
@@ -36,8 +37,9 @@ import {
 const CACHE_KEY = "catalog:v29";
 const VOICE_CACHE_KEY = "aa:s2s:last-known-good:v1";
 const MODELS_DEV_COVERAGE_KEY = "models-dev:provider-high-water:v1";
-const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
-const CACHE_TTL_SECONDS = CACHE_TTL_MS / 1000;
+const CACHE_FRESHNESS_MS = 60 * 60 * 1000;
+const CACHE_LAST_GOOD_TTL_SECONDS = 7 * 24 * 60 * 60;
+const ARTIFICIAL_ANALYSIS_MIN_COVERAGE_RATIO = 0.5;
 const VOICE_FALLBACK_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const VOICE_MIN_COVERAGE_RATIO = 0.5;
 const VOICE_INITIAL_API_MIN_ROW_COUNT = 8;
@@ -283,6 +285,7 @@ async function routeApi(
       ...(filters.useCase
         ? {
             recommendationMeta: recommendationMeta(
+              catalog,
               filters,
               recommendation,
             ),
@@ -340,9 +343,29 @@ async function routeApi(
 }
 
 function recommendationMeta(
+  catalog: Catalog,
   filters: ReturnType<typeof parseFilters>,
   recommendation: RecommendedModel,
 ): Record<string, unknown> {
+  if (
+    filters.useCase === "customer-support" &&
+    filters.selectionPolicy === "latest-cost-quality"
+  ) {
+    const selection = latestCostQualitySelection(catalog, filters);
+    const selected = selection.selected ?? recommendation;
+    const selectedSignals = selected.benchmarks?.llm;
+    return {
+      policy: "latest-cost-quality",
+      selectionBasis: selection.selectionBasis,
+      incumbent: recommendationAuditModel(selection.incumbent),
+      selectedCandidate: recommendationAuditModel(selected),
+      releaseDate: selected.releaseDate ?? null,
+      aaTaskCostAud: selectedSignals?.intelligenceCostPerTask ?? null,
+      aaIntelligence: selectedSignals?.intelligence ?? null,
+      evidenceTime: catalog.generatedAt,
+      catalogFresh: selection.catalogFresh,
+    };
+  }
   const latestRelease =
     filters.allowUnbenchmarkedLatest === true && !("source" in recommendation);
   const tier = filters.tier ?? "fast";
@@ -357,13 +380,35 @@ function recommendationMeta(
   };
 }
 
+function recommendationAuditModel(
+  model: RecommendedModel | undefined,
+): Record<string, unknown> | null {
+  if (!model) return null;
+  return {
+    provider: model.provider,
+    id: model.id,
+    releaseDate: model.releaseDate ?? null,
+    aaTaskCostAud:
+      model.benchmarks?.llm?.intelligenceCostPerTask ?? null,
+    aaIntelligence: model.benchmarks?.llm?.intelligence ?? null,
+  };
+}
+
 function catalogResponseMetadata(catalog: Catalog): Record<string, unknown> {
+  const generatedAt = Date.parse(catalog.generatedAt);
+  const ageMs = Number.isFinite(generatedAt)
+    ? Math.max(0, Date.now() - generatedAt)
+    : Number.POSITIVE_INFINITY;
   return {
     generatedAt: catalog.generatedAt,
     pricingCurrency: catalog.exchangeRate?.quote ?? "USD",
     sourcePricingCurrency: catalog.exchangeRate?.base ?? "USD",
     ...(catalog.exchangeRate ? { exchangeRate: catalog.exchangeRate } : {}),
     ...(catalog.sourceStatus ? { sourceStatus: catalog.sourceStatus } : {}),
+    catalogState: ageMs <= CACHE_FRESHNESS_MS ? "fresh" : "stale",
+    catalogAgeSeconds: Number.isFinite(ageMs)
+      ? Math.floor(ageMs / 1000)
+      : null,
   };
 }
 
@@ -408,7 +453,7 @@ async function readCachedCatalog(env: Env): Promise<Catalog | undefined> {
 
 async function writeCachedCatalog(env: Env, catalog: Catalog): Promise<void> {
   await env.MODEL_CACHE?.put(CACHE_KEY, JSON.stringify(catalog), {
-    expirationTtl: CACHE_TTL_SECONDS,
+    expirationTtl: CACHE_LAST_GOOD_TTL_SECONDS,
   });
 }
 
@@ -482,6 +527,27 @@ function assertProviderCoverage(
         `models.dev refresh dropped cached provider coverage for ${provider}`,
       );
     }
+  }
+
+  const cachedAaCount =
+    cached?.benchmarkCandidates?.filter(
+      (candidate) => candidate.source === "artificialanalysis",
+    ).length ?? 0;
+  const fetchedAaCount =
+    catalog.benchmarkCandidates?.filter(
+      (candidate) => candidate.source === "artificialanalysis",
+    ).length ?? 0;
+  if (
+    cachedAaCount > 0 &&
+    fetchedAaCount <
+      Math.max(
+        1,
+        Math.ceil(cachedAaCount * ARTIFICIAL_ANALYSIS_MIN_COVERAGE_RATIO),
+      )
+  ) {
+    throw new Error(
+      `Artificial Analysis refresh returned ${fetchedAaCount} rows; expected at least half of the ${cachedAaCount}-row last-good catalog`,
+    );
   }
 }
 
@@ -1104,7 +1170,7 @@ function normalizeRoute(pathname: string): string {
 function isFresh(catalog: Catalog): boolean {
   const generatedAt = Date.parse(catalog.generatedAt);
   if (!Number.isFinite(generatedAt)) return false;
-  return Date.now() - generatedAt < CACHE_TTL_MS;
+  return Date.now() - generatedAt < CACHE_FRESHNESS_MS;
 }
 
 function htmlResponse(html: string): Response {

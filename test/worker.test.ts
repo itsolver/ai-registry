@@ -89,12 +89,20 @@ async function withSystemTime<T>(
 
 function memoryKv(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
-  const puts: Array<{ key: string; value: string }> = [];
+  const puts: Array<{
+    key: string;
+    value: string;
+    options?: KVNamespacePutOptions;
+  }> = [];
   const namespace = {
     get: async (key: string) => values.get(key) ?? null,
-    put: async (key: string, value: string) => {
+    put: async (
+      key: string,
+      value: string,
+      options?: KVNamespacePutOptions,
+    ) => {
       values.set(key, value);
-      puts.push({ key, value });
+      puts.push({ key, value, options });
     },
   } as unknown as KVNamespace;
 
@@ -125,6 +133,7 @@ function supportCandidate(
   benchmarks: {
     llm: {
       instructionFollowing: 80,
+      tauTelecom: 80,
       intelligence: 80,
       intelligenceRunTotalCost: runCost,
       intelligenceCostPerTask: runCost / 1000,
@@ -950,6 +959,7 @@ describe("worker routes", () => {
     expect(pending).toHaveLength(1);
     expect(sourceWrite).toBeDefined();
     expect(catalogWrite).toBeDefined();
+    expect(catalogWrite?.options).toMatchObject({ expirationTtl: 604800 });
     expect(catalog).toMatchObject({
       generatedAt: "2026-07-17T06:00:00.000Z",
       sourceStatus: {
@@ -985,6 +995,7 @@ describe("worker routes", () => {
     expect((await response.json()) as JsonObject).toMatchObject({
       benchmarkCount: 1,
       registryModelCount: 0,
+      catalogState: "stale",
     });
     expect(putCount).toBe(0);
   });
@@ -2272,6 +2283,106 @@ describe("worker routes", () => {
         valueOptimized: testCase.valueOptimized,
       });
     }
+  });
+
+  it("does not replace the last-good catalog with a partial AA aggregate", async () => {
+    let putCount = 0;
+    const cached = supportCatalog(
+      Array.from({ length: 100 }, (_, index) =>
+        supportCandidate(`cached-${index}`, 0, 0.9, 10, 2),
+      ),
+    );
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      {
+        ...env(),
+        MODEL_CACHE: {
+          get: async () => JSON.stringify(cached),
+          put: async (key: string) => {
+            if (key.startsWith("catalog:")) putCount += 1;
+          },
+        } as unknown as KVNamespace,
+      },
+      ctx,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()) as JsonObject).toMatchObject({
+      benchmarkCount: 100,
+      registryModelCount: 0,
+      catalogState: "stale",
+    });
+    expect(putCount).toBe(0);
+  });
+
+  it("returns auditable metadata for the latest cost and quality policy", async () => {
+    const incumbent = supportCandidate("incumbent", 1, 0.95, 400, 5);
+    incumbent.registryModelId = "incumbent";
+    incumbent.releaseDate = "2026-06-01";
+    incumbent.capabilities = {
+      vision: true,
+      pdf: true,
+      reasoning: true,
+      toolCalling: true,
+      structuredOutput: true,
+    };
+    incumbent.modalities = { input: ["text", "image"], output: ["text"] };
+
+    const newer = supportCandidate("newer", 1, 0.95, 200, 5);
+    newer.registryModelId = "newer";
+    newer.releaseDate = "2026-08-01";
+    newer.capabilities = { ...incumbent.capabilities };
+    newer.modalities = { ...incumbent.modalities };
+    delete newer.benchmarks.llm?.autoClose;
+    const snapshot = supportCatalog([incumbent, newer]);
+    snapshot.generatedAt = "2026-08-18T00:00:00Z";
+
+    await withSystemTime("2026-08-18T12:00:00Z", async () => {
+      const strictResponse = await handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning&minIntelligence=30",
+        ),
+        envWithCachedCatalog(snapshot),
+        ctx,
+      );
+      const guardedResponse = await handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning&minIntelligence=30&selectionPolicy=latest-cost-quality",
+        ),
+        envWithCachedCatalog(snapshot),
+        ctx,
+      );
+      const strict = (await strictResponse.json()) as JsonObject;
+      const guarded = (await guardedResponse.json()) as JsonObject;
+
+      expect(strict.recommendation.id).toBe("incumbent");
+      expect(strict.recommendationMeta.policy).toBe("benchmark_required");
+      expect(guarded.recommendation.id).toBe("newer");
+      expect(guarded.recommendationMeta).toEqual({
+        policy: "latest-cost-quality",
+        selectionBasis: "newer_aa_cost_quality",
+        incumbent: {
+          provider: "openai",
+          id: "incumbent",
+          releaseDate: "2026-06-01",
+          aaTaskCostAud: 0.4,
+          aaIntelligence: 80,
+        },
+        selectedCandidate: {
+          provider: "openai",
+          id: "newer",
+          releaseDate: "2026-08-01",
+          aaTaskCostAud: 0.2,
+          aaIntelligence: 80,
+        },
+        releaseDate: "2026-08-01",
+        aaTaskCostAud: 0.2,
+        aaIntelligence: 80,
+        evidenceTime: "2026-08-18T00:00:00Z",
+        catalogFresh: true,
+      });
+    });
   });
 
   it("hard-filters voice rows by input audio cost", async () => {

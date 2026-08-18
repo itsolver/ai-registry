@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   benchmarkCandidates,
   isBenchmarkCandidateRecommendedForFilters,
+  latestCostQualitySelection,
   normalizeArtificialAnalysisCatalog,
   normalizeModelsDevCatalog,
   parseFilters,
@@ -228,6 +229,228 @@ describe("filter parsing", () => {
     expect(parseFilters(new URLSearchParams()).allowUnbenchmarkedLatest).toBe(
       false,
     );
+  });
+});
+
+describe("latest cost and quality customer-support policy", () => {
+  const autoClose = (falsePositiveCount: number, benchmarkCodeSha = "same") => ({
+    source: "itsolver-autoclose" as const,
+    modelKey: "test:model",
+    apiModel: "test-model",
+    displayName: "Test Model",
+    benchmarkReport: "test.md",
+    resultsFile: "test.json",
+    generatedAt: "2026-08-01T00:00:00Z",
+    benchmarkCodeSha,
+    total: 100,
+    correctCount: 95,
+    accuracy: 0.95,
+    falsePositiveCount,
+    falseNegativeCount: 4,
+    invalidCount: 0,
+    errorCount: 0,
+    parseSuccessRate: 1,
+    avgLatencyMs: 1000,
+    p95LatencyMs: 1200,
+    avgInputTokens: 1000,
+    avgOutputTokens: 100,
+    weightedScore: 90,
+    sourceUrl: "https://example.test/autoclose",
+    verifiedOn: "2026-08-01",
+    availability: {
+      status: "production" as const,
+      acceptedRisk: false,
+      reason: "test",
+    },
+  });
+
+  const candidate = (input: {
+    id: string;
+    releaseDate: string;
+    taskCost: number;
+    intelligence: number;
+    incumbent?: boolean;
+    falsePositiveCount?: number;
+    benchmarkCodeSha?: string;
+    availability?: "production" | "preview";
+    mapped?: boolean;
+    deprecated?: boolean;
+  }): BenchmarkCandidate => ({
+    id: input.id,
+    provider: "openai",
+    name: input.id,
+    source: "artificialanalysis",
+    benchmarks: {
+      llm: {
+        instructionFollowing: 80,
+        tauTelecom: 80,
+        intelligence: input.intelligence,
+        intelligenceCostPerTask: input.taskCost,
+        ...(input.incumbent || input.falsePositiveCount !== undefined
+          ? {
+              autoClose: autoClose(
+                input.falsePositiveCount ?? 1,
+                input.benchmarkCodeSha,
+              ),
+            }
+          : {}),
+      },
+    },
+    pricing: { inputPerMTok: 1, outputPerMTok: 5 },
+    ...(input.mapped === false ? {} : { registryModelId: input.id }),
+    recommendable: true,
+    availability: {
+      status: input.availability ?? "production",
+      acceptedRisk: false,
+      reason: "test",
+    },
+    family: "gpt",
+    contextWindow: 100000,
+    outputLimit: 10000,
+    capabilities: {
+      vision: true,
+      pdf: true,
+      reasoning: true,
+      toolCalling: true,
+      structuredOutput: true,
+    },
+    modalities: { input: ["text", "image"], output: ["text"] },
+    releaseDate: input.releaseDate,
+    openWeights: false,
+    tier: null,
+    deprecated: input.deprecated ?? false,
+    updatedAt: `${input.releaseDate}T00:00:00Z`,
+  });
+
+  const catalog = (
+    candidates: BenchmarkCandidate[],
+    generatedAt = "2026-08-18T00:00:00Z",
+  ): Catalog => ({
+    generatedAt,
+    modelCount: candidates.length,
+    activeModelCount: candidates.length,
+    providers: [
+      { provider: "openai", total: candidates.length, active: candidates.length },
+    ],
+    models: [],
+    benchmarkCandidates: candidates,
+  });
+
+  const filters = (tier: "fast" | "balanced" | "best") => ({
+    useCase: "customer-support" as const,
+    tier,
+    capability: "reasoning" as const,
+    minIntelligence: 30,
+    selectionPolicy: "latest-cost-quality" as const,
+  });
+  const now = Date.parse("2026-08-18T12:00:00Z");
+
+  it("selects the newest no-more-expensive equal-or-better AA configuration", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+    });
+    const olderCheap = candidate({
+      id: "older-cheap",
+      releaseDate: "2026-07-01",
+      taskCost: 0.1,
+      intelligence: 50,
+    });
+    const newestCheap = candidate({
+      id: "newest-cheap",
+      releaseDate: "2026-08-01",
+      taskCost: 0.2,
+      intelligence: 46,
+    });
+    const newestSmart = candidate({
+      id: "newest-smart",
+      releaseDate: "2026-08-01",
+      taskCost: 0.3,
+      intelligence: 55,
+    });
+    const snapshot = catalog([
+      incumbent,
+      olderCheap,
+      newestCheap,
+      newestSmart,
+    ]);
+
+    expect(latestCostQualitySelection(snapshot, filters("fast"), now).selected?.id).toBe(
+      "newest-cheap",
+    );
+    expect(
+      latestCostQualitySelection(snapshot, filters("balanced"), now).selected?.id,
+    ).toBe("newest-cheap");
+    expect(latestCostQualitySelection(snapshot, filters("best"), now).selected?.id).toBe(
+      "newest-smart",
+    );
+  });
+
+  it("rejects higher-cost, lower-quality, stale, preview, unmapped, and deprecated rows", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+    });
+    const rejected = [
+      candidate({ id: "costly", releaseDate: "2026-08-01", taskCost: 0.41, intelligence: 60 }),
+      candidate({ id: "weaker", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 44 }),
+      candidate({ id: "preview-model", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, availability: "preview" }),
+      candidate({ id: "unmapped", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, mapped: false }),
+      candidate({ id: "deprecated", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, deprecated: true }),
+    ];
+
+    const selection = latestCostQualitySelection(
+      catalog([incumbent, ...rejected]),
+      filters("fast"),
+      now,
+    );
+    expect(selection.selected?.id).toBe("incumbent");
+    expect(selection.selectionBasis).toBe("benchmark_incumbent");
+
+    const stale = latestCostQualitySelection(
+      catalog([incumbent], "2026-08-16T00:00:00Z"),
+      filters("fast"),
+      now,
+    );
+    expect(stale.selected?.id).toBe("incumbent");
+    expect(stale.selectionBasis).toBe("stale_catalog_incumbent");
+  });
+
+  it("blocks a comparable ITS safety regression and keeps default behavior strict", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+      falsePositiveCount: 1,
+      benchmarkCodeSha: "comparable",
+    });
+    const regressed = candidate({
+      id: "regressed",
+      releaseDate: "2026-08-01",
+      taskCost: 0.2,
+      intelligence: 50,
+      falsePositiveCount: 2,
+      benchmarkCodeSha: "comparable",
+    });
+    const snapshot = catalog([incumbent, regressed]);
+
+    expect(latestCostQualitySelection(snapshot, filters("best"), now).selected?.id).toBe(
+      "incumbent",
+    );
+    expect(
+      recommendModel(snapshot, {
+        useCase: "customer-support",
+        tier: "best",
+      })?.id,
+    ).toBe("incumbent");
   });
 });
 

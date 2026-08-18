@@ -340,6 +340,18 @@ export interface ModelFilters {
   includeItsBenchmark?: boolean;
   allowPreview?: boolean;
   allowUnbenchmarkedLatest?: boolean;
+  selectionPolicy?: "latest-cost-quality";
+}
+
+export interface LatestCostQualitySelection {
+  incumbent?: BenchmarkCandidate;
+  selected?: BenchmarkCandidate;
+  selectionBasis:
+    | "newer_aa_cost_quality"
+    | "benchmark_incumbent"
+    | "stale_catalog_incumbent"
+    | "missing_incumbent";
+  catalogFresh: boolean;
 }
 
 export type RecommendedModel = RegistryModel | BenchmarkCandidate;
@@ -672,6 +684,9 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     allowPreview: params.get("allowPreview") === "true",
     allowUnbenchmarkedLatest:
       params.get("allowUnbenchmarkedLatest") === "true",
+    ...(params.get("selectionPolicy") === "latest-cost-quality"
+      ? { selectionPolicy: "latest-cost-quality" as const }
+      : {}),
   };
 }
 
@@ -924,6 +939,32 @@ export function rankedRecommendedModels(
   filters: ModelFilters,
 ): RecommendedModel[] {
   if (filters.useCase) {
+    if (
+      filters.useCase === "customer-support" &&
+      filters.selectionPolicy === "latest-cost-quality"
+    ) {
+      const selection = latestCostQualitySelection(catalog, filters);
+      const benchmarked = rankedBenchmarkRecommendations(catalog, {
+        ...filters,
+        selectionPolicy: undefined,
+        allowUnbenchmarkedLatest: false,
+        includeItsBenchmark: true,
+      });
+      if (
+        selection.selected &&
+        selection.selected.id !== selection.incumbent?.id
+      ) {
+        return [
+          selection.selected,
+          ...benchmarked.filter(
+            (candidate) =>
+              candidate.id !== selection.selected?.id ||
+              candidate.provider !== selection.selected?.provider,
+          ),
+        ];
+      }
+      return benchmarked;
+    }
     const benchmarked = rankedBenchmarkRecommendations(catalog, filters);
     const latest = latestUnbenchmarkedRecommendation(catalog, filters);
     return latest
@@ -941,6 +982,181 @@ export function rankedRecommendedModels(
 
   return [...matches].sort((left, right) =>
     compareRecommendations(left, right, tier, filters, catalog),
+  );
+}
+
+const LATEST_COST_QUALITY_MAX_CATALOG_AGE_MS = 24 * 60 * 60 * 1000;
+
+export function latestCostQualitySelection(
+  catalog: Catalog,
+  filters: ModelFilters,
+  now = Date.now(),
+): LatestCostQualitySelection {
+  const incumbentFilters: ModelFilters = {
+    ...filters,
+    selectionPolicy: undefined,
+    allowUnbenchmarkedLatest: false,
+    includeItsBenchmark: true,
+  };
+  const incumbent = rankedBenchmarkRecommendations(
+    catalog,
+    incumbentFilters,
+  )[0];
+  const generatedAt = Date.parse(catalog.generatedAt);
+  const catalogAge = now - generatedAt;
+  const catalogFresh =
+    Number.isFinite(generatedAt) &&
+    catalogAge >= 0 &&
+    catalogAge <= LATEST_COST_QUALITY_MAX_CATALOG_AGE_MS;
+
+  if (!incumbent) {
+    return {
+      selectionBasis: "missing_incumbent",
+      catalogFresh,
+    };
+  }
+  if (!catalogFresh) {
+    return {
+      incumbent,
+      selected: incumbent,
+      selectionBasis: "stale_catalog_incumbent",
+      catalogFresh,
+    };
+  }
+
+  const incumbentSignals = incumbent.benchmarks.llm;
+  const incumbentCost = incumbentSignals?.intelligenceCostPerTask;
+  const incumbentIntelligence = incumbentSignals?.intelligence;
+  const incumbentRelease = candidateDateValue(incumbent.releaseDate);
+  if (
+    !isNumber(incumbentCost) ||
+    !isNumber(incumbentIntelligence) ||
+    incumbentRelease <= 0
+  ) {
+    return {
+      incumbent,
+      selected: incumbent,
+      selectionBasis: "benchmark_incumbent",
+      catalogFresh,
+    };
+  }
+
+  const candidateFilters: ModelFilters = {
+    ...filters,
+    selectionPolicy: undefined,
+    allowUnbenchmarkedLatest: false,
+    includeItsBenchmark: false,
+  };
+  const tier = recommendationTier(filters);
+  const candidates = benchmarkCandidates(catalog, candidateFilters)
+    .filter((candidate) =>
+      isBenchmarkCandidateRecommendedForFilters(candidate, candidateFilters),
+    )
+    .filter((candidate) =>
+      isLatestCostQualityCandidate(
+        candidate,
+        incumbent,
+        incumbentCost,
+        incumbentIntelligence,
+        incumbentRelease,
+      ),
+    )
+    .sort((left, right) =>
+      compareLatestCostQualityCandidates(left, right, tier),
+    );
+  const selected = candidates[0] ?? incumbent;
+
+  return {
+    incumbent,
+    selected,
+    selectionBasis:
+      selected === incumbent
+        ? "benchmark_incumbent"
+        : "newer_aa_cost_quality",
+    catalogFresh,
+  };
+}
+
+function isLatestCostQualityCandidate(
+  candidate: BenchmarkCandidate,
+  incumbent: BenchmarkCandidate,
+  incumbentCost: number,
+  incumbentIntelligence: number,
+  incumbentRelease: number,
+): boolean {
+  const signals = candidate.benchmarks.llm;
+  const searchable = `${candidate.id} ${candidate.name}`.toLowerCase();
+  const candidateRelease = candidateDateValue(candidate.releaseDate);
+  if (
+    candidate.source !== "artificialanalysis" ||
+    !candidate.registryModelId ||
+    candidate.deprecated === true ||
+    candidate.openWeights === true ||
+    /(^|[-_\s])latest($|[-_\s])/.test(searchable) ||
+    candidateRelease <= incumbentRelease ||
+    !isNumber(signals?.intelligenceCostPerTask) ||
+    signals.intelligenceCostPerTask > incumbentCost ||
+    !isNumber(signals.intelligence) ||
+    signals.intelligence < incumbentIntelligence
+  ) {
+    return false;
+  }
+
+  return !hasComparableSafetyRegression(candidate, incumbent);
+}
+
+function hasComparableSafetyRegression(
+  candidate: BenchmarkCandidate,
+  incumbent: BenchmarkCandidate,
+): boolean {
+  const candidateSafety = candidate.benchmarks.llm?.autoClose;
+  const incumbentSafety = incumbent.benchmarks.llm?.autoClose;
+  if (
+    !candidateSafety ||
+    !incumbentSafety ||
+    candidateSafety.benchmarkCodeSha !== incumbentSafety.benchmarkCodeSha
+  ) {
+    return false;
+  }
+  return (
+    autoCloseFalsePositiveRate(candidateSafety) >
+    autoCloseFalsePositiveRate(incumbentSafety)
+  );
+}
+
+function compareLatestCostQualityCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+  tier: Tier,
+): number {
+  const releaseOrder =
+    candidateDateValue(right.releaseDate) - candidateDateValue(left.releaseDate);
+  if (releaseOrder) return releaseOrder;
+
+  if (tier === "best") {
+    return (
+      compareOptionalDesc(
+        left.benchmarks.llm?.intelligence,
+        right.benchmarks.llm?.intelligence,
+      ) ||
+      compareOptionalAsc(
+        left.benchmarks.llm?.intelligenceCostPerTask,
+        right.benchmarks.llm?.intelligenceCostPerTask,
+      ) ||
+      left.id.localeCompare(right.id)
+    );
+  }
+
+  return (
+    compareOptionalAsc(
+      left.benchmarks.llm?.intelligenceCostPerTask,
+      right.benchmarks.llm?.intelligenceCostPerTask,
+    ) ||
+    compareOptionalDesc(
+      left.benchmarks.llm?.intelligence,
+      right.benchmarks.llm?.intelligence,
+    ) ||
+    left.id.localeCompare(right.id)
   );
 }
 

@@ -222,9 +222,14 @@ async function captureArtificialAnalysisRawSource(
     try {
       const response = await fetch(source.url, { headers });
       if (!response.ok || !response.body) {
+        if (response.body) {
+          await response.body.cancel().catch(() => undefined);
+        }
         throw new RawCaptureHttpError(
           `${source.name} returned ${response.status}`,
-          response.status === 429 || response.status >= 500,
+          response.status === 408 ||
+            response.status === 429 ||
+            response.status >= 500,
         );
       }
       await env.MODEL_CACHE!.put(key, response.body, {

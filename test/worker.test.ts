@@ -1042,17 +1042,28 @@ describe("worker routes", () => {
     }
   });
 
-  it("retries a transient required AA source failure", async () => {
+  it("cancels and retries transient required AA source failures", async () => {
     const kv = memoryKv();
     const retryUrl = "https://aa.test/stt-transient";
     const realFetch = globalThis.fetch;
     let sttAttempts = 0;
+    let canceledBodies = 0;
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         if (String(input) === retryUrl) {
           sttAttempts += 1;
           if (sttAttempts < 3) {
-            return new Response("unavailable", { status: 503 });
+            return new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.enqueue(new TextEncoder().encode("unavailable"));
+                },
+                cancel() {
+                  canceledBodies += 1;
+                },
+              }),
+              { status: sttAttempts === 1 ? 408 : 503 },
+            );
           }
           return new Response(JSON.stringify(artificialAnalysisSpeechToTextFixture), {
             headers: { "Content-Type": "application/json" },
@@ -1069,6 +1080,7 @@ describe("worker routes", () => {
         ARTIFICIAL_ANALYSIS_STT_URL: retryUrl,
       });
       expect(sttAttempts).toBe(3);
+      expect(canceledBodies).toBe(2);
       expect(kv.values.has("raw:aa:manifest:v1")).toBe(true);
     } finally {
       fetchSpy.mockRestore();

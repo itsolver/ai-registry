@@ -645,8 +645,10 @@ function assertProviderCoverage(
   const baseline: ProviderCoverageHighWater = { ...(highWater ?? {}) };
   if (Array.isArray(cached?.providers)) {
     for (const provider of cached.providers) {
-      baseline[provider.provider] = Math.max(
-        baseline[provider.provider] ?? 0,
+      const supportedProvider = asProvider(provider.provider);
+      if (!supportedProvider) continue;
+      baseline[supportedProvider] = Math.max(
+        baseline[supportedProvider] ?? 0,
         provider.total,
       );
     }

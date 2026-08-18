@@ -35,7 +35,7 @@ import {
   type VoiceSourceStatus,
 } from "./registry";
 
-const CACHE_KEY = "catalog:v29";
+const CACHE_KEY = "catalog:v31";
 const VOICE_CACHE_KEY = "aa:s2s:last-known-good:v1";
 const MODELS_DEV_COVERAGE_KEY = "models-dev:provider-high-water:v1";
 const RAW_CAPTURE_MANIFEST_KEY = "raw:aa:manifest:v1";

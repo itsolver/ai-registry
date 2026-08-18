@@ -51,7 +51,7 @@ const modelsDevUrl =
   "data:application/json," +
   encodeURIComponent(JSON.stringify(modelsDevFixture));
 const voiceCacheKey = "aa:s2s:last-known-good:v1";
-const catalogCacheKey = "catalog:v29";
+const catalogCacheKey = "catalog:v31";
 const modelsDevCoverageKey = "models-dev:provider-high-water:v1";
 const completeVoiceSnapshot = parseArtificialAnalysisSpeechToSpeechApi(
   artificialAnalysisSpeechToSpeechApiFixture,

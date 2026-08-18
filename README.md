@@ -15,31 +15,48 @@ Analysis data for OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq.
 Each catalog refresh reads both the legacy Artificial Analysis LLM endpoint for
 detailed benchmark signals and the paginated current free Language Models
 endpoint for current headline indices, performance, nested pricing, and
-Intelligence Index task cost. Checked-in Artificial Analysis extracts fill
-missing fields only; they never override fresher live values.
+Intelligence Index task cost. The same automatic refresh cycle fetches the
+Artificial Analysis speech-to-speech leaderboard: the authenticated API is
+preferred when configured, with the complete public page payload as the live
+secondary source. Checked-in LLM and speech-to-text extracts fill missing fields
+only; the checked-in voice snapshot is an emergency fallback, not the normal
+refresh path.
 
 Registry visibility and recommendation eligibility are intentionally separate:
 new base models can appear in `/v1/models` as soon as models.dev publishes them,
 even when they do not yet have enough evidence to recommend. Artificial
 Analysis effort configurations such as a high-reasoning variant remain distinct
 benchmark rows while linking to the matching base-model family. Recommendations
-still require positive pricing, default-production availability, and the
-benchmark evidence required by the selected use case.
+normally require positive pricing, default-production availability, and the
+benchmark evidence required by the selected use case. Best-tier requests can
+explicitly opt into the latest eligible full-size production model without that
+evidence using `allowUnbenchmarkedLatest=true`. That exception is a
+capability-first release heuristic that prefers full-size models over explicitly reduced
+variants such as `mini`; it is not a benchmark result or value recommendation.
+Balanced, fast, and non-opted-in best requests remain benchmark-required.
 
 Recommendations are tuned for IT Solver customer support, document processing,
 speech-to-speech voice-agent API work, and speech-to-text transcription. For
 customer support, ranking is safety-first: false positives sort first, accuracy
 second, and Artificial Analysis Intelligence Index Task AUD third. Preview-only,
 experimental, latest-alias, and near-retirement text models are not default
-production recommendations. Voice recommendations use a cached Artificial
-Analysis speech-to-speech leaderboard extract. Speech-to-text recommendations
-use Artificial Analysis STT rows with AA-WER, speed, and provider pricing.
+production recommendations. Voice recommendations rank current Artificial
+Analysis speech-to-speech rows by the source-provided Speech-to-Speech Index,
+with missing quality values last. Current models.dev audio-in/audio-out models
+remain visible while awaiting an Artificial Analysis row, but are marked
+`missing_voice_benchmark` and excluded from strict recommendations.
+Speech-to-text recommendations use Artificial Analysis STT rows with AA-WER,
+speed, and provider pricing.
 
 Live Artificial Analysis pricing takes precedence when present, with models.dev
 pricing used as the registry fallback. Source USD pricing and benchmark costs
 are converted to AUD using the catalog's current Frankfurter exchange rate. The
 API returns AUD pricing and includes the exchange-rate metadata used for that
-catalog view.
+catalog view. models.dev `input_audio` and `output_audio` token prices are
+exposed as `audioInputPerMTok` and `audioOutputPerMTok`. For structured
+Artificial Analysis voice rows, the API input list price is used when the
+page-only benchmark input cost is unavailable, without relabelling the list
+price as benchmark cost.
 
 ## Endpoints
 
@@ -62,13 +79,17 @@ The endpoint datasets serve different purposes:
   still supported, but the homepage registry browser does not apply a use-case
   or recommendation-priority filter.
 - `/v1/benchmarks` returns use-case-relevant Artificial Analysis configurations
-  and other benchmark rows, including incomplete rows with a visible reason
-  when they are not recommendation-eligible.
-- `/v1/models/recommend` returns only candidates that satisfy the selected use
-  case's pricing, availability, and evidence requirements. Its existing primary
-  recommendation and failover response shape is unchanged.
+  and other benchmark rows. Voice browsing also includes models.dev audio
+  models awaiting a benchmark, with `eligibilityReason` set to
+  `missing_voice_benchmark`.
+- `/v1/models/recommend` is benchmark-strict by default. An opted-in best-tier
+  request may return the latest eligible full-size unbenchmarked registry model
+  and labels that result in `recommendationMeta` as
+  `selectionBasis: "latest_release"`,
+  `benchmarkEligible: false`, and `valueOptimized: false`.
 - `/v1/health` reports separate registry, benchmark, and recommendable counts,
-  while `/v1/models/providers` derives provider totals from registry records.
+  plus `sourceStatus.voice`; `/v1/models/providers` derives provider totals from
+  registry records.
 
 ## Homepage Modes
 
@@ -84,13 +105,27 @@ The query builder has three distinct right-hand views:
 
 Each mode keeps separate response state. A late response from an earlier request
 is discarded, so switching modes quickly cannot replace the active table with
-stale rows.
+stale rows. Recommendation mode exposes an evidence-policy checkbox only for
+the best tier; selecting it sends `allowUnbenchmarkedLatest=true` and visibly
+labels a release-heuristic result as capability-first rather than
+value-optimized.
 
 Example:
 
 ```bash
 curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast"
+curl "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&selectionPolicy=latest-cost-quality"
 ```
+
+`latest-cost-quality` first selects the normal IT Solver benchmark-backed tier
+model as the incumbent. It then evaluates newer stable Artificial Analysis
+configurations. A configuration can replace the incumbent only when its
+Intelligence Index task cost is not higher, its Intelligence score is not
+lower, its release date is later, its canonical models.dev mapping and required
+capabilities are present, and comparable IT Solver evidence does not show a
+higher false-positive rate. Missing IT Solver evidence does not block the
+candidate. Missing or stale Artificial Analysis evidence does block it. The
+default policy remains benchmark-required.
 
 Recommendation responses keep the primary model in `recommendation` and the
 next operationally distinct model for the same filters, including `provider`,
@@ -125,6 +160,8 @@ minContextWindow=200000
 useCase=customer-support|document-processing|voice|speech-to-text  # stt is accepted as an alias
 includeItsBenchmark=false              # omit IT Solver auto-close ranking for customer support
 allowPreview=true                      # allow preview models in customer-support recommendations
+allowUnbenchmarkedLatest=true          # best only: allow latest eligible full-size model without benchmark evidence
+selectionPolicy=latest-cost-quality    # customer support: newer AA model with no cost or Intelligence regression
 ```
 
 ## Local Development
@@ -136,7 +173,7 @@ npm run build
 npm run dev
 ```
 
-Refresh the cached Artificial Analysis extracts:
+Refresh the checked-in Artificial Analysis fallback extracts:
 
 ```bash
 npm run refresh:aa-customer-support
@@ -145,6 +182,21 @@ npm run refresh:aa-llm-pricing
 npm run refresh:aa-stt
 npm run refresh:aa-voice
 ```
+
+Production speech-to-speech rows refresh automatically during catalog rebuilds;
+normal upstream changes require no extractor command, commit, or deployment.
+Live voice, LLM Artificial Analysis, and models.dev inputs must retain at least 50% of their persisted
+coverage high-water marks (tracked separately for the voice API and public
+page); voice sources must also have complete quality and
+input/output pricing on at least half their rows. Cached voice fallback age is
+re-evaluated at request time. `refresh:aa-voice` only maintains the bundled
+emergency snapshot.
+
+The Worker refreshes the complete live catalog each hour. It treats catalog
+data as ready for request reuse for one hour. If a refresh fails, it can serve
+the last complete catalog for up to seven days and marks the response
+`catalogState: "stale"`. The `latest-cost-quality` policy requires evidence no
+older than 24 hours, so stale data cannot promote a new model.
 
 Do not run a new Anthropic customer-support auto-close benchmark from this repo
 without a manual approval checkpoint. A benchmark proposal may list candidate
@@ -163,8 +215,12 @@ wrangler kv namespace create MODEL_CACHE --preview
 The normalized catalog is versioned in KV. A cache-key bump invalidates older
 normalized payloads after source or schema changes. On refresh, the Worker keeps
 serving a previously valid catalog instead of replacing it with a partial result
-when a primary live source fails; checked-in extracts are only missing-field
-fallbacks within a successful live refresh.
+when a primary live source fails. Voice data has its own last-known-good KV
+record: a validated API or public-page result replaces it, while malformed or
+failed fetches fall back to that record and then the bundled snapshot. Fallback
+voice rows older than 14 days stay visible with `stale_voice_benchmark` but
+cannot drive recommendations. `sourceStatus.voice` reports `live`,
+`fallback_fresh`, or `fallback_stale`, its origin, fetch time, and row count.
 
 Deploy:
 
@@ -186,3 +242,8 @@ Optional benchmark-aware recommendations use Artificial Analysis. Configure:
 ```bash
 wrangler secret put ARTIFICIAL_ANALYSIS_API_KEY
 ```
+
+The key enables the preferred speech-to-speech API path; the public page remains
+the automatic live fallback. `ARTIFICIAL_ANALYSIS_S2S_URL` and
+`ARTIFICIAL_ANALYSIS_S2S_PAGE_URL` may override those source URLs for controlled
+environments and tests.

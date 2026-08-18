@@ -23,7 +23,7 @@ describe("homepage copy", () => {
       "fields.endpoint.value === 'benchmarks'",
     );
     expect(HOME_HTML).toContain(
-      "renderFilteredModelBenchmarks((data && data.benchmarks) || []);",
+      "renderFilteredModelBenchmarks(\n          (data && data.benchmarks) || [],\n          (data && data.sourceStatus) || null",
     );
     expect(HOME_HTML).not.toContain(
       "function mergeCustomerSupportBenchmarkRows(models, benchmarkModels)",
@@ -115,6 +115,138 @@ describe("homepage copy", () => {
     expect(documentBranch).not.toContain("minContextWindow");
   });
 
+  it("shows and clears the latest-model option only for best recommendations", () => {
+    const source = HOME_HTML.slice(
+      HOME_HTML.indexOf("function updateLatestOptionVisibility"),
+      HOME_HTML.indexOf("function highlightBenchmark"),
+    );
+    const fields = {
+      endpoint: { value: "recommend" },
+      tier: { value: "best" },
+      allowlatest: { checked: true },
+      allowlatestfield: { hidden: true },
+    };
+    const createUpdate = new Function(
+      "fields",
+      `${source}\nreturn updateLatestOptionVisibility;`,
+    ) as (
+      fieldsValue: typeof fields,
+    ) => () => void;
+    const update = createUpdate(fields);
+
+    update();
+    expect(fields.allowlatestfield.hidden).toBe(false);
+    expect(fields.allowlatest.checked).toBe(true);
+
+    fields.tier.value = "balanced";
+    update();
+    expect(fields.allowlatestfield.hidden).toBe(true);
+    expect(fields.allowlatest.checked).toBe(false);
+
+    fields.allowlatest.checked = true;
+    fields.tier.value = "best";
+    fields.endpoint.value = "benchmarks";
+    update();
+    expect(fields.allowlatestfield.hidden).toBe(true);
+    expect(fields.allowlatest.checked).toBe(false);
+  });
+
+  it("serializes and restores the latest-model evidence policy", () => {
+    const buildPathSource = HOME_HTML.slice(
+      HOME_HTML.indexOf("function buildPath()"),
+      HOME_HTML.indexOf("function setSelectValue"),
+    );
+    const fields = {
+      endpoint: { value: "recommend" },
+      tier: { value: "best" },
+      provider: { value: "" },
+      capability: { value: "" },
+      usecase: { value: "voice" },
+      allowlatest: { checked: true },
+      maxaudioinputcost: { value: "" },
+      maxaudiooutputcost: { value: "" },
+    };
+    const createBuildPath = new Function(
+      "fields",
+      `${buildPathSource}\nreturn buildPath;`,
+    ) as (fieldsValue: typeof fields) => () => string;
+    const buildPath = createBuildPath(fields);
+    const bestUrl = new URL(buildPath(), "https://ai.itsolver.au");
+
+    expect(bestUrl.searchParams.get("allowUnbenchmarkedLatest")).toBe("true");
+    fields.tier.value = "balanced";
+    expect(
+      new URL(buildPath(), "https://ai.itsolver.au").searchParams.has(
+        "allowUnbenchmarkedLatest",
+      ),
+    ).toBe(false);
+
+    const restoreSource = HOME_HTML.slice(
+      HOME_HTML.indexOf("function restoreBuilderStateFromUrl"),
+      HOME_HTML.indexOf("function isCurrentBuilderRequest"),
+    );
+    const input = () => ({ value: "" });
+    const restoredFields = {
+      endpoint: input(),
+      tier: input(),
+      provider: input(),
+      capability: input(),
+      usecase: input(),
+      allowlatest: { checked: false },
+      includeits: { checked: true },
+      inputminrange: input(),
+      inputmaxrange: input(),
+      outputminrange: input(),
+      outputmaxrange: input(),
+      runminrange: input(),
+      runmaxrange: input(),
+      minintelligence: input(),
+      audioinputmaxrange: input(),
+      maxaudiooutputcost: input(),
+      transcriptionmaxrange: input(),
+      aawermaxrange: input(),
+      visualreasoningminrange: input(),
+      imagecostmaxrange: input(),
+      contextminrange: input(),
+      contextmaxrange: input(),
+    };
+    const createRestore = new Function(
+      "fields",
+      "window",
+      "setSelectValue",
+      "setInputValue",
+      `${restoreSource}\nreturn restoreBuilderStateFromUrl;`,
+    ) as (
+      fieldsValue: typeof restoredFields,
+      windowValue: { location: { search: string } },
+      setSelectValue: (field: { value: string }, value: string | null) => void,
+      setInputValue: (field: { value: string }, value: unknown) => void,
+    ) => () => void;
+    const restore = createRestore(
+      restoredFields,
+      {
+        location: {
+          search:
+            "?endpoint=recommend&tier=best&useCase=voice&allowUnbenchmarkedLatest=true",
+        },
+      },
+      (field, value) => {
+        if (value) field.value = value;
+      },
+      (field, value) => {
+        if (value !== null && value !== undefined && value !== "") {
+          field.value = String(value);
+        }
+      },
+    );
+
+    restore();
+    expect(restoredFields.endpoint.value).toBe("recommend");
+    expect(restoredFields.tier.value).toBe("best");
+    expect(restoredFields.usecase.value).toBe("voice");
+    expect(restoredFields.allowlatest.checked).toBe(true);
+  });
+
   it("switches among visibly distinct recommendation, benchmark, and registry views", () => {
     expect(HOME_HTML).toContain('data-mode-panel="recommend"');
     expect(HOME_HTML).toContain('data-mode-panel="benchmarks" hidden');
@@ -129,6 +261,7 @@ describe("homepage copy", () => {
     expect(HOME_HTML).toContain("label: 'Role'");
     expect(HOME_HTML).toContain("label: 'ITS FP'");
     expect(HOME_HTML).toContain("label: 'Visual'");
+    expect(HOME_HTML).toContain("label: 'AA Index'");
     expect(HOME_HTML).toContain("label: 'τ-Voice'");
     expect(HOME_HTML).toContain("label: 'AA-WER'");
 
@@ -143,7 +276,7 @@ describe("homepage copy", () => {
 
   it("keeps non-recommendable benchmark rows visible with an eligibility reason", () => {
     expect(HOME_HTML).toContain(
-      "return (isBrowsingBenchmarks() || model.recommendable !== false) && model.benchmarks && model.benchmarks.voice;",
+      "return hasBenchmark || model.eligibilityReason === 'missing_voice_benchmark';",
     );
     expect(HOME_HTML).toContain(
       "if (!signals || (!isBrowsingBenchmarks() && model.recommendable === false)) return false;",
@@ -154,6 +287,106 @@ describe("homepage copy", () => {
     expect(HOME_HTML).toContain("label: 'Eligibility'");
     expect(HOME_HTML).toContain("typeof model.eligibilityReason === 'string'");
     expect(HOME_HTML).toContain("Not eligible: ");
+  });
+
+  it("uses AA Index first and keeps current voice models awaiting benchmarks visible", () => {
+    expect(HOME_HTML).toContain(
+      "compareNumberDesc(leftVoice.qualityIndex, rightVoice.qualityIndex)",
+    );
+    expect(HOME_HTML).toContain(
+      "return { key: 'quality', direction: 'desc', compare: voiceQualityRowCompare };",
+    );
+    expect(HOME_HTML).toContain(
+      "{ key: 'quality', label: 'AA Index'",
+    );
+
+    const source = HOME_HTML.slice(
+      HOME_HTML.indexOf("function voiceBenchmarkModels"),
+      HOME_HTML.indexOf("function voiceSourceLabel"),
+    );
+    const createFilter = new Function(
+      "isBrowsingBenchmarks",
+      `${source}\nreturn voiceBenchmarkModels;`,
+    ) as (
+      isBrowsingValue: () => boolean,
+    ) => (models: Array<Record<string, unknown>>) => Array<Record<string, unknown>>;
+    const benchmarked = {
+      id: "gpt-realtime-2",
+      recommendable: true,
+      benchmarks: { voice: { qualityIndex: 72 } },
+    };
+    const awaitingBenchmark = {
+      id: "gpt-realtime-2.1",
+      recommendable: false,
+      eligibilityReason: "missing_voice_benchmark",
+      benchmarks: {},
+    };
+    const browseRows = createFilter(() => true)([
+      benchmarked,
+      awaitingBenchmark,
+    ]);
+    const recommendationRows = createFilter(() => false)([
+      benchmarked,
+      awaitingBenchmark,
+    ]);
+
+    expect(browseRows.map((row) => row.id)).toEqual([
+      "gpt-realtime-2",
+      "gpt-realtime-2.1",
+    ]);
+    expect(recommendationRows.map((row) => row.id)).toEqual([
+      "gpt-realtime-2",
+    ]);
+  });
+
+  it("renders voice source state from response metadata", () => {
+    const source = HOME_HTML.slice(
+      HOME_HTML.indexOf("function voiceSourceLabel"),
+      HOME_HTML.indexOf("function renderVoiceBenchmarks"),
+    );
+    const createLabel = new Function(
+      "formatAge",
+      `${source}\nreturn voiceSourceLabel;`,
+    ) as (
+      formatAgeValue: (value: string) => string,
+    ) => (status: Record<string, unknown>) => string;
+    const label = createLabel(() => "2 hours ago");
+
+    expect(
+      label({
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: "2026-07-17T00:00:00Z",
+        rowCount: 12,
+      }),
+    ).toBe("live · AA API · 12 rows · 2 hours ago");
+    expect(
+      label({
+        state: "fallback_stale",
+        origin: "kv_last_known_good",
+        fetchedAt: "2026-06-01T00:00:00Z",
+        rowCount: 1,
+      }),
+    ).toBe("stale fallback · last-known-good cache · 1 row · 2 hours ago");
+  });
+
+  it("sorts descending numeric signals with missing values last", () => {
+    const source = HOME_HTML.slice(
+      HOME_HTML.indexOf("function compareNumberAsc"),
+      HOME_HTML.indexOf("function customerSupportSafetyRowCompare"),
+    );
+    const createComparators = new Function(
+      `${source}\nreturn { compareNumberAsc, compareNumberDesc };`,
+    ) as () => {
+      compareNumberAsc: (left: unknown, right: unknown) => number;
+      compareNumberDesc: (left: unknown, right: unknown) => number;
+    };
+    const { compareNumberDesc } = createComparators();
+
+    expect(compareNumberDesc(90, 80)).toBeLessThan(0);
+    expect(compareNumberDesc(undefined, 80)).toBeGreaterThan(0);
+    expect(compareNumberDesc(80, undefined)).toBeLessThan(0);
+    expect(compareNumberDesc(undefined, undefined)).toBe(0);
   });
 
   it("keeps independent mode responses and rejects stale asynchronous results", () => {
@@ -423,6 +656,20 @@ describe("homepage copy", () => {
     expect(elements.recommendationSource.textContent).toBe(
       "3 distinct model families",
     );
+
+    renderRecommendation({
+      recommendation: {
+        id: "gpt-5.6",
+        family: "gpt-sol",
+        provider: "openai",
+        name: "GPT-5.6",
+      },
+      failovers: [],
+      recommendationMeta: { selectionBasis: "latest_release" },
+    });
+    expect(elements.recommendationSource.textContent).toBe(
+      "Latest full-size release heuristic · benchmark evidence pending · capability-first, not value-optimised",
+    );
   });
 
   it("distinguishes canonical max models while collapsing compound AA efforts", () => {
@@ -664,6 +911,7 @@ describe("homepage copy", () => {
       "buildPath",
       "syncRunCostRange",
       "updateTierOptions",
+      "updateLatestOptionVisibility",
       "origin",
       "syncPageUrl",
       "updateBenchmarkPanel",
@@ -681,6 +929,7 @@ describe("homepage copy", () => {
       buildPathValue: () => string,
       syncRangeValue: () => void,
       updateTierValue: (useCase: string) => void,
+      updateLatestVisibilityValue: () => void,
       originValue: string,
       syncUrlValue: (path: string) => void,
       updatePanelValue: (useCase: string) => void,
@@ -697,6 +946,7 @@ describe("homepage copy", () => {
       0,
       fields,
       buildPath,
+      noop,
       noop,
       noop,
       "https://ai.itsolver.au",

@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleRequest, type Env } from "../src/worker";
+import worker, {
+  handleRequest,
+  refreshCatalog,
+  type Env,
+} from "../src/worker";
 import type { BenchmarkCandidate, Catalog } from "../src/registry";
+import { parseArtificialAnalysisSpeechToSpeechApi } from "../src/aa-speech-to-speech";
 import {
   artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
+  artificialAnalysisSpeechToSpeechApiFixture,
+  artificialAnalysisSpeechToSpeechPageFixture,
+  artificialAnalysisSpeechToSpeechRecordFixture,
   artificialAnalysisSpeechToTextFixture,
   modelsDevFixture,
 } from "./fixtures";
@@ -31,9 +39,21 @@ const artificialAnalysisSttUrl =
 const artificialAnalysisFreeUrl =
   "data:application/json," +
   encodeURIComponent(JSON.stringify(artificialAnalysisFreeFixture));
+const artificialAnalysisS2sUrl =
+  "data:application/json," +
+  encodeURIComponent(JSON.stringify(artificialAnalysisSpeechToSpeechApiFixture));
+const artificialAnalysisS2sPageUrl =
+  "data:text/html," +
+  encodeURIComponent(artificialAnalysisSpeechToSpeechPageFixture);
 const modelsDevUrl =
   "data:application/json," +
   encodeURIComponent(JSON.stringify(modelsDevFixture));
+const voiceCacheKey = "aa:s2s:last-known-good:v1";
+const catalogCacheKey = "catalog:v29";
+const modelsDevCoverageKey = "models-dev:provider-high-water:v1";
+const completeVoiceSnapshot = parseArtificialAnalysisSpeechToSpeechApi(
+  artificialAnalysisSpeechToSpeechApiFixture,
+);
 
 function env(): Env {
   return {
@@ -43,6 +63,8 @@ function env(): Env {
     ARTIFICIAL_ANALYSIS_LLM_URL: artificialAnalysisUrl,
     ARTIFICIAL_ANALYSIS_FREE_LLM_URL: artificialAnalysisFreeUrl,
     ARTIFICIAL_ANALYSIS_STT_URL: artificialAnalysisSttUrl,
+    ARTIFICIAL_ANALYSIS_S2S_URL: artificialAnalysisS2sUrl,
+    ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: artificialAnalysisS2sPageUrl,
   };
 }
 
@@ -51,6 +73,41 @@ const ctx = {
     return undefined;
   },
 };
+
+async function withSystemTime<T>(
+  now: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(now));
+  try {
+    return await task();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+function memoryKv(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
+  const puts: Array<{
+    key: string;
+    value: string;
+    options?: KVNamespacePutOptions;
+  }> = [];
+  const namespace = {
+    get: async (key: string) => values.get(key) ?? null,
+    put: async (
+      key: string,
+      value: string,
+      options?: KVNamespacePutOptions,
+    ) => {
+      values.set(key, value);
+      puts.push({ key, value, options });
+    },
+  } as unknown as KVNamespace;
+
+  return { namespace, puts, values };
+}
 
 function envWithCachedCatalog(catalog: Catalog): Env {
   return {
@@ -76,6 +133,7 @@ function supportCandidate(
   benchmarks: {
     llm: {
       instructionFollowing: 80,
+      tauTelecom: 80,
       intelligence: 80,
       intelligenceRunTotalCost: runCost,
       intelligenceCostPerTask: runCost / 1000,
@@ -137,8 +195,9 @@ function supportCandidate(
 }
 
 function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
+  const evidenceTime = new Date().toISOString();
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: evidenceTime,
     modelCount: candidates.length,
     activeModelCount: candidates.length,
     providers: [
@@ -150,6 +209,14 @@ function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
     ],
     models: [],
     benchmarkCandidates: candidates,
+    sourceStatus: {
+      artificialAnalysisLlm: {
+        state: "live",
+        evidenceTime,
+        liveRowCount: candidates.length,
+        liveCandidateIds: candidates.map((candidate) => candidate.id),
+      },
+    },
   };
 }
 
@@ -277,9 +344,9 @@ describe("worker routes", () => {
       },
       providerCount: 6,
     });
-    expect(body.modelCount).toBe(7);
-    expect(body.activeModelCount).toBe(7);
-    expect(body.registryModelCount).toBe(7);
+    expect(body.modelCount).toBe(8);
+    expect(body.activeModelCount).toBe(8);
+    expect(body.registryModelCount).toBe(8);
     expect(body.benchmarkCount).toBeGreaterThan(body.registryModelCount);
     expect(body.recommendableCount).toBeGreaterThan(0);
   });
@@ -335,6 +402,586 @@ describe("worker routes", () => {
     }
   });
 
+  it("automatically falls back from the voice API to the public page", async () => {
+    const kv = memoryKv();
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === apiUrl) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await handleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+          },
+          ctx,
+        );
+        const body = (await response.json()) as JsonObject;
+        const snapshot = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toEqual({
+          state: "live",
+          origin: "aa_public_page",
+          fetchedAt: "2026-07-17T00:00:00.000Z",
+          rowCount: 8,
+        });
+        expect(snapshot).toMatchObject({
+          fetchedAt: "2026-07-17T00:00:00.000Z",
+          models: expect.arrayContaining([
+            expect.objectContaining({ slug: "gpt-realtime-2-high" }),
+          ]),
+        });
+        expect(fetchSpy).toHaveBeenCalledWith(
+          apiUrl,
+          expect.objectContaining({
+            headers: expect.objectContaining({ "x-api-key": "aa-secret" }),
+          }),
+        );
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("does not replace full voice coverage with a truncated live payload", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: completeVoiceSnapshot,
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === apiUrl) {
+          return Response.json({
+            data: [artificialAnalysisSpeechToSpeechRecordFixture],
+          });
+        }
+        if (String(input) === pageUrl) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await handleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+          },
+          ctx,
+        );
+        const body = (await response.json()) as JsonObject;
+        const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toMatchObject({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+          rowCount: 8,
+        });
+        expect(persisted.models).toHaveLength(8);
+        expect(kv.puts.map(({ key }) => key)).not.toContain(voiceCacheKey);
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps the voice coverage high-water mark across partial refreshes", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        origin: "aa_api",
+        highWaterRowCounts: { aa_api: 30 },
+        models: completeVoiceSnapshot,
+      }),
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await handleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: "data:text/html,unavailable",
+          },
+          ctx,
+        );
+        const body = (await response.json()) as JsonObject;
+        const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toMatchObject({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+          rowCount: 8,
+        });
+        expect(persisted.highWaterRowCounts.aa_api).toBe(30);
+        expect(kv.puts.map(({ key }) => key)).not.toContain(voiceCacheKey);
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not copy a legacy shared voice high-water into both live sources", async () => {
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt: "2026-07-16T00:00:00.000Z",
+        highWaterRowCount: 30,
+        models: completeVoiceSnapshot,
+      }),
+    });
+
+    await withSystemTime("2026-07-17T00:00:00Z", async () => {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        { ...env(), MODEL_CACHE: kv.namespace },
+        ctx,
+      );
+      const body = (await response.json()) as JsonObject;
+      const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+      expect(response.status).toBe(200);
+      expect(body.sourceStatus.voice).toMatchObject({
+        state: "live",
+        origin: "aa_api",
+        rowCount: 8,
+      });
+      expect(persisted).toMatchObject({
+        origin: "aa_api",
+        highWaterRowCounts: { aa_api: 8 },
+      });
+      expect(persisted.highWaterRowCounts).not.toHaveProperty(
+        "aa_public_page",
+      );
+    });
+  });
+
+  it("tracks API and public-page voice coverage independently", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        origin: "aa_public_page",
+        highWaterRowCounts: { aa_api: 8, aa_public_page: 17 },
+        models: completeVoiceSnapshot,
+      }),
+    });
+
+    await withSystemTime("2026-07-17T00:00:00Z", async () => {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        { ...env(), MODEL_CACHE: kv.namespace },
+        ctx,
+      );
+      const body = (await response.json()) as JsonObject;
+      const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+      expect(response.status).toBe(200);
+      expect(body.sourceStatus.voice).toMatchObject({
+        state: "live",
+        origin: "aa_api",
+        rowCount: 8,
+      });
+      expect(persisted).toMatchObject({
+        origin: "aa_api",
+        highWaterRowCounts: { aa_public_page: 17 },
+      });
+      expect(persisted.highWaterRowCounts.aa_api).toBeGreaterThanOrEqual(8);
+      expect(persisted.highWaterRowCounts.aa_api).toBeLessThan(17);
+    });
+  });
+
+  it("keeps per-provider models.dev coverage high-water marks", async () => {
+    const kv = memoryKv();
+    const fullEnv = { ...env(), MODEL_CACHE: kv.namespace };
+    await refreshCatalog(fullEnv);
+    const twoOpenAiModels = structuredClone(modelsDevFixture);
+    twoOpenAiModels.openai.models = Object.fromEntries(
+      Object.entries(twoOpenAiModels.openai.models).slice(0, 2),
+    ) as typeof twoOpenAiModels.openai.models;
+    const twoModelUrl =
+      "data:application/json," +
+      encodeURIComponent(JSON.stringify(twoOpenAiModels));
+    await refreshCatalog({
+      ...fullEnv,
+      MODELS_DEV_URL: twoModelUrl,
+    });
+    const oneOpenAiModel = structuredClone(twoOpenAiModels);
+    oneOpenAiModel.openai.models = Object.fromEntries(
+      Object.entries(oneOpenAiModel.openai.models).slice(0, 1),
+    ) as typeof oneOpenAiModel.openai.models;
+    const oneModelUrl =
+      "data:application/json," +
+      encodeURIComponent(JSON.stringify(oneOpenAiModel));
+
+    expect(
+      JSON.parse(kv.values.get(modelsDevCoverageKey) ?? "null").openai,
+    ).toBe(3);
+    kv.values.delete(catalogCacheKey);
+    await expect(
+      refreshCatalog({ ...fullEnv, MODELS_DEV_URL: oneModelUrl }),
+    ).rejects.toThrow(
+      "models.dev refresh dropped cached provider coverage for openai",
+    );
+    expect(kv.values.has(catalogCacheKey)).toBe(false);
+    expect(
+      JSON.parse(kv.values.get(modelsDevCoverageKey) ?? "null").openai,
+    ).toBe(3);
+  });
+
+  it("requires quality and both prices on the same complete voice rows", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: completeVoiceSnapshot,
+      }),
+    });
+    const disjointRows = structuredClone(
+      artificialAnalysisSpeechToSpeechApiFixture,
+    );
+    disjointRows.data.slice(0, 4).forEach((model) => {
+      model.providers[0].price_per_hour_input = 0;
+      model.providers[0].price_per_hour_output = 0;
+    });
+    disjointRows.data.slice(4).forEach((model) => {
+      model.bba_score = 0;
+      model.tau_voice_score = 0;
+      model.fdb_score = 0;
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === apiUrl) return Response.json(disjointRows);
+        if (String(input) === pageUrl) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await handleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+          },
+          ctx,
+        );
+        const body = (await response.json()) as JsonObject;
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toMatchObject({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+        });
+        expect(kv.puts.map(({ key }) => key)).not.toContain(voiceCacheKey);
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("falls back cleanly when a live voice snapshot cannot be persisted", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const values = new Map([
+      [
+        voiceCacheKey,
+        JSON.stringify({ fetchedAt, models: completeVoiceSnapshot }),
+      ],
+    ]);
+    let voicePutAttempts = 0;
+    const namespace = {
+      get: async (key: string) => values.get(key) ?? null,
+      put: async (key: string, value: string) => {
+        if (key === voiceCacheKey) {
+          voicePutAttempts += 1;
+          throw new Error("KV write unavailable");
+        }
+        values.set(key, value);
+      },
+    } as unknown as KVNamespace;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await handleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          { ...env(), MODEL_CACHE: namespace },
+          ctx,
+        );
+        const body = (await response.json()) as JsonObject;
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toMatchObject({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+        });
+        expect(voicePutAttempts).toBe(2);
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("uses a fresh voice KV snapshot when both live sources fail", async () => {
+    const fetchedAt = "2026-07-10T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: [artificialAnalysisSpeechToSpeechRecordFixture],
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ([apiUrl, pageUrl].includes(String(input))) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await handleRequest(
+          new Request(
+            "https://ai.itsolver.au/v1/benchmarks?useCase=voice",
+          ),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+          },
+          ctx,
+        );
+        const body = (await response.json()) as JsonObject;
+        const cachedRow = body.benchmarks.find(
+          (row: JsonObject) => row.id === "gpt-realtime-2-high",
+        );
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toEqual({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+          fetchedAt,
+          rowCount: 1,
+        });
+        expect(cachedRow).toMatchObject({
+          recommendable: true,
+          eligibilityReason: "eligible",
+        });
+        expect(cachedRow.benchmarks.voice).not.toHaveProperty("stale");
+        expect(kv.puts.map(({ key }) => key)).not.toContain(voiceCacheKey);
+        expect(warnSpy).toHaveBeenCalledWith(
+          "Artificial Analysis voice refresh using KV fallback",
+          expect.objectContaining({ state: "fallback_fresh" }),
+        );
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps a stale voice KV snapshot visible but recommendation-ineligible", async () => {
+    const fetchedAt = "2026-06-30T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: [artificialAnalysisSpeechToSpeechRecordFixture],
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ([apiUrl, pageUrl].includes(String(input))) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await handleRequest(
+          new Request(
+            "https://ai.itsolver.au/v1/benchmarks?useCase=voice",
+          ),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+          },
+          ctx,
+        );
+        const body = (await response.json()) as JsonObject;
+        const staleRow = body.benchmarks.find(
+          (row: JsonObject) => row.id === "gpt-realtime-2-high",
+        );
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toEqual({
+          state: "fallback_stale",
+          origin: "kv_last_known_good",
+          fetchedAt,
+          rowCount: 1,
+        });
+        expect(staleRow).toMatchObject({
+          recommendable: false,
+          eligibilityReason: "stale_voice_benchmark",
+          benchmarks: { voice: { stale: true } },
+        });
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("re-evaluates the voice cutoff when serving a still-fresh catalog", async () => {
+    const fetchedAt = "2026-07-03T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: [artificialAnalysisSpeechToSpeechRecordFixture],
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ([apiUrl, pageUrl].includes(String(input))) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const requestEnv = {
+      ...env(),
+      MODEL_CACHE: kv.namespace,
+      ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+      ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+    };
+
+    try {
+      await withSystemTime("2026-07-16T23:59:00Z", async () => {
+        const response = await handleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          requestEnv,
+        );
+        const body = (await response.json()) as JsonObject;
+        expect(body.sourceStatus.voice.state).toBe("fallback_fresh");
+      });
+
+      await withSystemTime("2026-07-17T00:01:00Z", async () => {
+        const response = await handleRequest(
+          new Request("https://ai.itsolver.au/v1/benchmarks?useCase=voice"),
+          requestEnv,
+        );
+        const body = (await response.json()) as JsonObject;
+        const staleRow = body.benchmarks.find(
+          (row: JsonObject) => row.id === "gpt-realtime-2-high",
+        );
+
+        expect(body.sourceStatus.voice.state).toBe("fallback_stale");
+        expect(staleRow).toMatchObject({
+          recommendable: false,
+          eligibilityReason: "stale_voice_benchmark",
+          benchmarks: { voice: { stale: true } },
+        });
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("runs the automatic voice refresh from the scheduled handler", async () => {
+    const kv = memoryKv();
+    const pending: Promise<unknown>[] = [];
+    const scheduledCtx = {
+      waitUntil(promise: Promise<unknown>) {
+        pending.push(promise);
+      },
+    } as unknown as ExecutionContext;
+
+    await withSystemTime("2026-07-17T06:00:00Z", async () => {
+      await worker.scheduled(
+        {} as ScheduledController,
+        { ...env(), MODEL_CACHE: kv.namespace },
+        scheduledCtx,
+      );
+      await Promise.all(pending);
+    });
+
+    const catalogWrite = kv.puts.find(({ key }) => key.startsWith("catalog:"));
+    const sourceWrite = kv.puts.find(({ key }) => key === voiceCacheKey);
+    const catalog = JSON.parse(catalogWrite?.value ?? "null");
+
+    expect(pending).toHaveLength(1);
+    expect(sourceWrite).toBeDefined();
+    expect(catalogWrite).toBeDefined();
+    expect(catalogWrite?.options).toMatchObject({ expirationTtl: 604800 });
+    expect(catalog).toMatchObject({
+      generatedAt: "2026-07-17T06:00:00.000Z",
+      sourceStatus: {
+        voice: {
+          state: "live",
+          origin: "aa_api",
+          fetchedAt: "2026-07-17T06:00:00.000Z",
+          rowCount: 8,
+        },
+      },
+    });
+  });
+
   it("serves a stale valid cache without overwriting it when models.dev fails", async () => {
     let putCount = 0;
     const cached = supportCatalog([supportCandidate("cached", 0, 0.9, 10, 2)]);
@@ -344,8 +991,8 @@ describe("worker routes", () => {
       {
         MODEL_CACHE: {
           get: async () => JSON.stringify(cached),
-          put: async () => {
-            putCount += 1;
+          put: async (key: string) => {
+            if (key.startsWith("catalog:")) putCount += 1;
           },
         } as unknown as KVNamespace,
         MODELS_DEV_URL: "data:application/json,%5B%5D",
@@ -357,6 +1004,7 @@ describe("worker routes", () => {
     expect((await response.json()) as JsonObject).toMatchObject({
       benchmarkCount: 1,
       registryModelCount: 0,
+      catalogState: "stale",
     });
     expect(putCount).toBe(0);
   });
@@ -387,8 +1035,8 @@ describe("worker routes", () => {
           ...env(),
           MODEL_CACHE: {
             get: async () => JSON.stringify(cached),
-            put: async () => {
-              putCount += 1;
+            put: async (key: string) => {
+              if (key.startsWith("catalog:")) putCount += 1;
             },
           } as unknown as KVNamespace,
           MODELS_DEV_URL:
@@ -451,8 +1099,8 @@ describe("worker routes", () => {
         ...env(),
         MODEL_CACHE: {
           get: async () => JSON.stringify(cached),
-          put: async () => {
-            putCount += 1;
+          put: async (key: string) => {
+            if (key.startsWith("catalog:")) putCount += 1;
           },
         } as unknown as KVNamespace,
       },
@@ -491,8 +1139,8 @@ describe("worker routes", () => {
         ...env(),
         MODEL_CACHE: {
           get: async () => JSON.stringify(cached),
-          put: async () => {
-            putCount += 1;
+          put: async (key: string) => {
+            if (key.startsWith("catalog:")) putCount += 1;
           },
         } as unknown as KVNamespace,
         ARTIFICIAL_ANALYSIS_FREE_LLM_URL: emptyAaUrl,
@@ -541,8 +1189,8 @@ describe("worker routes", () => {
           ...env(),
           MODEL_CACHE: {
             get: async () => JSON.stringify(cached),
-            put: async () => {
-              putCount += 1;
+            put: async (key: string) => {
+              if (key.startsWith("catalog:")) putCount += 1;
             },
           } as unknown as KVNamespace,
           ARTIFICIAL_ANALYSIS_FREE_LLM_URL:
@@ -1506,26 +2154,26 @@ describe("worker routes", () => {
     expect(defaultBody.recommendation).toMatchObject({
       benchmarks: { voice: expect.any(Object) },
       pricing: expect.objectContaining({
-        benchmarkInputAudioPerHour: expect.any(Number),
+        audioInputPerHour: expect.any(Number),
       }),
     });
     expect(defaultBody.recommendation.id).toBe(fastBody.recommendation.id);
     expect(fastBody.recommendation).toMatchObject({
       benchmarks: { voice: expect.any(Object) },
       pricing: expect.objectContaining({
-        benchmarkInputAudioPerHour: expect.any(Number),
+        audioInputPerHour: expect.any(Number),
       }),
     });
     expect(bestBody.recommendation).toMatchObject({
       benchmarks: { voice: expect.any(Object) },
       pricing: expect.objectContaining({
-        benchmarkInputAudioPerHour: expect.any(Number),
+        audioInputPerHour: expect.any(Number),
       }),
     });
     expect(
-      fastBody.recommendation.pricing.benchmarkInputAudioPerHour,
+      fastBody.recommendation.pricing.audioInputPerHour,
     ).toBeLessThanOrEqual(
-      bestBody.recommendation.pricing.benchmarkInputAudioPerHour,
+      bestBody.recommendation.pricing.audioInputPerHour,
     );
     const voiceQuality = (voice: {
       agenticPerformance?: number;
@@ -1544,6 +2192,214 @@ describe("worker routes", () => {
     );
   });
 
+  it("opts into the latest unbenchmarked voice model without calling it value-backed", async () => {
+    const strictResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=best",
+      ),
+      env(),
+      ctx,
+    );
+    const latestResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=best&allowUnbenchmarkedLatest=true",
+      ),
+      env(),
+      ctx,
+    );
+    const benchmarksResponse = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=voice"),
+      env(),
+      ctx,
+    );
+    const healthResponse = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      env(),
+      ctx,
+    );
+    const strict = (await strictResponse.json()) as JsonObject;
+    const latest = (await latestResponse.json()) as JsonObject;
+    const benchmarks = (await benchmarksResponse.json()) as JsonObject;
+    const health = (await healthResponse.json()) as JsonObject;
+
+    expect(strict.recommendation.id).not.toBe("gpt-realtime-2.1");
+    expect(strict.recommendationMeta).toMatchObject({
+      policy: "benchmark_required",
+      selectionBasis: "benchmark",
+      benchmarkEligible: true,
+      valueOptimized: false,
+    });
+    expect(latest.recommendation).toMatchObject({
+      id: "gpt-realtime-2.1",
+      pricing: { audioInputPerMTok: 48, audioOutputPerMTok: 96 },
+    });
+    expect(latest.recommendation.benchmarks?.voice).toBeUndefined();
+    expect(latest.recommendationMeta).toEqual({
+      policy: "allow_unbenchmarked_latest",
+      selectionBasis: "latest_release",
+      benchmarkEligible: false,
+      valueOptimized: false,
+    });
+    expect(latest.recommendation.failover).toMatchObject({
+      benchmarks: { voice: expect.any(Object) },
+    });
+    expect(benchmarks.benchmarks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "gpt-realtime-2.1",
+          source: "models.dev",
+          recommendable: false,
+          eligibilityReason: "missing_voice_benchmark",
+        }),
+      ]),
+    );
+    expect(health.sourceStatus.voice).toMatchObject({
+      state: "live",
+      origin: "aa_api",
+      rowCount: 8,
+    });
+  });
+
+  it("reports benchmark-required metadata when the latest policy is inactive", async () => {
+    const cases = [
+      {
+        url: "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=fast&allowUnbenchmarkedLatest=true",
+        valueOptimized: true,
+      },
+      {
+        url: "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=balanced&allowUnbenchmarkedLatest=true",
+        valueOptimized: true,
+      },
+      {
+        url: "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=best&minIntelligence=1&allowUnbenchmarkedLatest=true",
+        valueOptimized: false,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const response = await handleRequest(
+        new Request(testCase.url),
+        env(),
+        ctx,
+      );
+      const body = (await response.json()) as JsonObject;
+
+      expect(response.status).toBe(200);
+      expect(body.recommendationMeta).toEqual({
+        policy: "benchmark_required",
+        selectionBasis: "benchmark",
+        benchmarkEligible: true,
+        valueOptimized: testCase.valueOptimized,
+      });
+    }
+  });
+
+  it("does not replace the last-good catalog with a partial AA aggregate", async () => {
+    let putCount = 0;
+    const cached = supportCatalog(
+      Array.from({ length: 100 }, (_, index) =>
+        supportCandidate(`cached-${index}`, 0, 0.9, 10, 2),
+      ),
+    );
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    cached.sourceStatus!.artificialAnalysisLlm!.liveRowCounts = {
+      llmApi: artificialAnalysisFixture.data.length,
+      freeLlmApi: 100,
+    };
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      {
+        ...env(),
+        MODEL_CACHE: {
+          get: async () => JSON.stringify(cached),
+          put: async (key: string) => {
+            if (key.startsWith("catalog:")) putCount += 1;
+          },
+        } as unknown as KVNamespace,
+      },
+      ctx,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()) as JsonObject).toMatchObject({
+      benchmarkCount: 100,
+      registryModelCount: 0,
+      catalogState: "stale",
+    });
+    expect(putCount).toBe(0);
+  });
+
+  it("returns auditable metadata for the latest cost and quality policy", async () => {
+    const incumbent = supportCandidate("incumbent", 1, 0.95, 400, 5);
+    incumbent.registryModelId = "incumbent";
+    incumbent.releaseDate = "2026-06-01";
+    incumbent.capabilities = {
+      vision: true,
+      pdf: true,
+      reasoning: true,
+      toolCalling: true,
+      structuredOutput: true,
+    };
+    incumbent.modalities = { input: ["text", "image"], output: ["text"] };
+
+    const newer = supportCandidate("newer", 1, 0.95, 200, 5);
+    newer.registryModelId = "newer";
+    newer.releaseDate = "2026-08-01";
+    newer.capabilities = { ...incumbent.capabilities };
+    newer.modalities = { ...incumbent.modalities };
+    delete newer.benchmarks.llm?.autoClose;
+    const snapshot = supportCatalog([incumbent, newer]);
+    snapshot.generatedAt = "2026-08-18T11:30:00Z";
+    snapshot.sourceStatus!.artificialAnalysisLlm!.evidenceTime =
+      "2026-08-18T11:30:00Z";
+
+    await withSystemTime("2026-08-18T12:00:00Z", async () => {
+      const strictResponse = await handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning&minIntelligence=30",
+        ),
+        envWithCachedCatalog(snapshot),
+        ctx,
+      );
+      const guardedResponse = await handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning&minIntelligence=30&selectionPolicy=latest-cost-quality",
+        ),
+        envWithCachedCatalog(snapshot),
+        ctx,
+      );
+      const strict = (await strictResponse.json()) as JsonObject;
+      const guarded = (await guardedResponse.json()) as JsonObject;
+
+      expect(strict.recommendation.id).toBe("incumbent");
+      expect(strict.recommendationMeta.policy).toBe("benchmark_required");
+      expect(guarded.recommendation.id).toBe("newer");
+      expect(guarded.recommendationMeta).toEqual({
+        policy: "latest-cost-quality",
+        selectionBasis: "newer_aa_cost_quality",
+        incumbent: {
+          provider: "openai",
+          id: "incumbent",
+          releaseDate: "2026-06-01",
+          aaTaskCostAud: 0.4,
+          aaIntelligence: 80,
+        },
+        selectedCandidate: {
+          provider: "openai",
+          id: "newer",
+          releaseDate: "2026-08-01",
+          aaTaskCostAud: 0.2,
+          aaIntelligence: 80,
+        },
+        releaseDate: "2026-08-01",
+        aaTaskCostAud: 0.2,
+        aaIntelligence: 80,
+        evidenceTime: "2026-08-18T11:30:00Z",
+        catalogFresh: true,
+      });
+    });
+  });
+
   it("hard-filters voice rows by input audio cost", async () => {
     const response = await handleRequest(
       new Request(
@@ -1558,8 +2414,14 @@ describe("worker routes", () => {
     expect(body.benchmarks.length).toBeGreaterThan(0);
     expect(
       body.benchmarks.every(
-        (row: { pricing: { benchmarkInputAudioPerHour?: number } }) =>
+        (row: {
+          pricing: {
+            benchmarkInputAudioPerHour?: number;
+            audioInputPerHour?: number;
+          };
+        }) =>
           (row.pricing.benchmarkInputAudioPerHour ??
+            row.pricing.audioInputPerHour ??
             Number.POSITIVE_INFINITY) <= 3,
       ),
     ).toBe(true);

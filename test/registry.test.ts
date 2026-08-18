@@ -2,20 +2,26 @@ import { describe, expect, it } from "vitest";
 import {
   benchmarkCandidates,
   isBenchmarkCandidateRecommendedForFilters,
+  latestCostQualitySelection,
   normalizeArtificialAnalysisCatalog,
   normalizeModelsDevCatalog,
   parseFilters,
+  rankedRecommendedModels,
   recommendModel,
   recommendModelFailovers,
   recommendationFamilyKey,
   type BenchmarkCandidate,
   type Catalog,
+  type ModelsDevDocument,
+  type ProviderId,
 } from "../src/registry";
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
 import { AI_AUTOCLOSE_BENCHMARKS } from "../src/generated/ai-autoclose-benchmarks";
+import { parseArtificialAnalysisSpeechToSpeechApi } from "../src/aa-speech-to-speech";
 import {
   artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
+  artificialAnalysisSpeechToSpeechApiFixture,
   artificialAnalysisSpeechToTextFixture,
   modelsDevFixture,
 } from "./fixtures";
@@ -215,6 +221,645 @@ describe("filter parsing", () => {
     ).toMatchObject({
       unsupportedProvider: true,
     });
+    expect(
+      parseFilters(
+        new URLSearchParams("allowUnbenchmarkedLatest=true"),
+      ).allowUnbenchmarkedLatest,
+    ).toBe(true);
+    expect(parseFilters(new URLSearchParams()).allowUnbenchmarkedLatest).toBe(
+      false,
+    );
+  });
+});
+
+describe("latest cost and quality customer-support policy", () => {
+  const autoClose = (falsePositiveCount: number, benchmarkCodeSha = "same") => ({
+    source: "itsolver-autoclose" as const,
+    modelKey: "test:model",
+    apiModel: "test-model",
+    displayName: "Test Model",
+    benchmarkReport: "test.md",
+    resultsFile: "test.json",
+    generatedAt: "2026-08-01T00:00:00Z",
+    benchmarkCodeSha,
+    total: 100,
+    correctCount: 95,
+    accuracy: 0.95,
+    falsePositiveCount,
+    falseNegativeCount: 4,
+    invalidCount: 0,
+    errorCount: 0,
+    parseSuccessRate: 1,
+    avgLatencyMs: 1000,
+    p95LatencyMs: 1200,
+    avgInputTokens: 1000,
+    avgOutputTokens: 100,
+    weightedScore: 90,
+    sourceUrl: "https://example.test/autoclose",
+    verifiedOn: "2026-08-01",
+    availability: {
+      status: "production" as const,
+      acceptedRisk: false,
+      reason: "test",
+    },
+  });
+
+  const candidate = (input: {
+    id: string;
+    releaseDate: string;
+    taskCost: number;
+    intelligence: number;
+    incumbent?: boolean;
+    falsePositiveCount?: number;
+    benchmarkCodeSha?: string;
+    availability?: "production" | "preview";
+    mapped?: boolean;
+    deprecated?: boolean;
+  }): BenchmarkCandidate => ({
+    id: input.id,
+    provider: "openai",
+    name: input.id,
+    source: "artificialanalysis",
+    benchmarks: {
+      llm: {
+        instructionFollowing: 80,
+        tauTelecom: 80,
+        intelligence: input.intelligence,
+        intelligenceCostPerTask: input.taskCost,
+        ...(input.incumbent || input.falsePositiveCount !== undefined
+          ? {
+              autoClose: autoClose(
+                input.falsePositiveCount ?? 1,
+                input.benchmarkCodeSha,
+              ),
+            }
+          : {}),
+      },
+    },
+    pricing: { inputPerMTok: 1, outputPerMTok: 5 },
+    ...(input.mapped === false ? {} : { registryModelId: input.id }),
+    recommendable: true,
+    availability: {
+      status: input.availability ?? "production",
+      acceptedRisk: false,
+      reason: "test",
+    },
+    family: "gpt",
+    contextWindow: 100000,
+    outputLimit: 10000,
+    capabilities: {
+      vision: true,
+      pdf: true,
+      reasoning: true,
+      toolCalling: true,
+      structuredOutput: true,
+    },
+    modalities: { input: ["text", "image"], output: ["text"] },
+    releaseDate: input.releaseDate,
+    openWeights: false,
+    tier: null,
+    deprecated: input.deprecated ?? false,
+    updatedAt: `${input.releaseDate}T00:00:00Z`,
+  });
+
+  const catalog = (
+    candidates: BenchmarkCandidate[],
+    generatedAt = "2026-08-18T00:00:00Z",
+  ): Catalog => ({
+    generatedAt,
+    modelCount: candidates.length,
+    activeModelCount: candidates.length,
+    providers: [
+      { provider: "openai", total: candidates.length, active: candidates.length },
+    ],
+    models: [],
+    benchmarkCandidates: candidates,
+    sourceStatus: {
+      artificialAnalysisLlm: {
+        state: "live",
+        evidenceTime: generatedAt,
+        liveRowCount: candidates.length,
+        liveCandidateIds: candidates.map((entry) => entry.id),
+      },
+    },
+  });
+
+  const filters = (tier: "fast" | "balanced" | "best") => ({
+    useCase: "customer-support" as const,
+    tier,
+    capability: "reasoning" as const,
+    minIntelligence: 30,
+    selectionPolicy: "latest-cost-quality" as const,
+  });
+  const now = Date.parse("2026-08-18T12:00:00Z");
+
+  it("selects the newest no-more-expensive equal-or-better AA configuration", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+    });
+    const olderCheap = candidate({
+      id: "older-cheap",
+      releaseDate: "2026-07-01",
+      taskCost: 0.1,
+      intelligence: 50,
+    });
+    const newestCheap = candidate({
+      id: "newest-cheap",
+      releaseDate: "2026-08-01",
+      taskCost: 0.2,
+      intelligence: 46,
+    });
+    const newestSmart = candidate({
+      id: "newest-smart",
+      releaseDate: "2026-08-01",
+      taskCost: 0.3,
+      intelligence: 55,
+    });
+    const snapshot = catalog([
+      incumbent,
+      olderCheap,
+      newestCheap,
+      newestSmart,
+    ]);
+
+    expect(latestCostQualitySelection(snapshot, filters("fast"), now).selected?.id).toBe(
+      "newest-cheap",
+    );
+    expect(
+      latestCostQualitySelection(snapshot, filters("balanced"), now).selected?.id,
+    ).toBe("newest-cheap");
+    expect(latestCostQualitySelection(snapshot, filters("best"), now).selected?.id).toBe(
+      "newest-smart",
+    );
+  });
+
+  it("rejects higher-cost, lower-quality, stale, preview, unmapped, and deprecated rows", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+    });
+    const rejected = [
+      candidate({ id: "costly", releaseDate: "2026-08-01", taskCost: 0.41, intelligence: 60 }),
+      candidate({ id: "weaker", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 44 }),
+      candidate({ id: "preview-model", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, availability: "preview" }),
+      candidate({ id: "unmapped", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, mapped: false }),
+      candidate({ id: "deprecated", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, deprecated: true }),
+    ];
+
+    const selection = latestCostQualitySelection(
+      catalog([incumbent, ...rejected]),
+      filters("fast"),
+      now,
+    );
+    expect(selection.selected?.id).toBe("incumbent");
+    expect(selection.selectionBasis).toBe("benchmark_incumbent");
+
+    const stale = latestCostQualitySelection(
+      catalog([incumbent], "2026-08-16T00:00:00Z"),
+      filters("fast"),
+      now,
+    );
+    expect(stale.selected?.id).toBe("incumbent");
+    expect(stale.selectionBasis).toBe("stale_catalog_incumbent");
+
+    const staleEvidence = catalog([incumbent]);
+    staleEvidence.sourceStatus!.artificialAnalysisLlm!.evidenceTime =
+      "2026-08-16T00:00:00Z";
+    const staleEvidenceSelection = latestCostQualitySelection(
+      staleEvidence,
+      filters("fast"),
+      now,
+    );
+    expect(staleEvidenceSelection.selected?.id).toBe("incumbent");
+    expect(staleEvidenceSelection.selectionBasis).toBe(
+      "stale_catalog_incumbent",
+    );
+  });
+
+  it("blocks a comparable ITS safety regression and keeps default behavior strict", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+      falsePositiveCount: 1,
+      benchmarkCodeSha: "comparable",
+    });
+    const regressed = candidate({
+      id: "regressed",
+      releaseDate: "2026-08-01",
+      taskCost: 0.2,
+      intelligence: 50,
+      falsePositiveCount: 2,
+      benchmarkCodeSha: "comparable",
+    });
+    const snapshot = catalog([incumbent, regressed]);
+
+    expect(latestCostQualitySelection(snapshot, filters("best"), now).selected?.id).toBe(
+      "incumbent",
+    );
+    expect(
+      recommendModel(snapshot, {
+        useCase: "customer-support",
+        tier: "best",
+      })?.id,
+    ).toBe("incumbent");
+  });
+});
+
+describe("latest unbenchmarked recommendations", () => {
+  const generatedAt = "2026-07-17T00:00:00Z";
+  const voiceRows = parseArtificialAnalysisSpeechToSpeechApi(
+    artificialAnalysisSpeechToSpeechApiFixture,
+  );
+  const catalog = normalizeModelsDevCatalog(
+    modelsDevFixture,
+    generatedAt,
+    undefined,
+    [],
+    [],
+    voiceRows,
+    {
+      state: "live",
+      origin: "aa_public_page",
+      fetchedAt: generatedAt,
+      rowCount: voiceRows.length,
+    },
+  );
+
+  it("lists current audio models without inventing benchmark evidence", () => {
+    const realtime = catalog.models.find(
+      (model) => model.id === "gpt-realtime-2.1",
+    );
+    const candidate = benchmarkCandidates(catalog, { useCase: "voice" }).find(
+      (model) => model.id === "gpt-realtime-2.1",
+    );
+
+    expect(realtime).toMatchObject({
+      pricing: { audioInputPerMTok: 32, audioOutputPerMTok: 64 },
+    });
+    expect(candidate).toMatchObject({
+      source: "models.dev",
+      recommendable: false,
+      registryModelId: "gpt-realtime-2.1",
+    });
+    expect(candidate?.benchmarks.voice).toBeUndefined();
+  });
+
+  it("uses the newest unbenchmarked release only for opted-in best", () => {
+    expect(recommendModel(catalog, { useCase: "voice", tier: "best" })?.id).toBe(
+      "gpt-realtime-2-high",
+    );
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      releaseDate: "2026-07-06",
+    });
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "fast",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("openai-gpt-realtime-mini");
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "balanced",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({ source: "artificialanalysis" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+        minIntelligence: 1,
+      })?.id,
+    ).not.toBe("gpt-realtime-2.1");
+  });
+
+  it("honours provider and capability filters for the latest heuristic", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-2.2"] = {
+      ...base,
+      id: "gpt-realtime-2.2",
+      name: "GPT-Realtime-2.2",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      tool_call: false,
+    };
+    const compatibleCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(compatibleCatalog, {
+        useCase: "voice",
+        tier: "best",
+        provider: "openai",
+        capability: "toolCalling",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      provider: "openai",
+      capabilities: { toolCalling: true },
+    });
+    expect(
+      recommendModel(compatibleCatalog, {
+        useCase: "voice",
+        tier: "best",
+        provider: "google",
+        allowUnbenchmarkedLatest: true,
+      })?.provider,
+    ).toBe("google");
+  });
+
+  it("keeps previews, latest aliases, and reduced variants behind a flagship", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-3-preview"] = {
+      ...base,
+      id: "gpt-realtime-3-preview",
+      name: "GPT-Realtime-3 Preview",
+      release_date: "2026-07-14",
+      last_updated: "2026-07-14",
+    };
+    source.openai.models!["gpt-realtime-latest"] = {
+      ...base,
+      id: "gpt-realtime-latest",
+      name: "GPT-Realtime Latest",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+    };
+    source.openai.models!["gpt-realtime-3-mini"] = {
+      ...base,
+      id: "gpt-realtime-3-mini",
+      name: "GPT-Realtime-3 Mini",
+      release_date: "2026-07-16",
+      last_updated: "2026-07-16",
+    };
+    source.google.models!["gemini-3-flash-native-audio"] = {
+      ...base,
+      id: "gemini-3-flash-native-audio",
+      name: "Gemini 3 Flash Native Audio",
+      family: "gemini",
+      release_date: "2026-07-17",
+      last_updated: "2026-07-17",
+    };
+    const riskCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(riskCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("gpt-realtime-2.1");
+  });
+
+  it("uses voice pricing only when breaking otherwise equal latest ties", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-2.2-a"] = {
+      ...base,
+      id: "gpt-realtime-2.2-a",
+      name: "GPT-Realtime-2.2 A",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      cost: { ...base?.cost, output: 100, output_audio: 70 },
+    };
+    source.openai.models!["gpt-realtime-2.2-b"] = {
+      ...base,
+      id: "gpt-realtime-2.2-b",
+      name: "GPT-Realtime-2.2 B",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      cost: { ...base?.cost, output: 1, output_audio: 80 },
+    };
+    const priceCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(priceCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("gpt-realtime-2.2-b");
+  });
+
+  it("keeps an already-benchmarked latest model on benchmark selection", () => {
+    const benchmarkedRows = [
+      ...voiceRows,
+      {
+        ...voiceRows[0],
+        id: "voice-latest",
+        name: "GPT-Realtime-2.1",
+        shortName: "GPT-Realtime-2.1",
+        slug: "gpt-realtime-2.1",
+        modelSlug: "gpt-realtime-2.1",
+        provider: "openai",
+        providerName: "OpenAI",
+        s2sQualityIndex: 100,
+        bbaScore: 1,
+        tauVoiceAggScore: 1,
+        fdbScore: 1,
+      },
+    ];
+    const benchmarkedCatalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      benchmarkedRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: benchmarkedRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(benchmarkedCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      source: "artificialanalysis",
+      registryModelId: "gpt-realtime-2.1",
+      benchmarks: { voice: expect.any(Object) },
+    });
+  });
+
+  it("allows a named token-priced speech-to-text release without AA evidence", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-6-transcribe"] = {
+      ...base,
+      id: "gpt-6-transcribe",
+      name: "GPT-6 Transcribe",
+      family: "gpt-transcribe",
+      release_date: "2026-07-16",
+      last_updated: "2026-07-16",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 2, output: 8 },
+    };
+    source.elevenlabs = {
+      models: {
+        "scribe-v3": {
+          ...base,
+          id: "scribe-v3",
+          name: "Scribe V3",
+          family: "scribe",
+          release_date: "2026-07-18",
+          last_updated: "2026-07-18",
+          modalities: { input: ["audio"], output: ["text"] },
+          cost: { input: 3, output: 9 },
+        },
+      },
+    };
+    source.nvidia.models!["parakeet-v4"] = {
+      ...base,
+      id: "parakeet-v4",
+      name: "Parakeet V4",
+      family: "parakeet",
+      open_weights: false,
+      release_date: "2026-07-20",
+      last_updated: "2026-07-20",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 1, output: 4 },
+    };
+    source.nvidia.models!["canary-v3"] = {
+      ...base,
+      id: "canary-v3",
+      name: "Canary V3",
+      family: "canary",
+      open_weights: false,
+      release_date: "2026-07-19",
+      last_updated: "2026-07-19",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 1, output: 4 },
+    };
+    source.google.models!["gemini-4-multimodal"] = {
+      ...base,
+      id: "gemini-4-multimodal",
+      name: "Gemini 4 Multimodal",
+      family: "gemini",
+      release_date: "2026-07-21",
+      last_updated: "2026-07-21",
+      modalities: { input: ["text", "audio"], output: ["text"] },
+      cost: { input: 4, output: 12 },
+    };
+    const speechCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    const latestSpeechToText = (provider?: ProviderId) =>
+      recommendModel(speechCatalog, {
+        useCase: "speech-to-text",
+        tier: "best",
+        ...(provider ? { provider } : {}),
+        allowUnbenchmarkedLatest: true,
+      });
+
+    expect(latestSpeechToText("openai")).toMatchObject({
+      id: "gpt-6-transcribe",
+      provider: "openai",
+      pricing: { inputPerMTok: 2, outputPerMTok: 8 },
+    });
+    expect(latestSpeechToText("elevenlabs")).toMatchObject({
+      id: "scribe-v3",
+      provider: "elevenlabs",
+    });
+    expect(latestSpeechToText("nvidia")).toMatchObject({
+      id: "parakeet-v4",
+      provider: "nvidia",
+    });
+    expect(latestSpeechToText("google")).toMatchObject({
+      source: "artificialanalysis",
+    });
+    expect(latestSpeechToText("google")?.id).not.toBe(
+      "gemini-4-multimodal",
+    );
   });
 });
 
@@ -1778,6 +2423,94 @@ describe("Artificial Analysis catalog", () => {
         maxAudioInputCostPerHour: 2,
       })?.id,
     ).toBe("cheapest");
+  });
+
+  it("does not recommend a voice row without an explicit output price", () => {
+    const incomplete: BenchmarkCandidate = {
+      id: "missing-output-price",
+      provider: "xai",
+      name: "Missing output price",
+      source: "artificialanalysis",
+      benchmarks: {
+        voice: {
+          source: "artificialanalysis",
+          extractedAt: "2026-08-18T00:00:00Z",
+          qualityIndex: 90,
+        },
+      },
+      pricing: { benchmarkInputAudioPerHour: 1 },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    };
+
+    expect(
+      isBenchmarkCandidateRecommendedForFilters(incomplete, {
+        useCase: "voice",
+      }),
+    ).toBe(false);
+  });
+
+  it("orders best voice candidates by quality index with missing values last", () => {
+    const candidate = (
+      id: string,
+      qualityIndex: number | undefined,
+      agenticPerformance: number,
+    ): BenchmarkCandidate => ({
+      id,
+      provider: "xai",
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        voice: {
+          ...(qualityIndex === undefined ? {} : { qualityIndex }),
+          agenticPerformance,
+          speechReasoning: 0.8,
+          source: "artificialanalysis",
+          extractedAt: "2026-07-17T00:00:00Z",
+        },
+      },
+      pricing: {
+        benchmarkInputAudioPerHour: 1,
+        audioOutputPerHour: 1,
+      },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-07-17T00:00:00Z",
+      modelCount: 3,
+      activeModelCount: 3,
+      providers: [{ provider: "xai", total: 3, active: 3 }],
+      models: [],
+      benchmarkCandidates: [
+        candidate("missing-index", undefined, 1),
+        candidate("index-70", 70, 0.6),
+        candidate("index-80", 80, 0.5),
+      ],
+    };
+
+    expect(
+      rankedRecommendedModels(catalog, {
+        useCase: "voice",
+        tier: "best",
+      }).map(({ id }) => id),
+    ).toEqual(["index-80", "index-70", "missing-index"]);
   });
 
   it("uses Artificial Analysis speech-to-text data for STT recommendations", () => {

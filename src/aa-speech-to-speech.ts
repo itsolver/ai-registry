@@ -104,6 +104,21 @@ function normalizeRecord(
     stringOrUndefined(record.provider) ?? stringOrUndefined(host?.slug);
   const slug = stringOrUndefined(record.slug);
   if (!provider || !slug || !SUPPORTED_PROVIDERS.has(provider)) return undefined;
+  const hasSpeechToSpeechEvidence = [
+    record.s2sQualityIndex,
+    record.bbaScore,
+    record.tauVoiceAggScore,
+    record.fdbScore,
+    record.timeToFirstAudioSeconds,
+    record.costPerHourOfInputAudio,
+    record.pricePerHourInput,
+    record.pricePerHourOutput,
+    record.averageCostPerTask,
+    objectOrUndefined(categoryScores?.telecom)?.avg_reward,
+    objectOrUndefined(categoryScores?.retail)?.avg_reward,
+    objectOrUndefined(categoryScores?.airline)?.avg_reward,
+  ].some((field) => numberOrUndefined(field) !== undefined);
+  if (!hasSpeechToSpeechEvidence) return undefined;
 
   const name = stringOrUndefined(record.name) ?? slug;
   return {

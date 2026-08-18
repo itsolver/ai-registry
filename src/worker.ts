@@ -24,6 +24,7 @@ import {
   recommendModelFailovers,
   rankedRecommendedModels,
   type ArtificialAnalysisModel,
+  type ArtificialAnalysisLlmSourceStatus,
   type ArtificialAnalysisSpeechToSpeechModel,
   type ArtificialAnalysisSpeechToTextModel,
   type Catalog,
@@ -362,7 +363,7 @@ function recommendationMeta(
       releaseDate: selected.releaseDate ?? null,
       aaTaskCostAud: selectedSignals?.intelligenceCostPerTask ?? null,
       aaIntelligence: selectedSignals?.intelligence ?? null,
-      evidenceTime: catalog.generatedAt,
+      evidenceTime: selection.evidenceTime,
       catalogFresh: selection.catalogFresh,
     };
   }
@@ -529,24 +530,48 @@ function assertProviderCoverage(
     }
   }
 
-  const cachedAaCount =
-    cached?.benchmarkCandidates?.filter(
-      (candidate) => candidate.source === "artificialanalysis",
-    ).length ?? 0;
-  const fetchedAaCount =
-    catalog.benchmarkCandidates?.filter(
-      (candidate) => candidate.source === "artificialanalysis",
-    ).length ?? 0;
+  const cachedAaStatus = cached?.sourceStatus?.artificialAnalysisLlm;
+  const fetchedAaStatus = catalog.sourceStatus?.artificialAnalysisLlm;
+  if (cachedAaStatus?.liveRowCounts && fetchedAaStatus?.liveRowCounts) {
+    for (const source of ["llmApi", "freeLlmApi"] as const) {
+      assertAaSourceCoverage(
+        source,
+        fetchedAaStatus.liveRowCounts[source],
+        cachedAaStatus.liveRowCounts[source],
+      );
+    }
+  } else {
+    const cachedAaCount =
+      cachedAaStatus?.liveRowCount ??
+      cached?.benchmarkCandidates?.filter(
+        (candidate) =>
+          candidate.source === "artificialanalysis" &&
+          candidate.benchmarks.llm !== undefined,
+      ).length ??
+      0;
+    assertAaSourceCoverage(
+      "aggregate",
+      fetchedAaStatus?.liveRowCount ?? 0,
+      cachedAaCount,
+    );
+  }
+}
+
+function assertAaSourceCoverage(
+  source: "llmApi" | "freeLlmApi" | "aggregate",
+  fetchedCount: number,
+  cachedCount: number,
+): void {
   if (
-    cachedAaCount > 0 &&
-    fetchedAaCount <
+    cachedCount > 0 &&
+    fetchedCount <
       Math.max(
         1,
-        Math.ceil(cachedAaCount * ARTIFICIAL_ANALYSIS_MIN_COVERAGE_RATIO),
+        Math.ceil(cachedCount * ARTIFICIAL_ANALYSIS_MIN_COVERAGE_RATIO),
       )
   ) {
     throw new Error(
-      `Artificial Analysis refresh returned ${fetchedAaCount} rows; expected at least half of the ${cachedAaCount}-row last-good catalog`,
+      `Artificial Analysis ${source} refresh returned ${fetchedCount} live LLM rows; expected at least half of the ${cachedCount}-row last-good source`,
     );
   }
 }
@@ -573,6 +598,7 @@ function providerCoverageHighWater(
 }
 
 async function fetchCatalog(env: Env): Promise<Catalog> {
+  const generatedAt = new Date().toISOString();
   const [
     modelsDev,
     exchangeRate,
@@ -588,10 +614,37 @@ async function fetchCatalog(env: Env): Promise<Catalog> {
     fetchArtificialAnalysisSpeechToTextModels(env),
     fetchArtificialAnalysisSpeechToSpeechModels(env),
   ]);
+  const liveLlmModels = [
+    ...legacyArtificialAnalysisModels,
+    ...currentArtificialAnalysisModels,
+  ];
+  const liveCandidateIds = [
+    ...new Set(
+      liveLlmModels
+        .map((model) => {
+          if (typeof model.slug === "string" && model.slug.trim()) {
+            return model.slug.trim();
+          }
+          return typeof model.id === "string" ? model.id.trim() : "";
+        })
+        .filter(Boolean),
+    ),
+  ];
+  const llmSourceStatus: ArtificialAnalysisLlmSourceStatus = {
+    state: currentArtificialAnalysisModels.length > 0 ? "live" : "bundled",
+    evidenceTime:
+      currentArtificialAnalysisModels.length > 0 ? generatedAt : null,
+    liveRowCount: liveCandidateIds.length,
+    liveRowCounts: {
+      llmApi: legacyArtificialAnalysisModels.length,
+      freeLlmApi: currentArtificialAnalysisModels.length,
+    },
+    liveCandidateIds,
+  };
 
   return normalizeModelsDevCatalog(
     modelsDev,
-    new Date().toISOString(),
+    generatedAt,
     exchangeRate,
     [
       ...legacyArtificialAnalysisModels,
@@ -600,6 +653,7 @@ async function fetchCatalog(env: Env): Promise<Catalog> {
     artificialAnalysisSpeechToTextModels,
     artificialAnalysisSpeechToSpeech.models,
     artificialAnalysisSpeechToSpeech.status,
+    llmSourceStatus,
   );
 }
 

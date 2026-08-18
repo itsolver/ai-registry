@@ -334,6 +334,14 @@ describe("latest cost and quality customer-support policy", () => {
     ],
     models: [],
     benchmarkCandidates: candidates,
+    sourceStatus: {
+      artificialAnalysisLlm: {
+        state: "live",
+        evidenceTime: generatedAt,
+        liveRowCount: candidates.length,
+        liveCandidateIds: candidates.map((entry) => entry.id),
+      },
+    },
   });
 
   const filters = (tier: "fast" | "balanced" | "best") => ({
@@ -420,6 +428,19 @@ describe("latest cost and quality customer-support policy", () => {
     );
     expect(stale.selected?.id).toBe("incumbent");
     expect(stale.selectionBasis).toBe("stale_catalog_incumbent");
+
+    const staleEvidence = catalog([incumbent]);
+    staleEvidence.sourceStatus!.artificialAnalysisLlm!.evidenceTime =
+      "2026-08-16T00:00:00Z";
+    const staleEvidenceSelection = latestCostQualitySelection(
+      staleEvidence,
+      filters("fast"),
+      now,
+    );
+    expect(staleEvidenceSelection.selected?.id).toBe("incumbent");
+    expect(staleEvidenceSelection.selectionBasis).toBe(
+      "stale_catalog_incumbent",
+    );
   });
 
   it("blocks a comparable ITS safety regression and keeps default behavior strict", () => {

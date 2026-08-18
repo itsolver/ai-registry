@@ -29,6 +29,18 @@ describe("Artificial Analysis speech-to-speech parsing", () => {
     );
   });
 
+  it("rejects unrelated provider objects without speech-to-speech evidence", () => {
+    const unrelated = {
+      id: "provider-object",
+      name: "Unrelated OpenAI object",
+      slug: "unrelated-openai-object",
+      host: { name: "OpenAI", slug: "openai" },
+    };
+    const html = `<script>self.__next_f.push([1,"${JSON.stringify(unrelated).replaceAll('"', '\\"')}"])</script>`;
+
+    expect(parseArtificialAnalysisSpeechToSpeechPage(html)).toEqual([]);
+  });
+
   it("parses API data and keeps the most complete exact slug", () => {
     const rows = parseArtificialAnalysisSpeechToSpeechApi({
       data: [

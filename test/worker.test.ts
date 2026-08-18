@@ -195,8 +195,9 @@ function supportCandidate(
 }
 
 function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
+  const evidenceTime = new Date().toISOString();
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: evidenceTime,
     modelCount: candidates.length,
     activeModelCount: candidates.length,
     providers: [
@@ -208,6 +209,14 @@ function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
     ],
     models: [],
     benchmarkCandidates: candidates,
+    sourceStatus: {
+      artificialAnalysisLlm: {
+        state: "live",
+        evidenceTime,
+        liveRowCount: candidates.length,
+        liveCandidateIds: candidates.map((candidate) => candidate.id),
+      },
+    },
   };
 }
 
@@ -2293,6 +2302,10 @@ describe("worker routes", () => {
       ),
     );
     cached.generatedAt = "2020-01-01T00:00:00Z";
+    cached.sourceStatus!.artificialAnalysisLlm!.liveRowCounts = {
+      llmApi: artificialAnalysisFixture.data.length,
+      freeLlmApi: 100,
+    };
     const response = await handleRequest(
       new Request("https://ai.itsolver.au/v1/health"),
       {
@@ -2337,6 +2350,8 @@ describe("worker routes", () => {
     delete newer.benchmarks.llm?.autoClose;
     const snapshot = supportCatalog([incumbent, newer]);
     snapshot.generatedAt = "2026-08-18T11:30:00Z";
+    snapshot.sourceStatus!.artificialAnalysisLlm!.evidenceTime =
+      "2026-08-18T11:30:00Z";
 
     await withSystemTime("2026-08-18T12:00:00Z", async () => {
       const strictResponse = await handleRequest(

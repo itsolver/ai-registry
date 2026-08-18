@@ -237,8 +237,20 @@ export interface Catalog {
   providers: ProviderSummary[];
   models: RegistryModel[];
   sourceStatus?: {
+    artificialAnalysisLlm?: ArtificialAnalysisLlmSourceStatus;
     voice?: VoiceSourceStatus;
   };
+}
+
+export interface ArtificialAnalysisLlmSourceStatus {
+  state: "live" | "bundled";
+  evidenceTime: string | null;
+  liveRowCount: number;
+  liveRowCounts?: {
+    llmApi: number;
+    freeLlmApi: number;
+  };
+  liveCandidateIds: string[];
 }
 
 export interface ModelsDevProvider {
@@ -352,6 +364,7 @@ export interface LatestCostQualitySelection {
     | "stale_catalog_incumbent"
     | "missing_incumbent";
   catalogFresh: boolean;
+  evidenceTime: string | null;
 }
 
 export type RecommendedModel = RegistryModel | BenchmarkCandidate;
@@ -690,6 +703,25 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
   };
 }
 
+function llmSourceStatus(
+  models: ArtificialAnalysisModel[],
+  evidenceTime: string,
+): ArtificialAnalysisLlmSourceStatus {
+  const liveCandidateIds = [
+    ...new Set(
+      models
+        .map((model) => stringValue(model.slug ?? model.id, ""))
+        .filter(Boolean),
+    ),
+  ];
+  return {
+    state: liveCandidateIds.length > 0 ? "live" : "bundled",
+    evidenceTime: liveCandidateIds.length > 0 ? evidenceTime : null,
+    liveRowCount: liveCandidateIds.length,
+    liveCandidateIds,
+  };
+}
+
 export function normalizeArtificialAnalysisCatalog(
   generatedAt = new Date().toISOString(),
   exchangeRate?: ExchangeRate,
@@ -699,6 +731,8 @@ export function normalizeArtificialAnalysisCatalog(
     ...(AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]),
   ],
   voiceSourceStatus: VoiceSourceStatus = bundledVoiceSourceStatus(generatedAt),
+  artificialAnalysisLlmSourceStatus: ArtificialAnalysisLlmSourceStatus =
+    llmSourceStatus(artificialAnalysisModels, generatedAt),
 ): Catalog {
   const voiceModels = normalizeSpeechToSpeechModels(
     artificialAnalysisSpeechToSpeechModels,
@@ -737,7 +771,10 @@ export function normalizeArtificialAnalysisCatalog(
     ).length,
     providers,
     models: [],
-    sourceStatus: { voice: voiceSourceStatus },
+    sourceStatus: {
+      artificialAnalysisLlm: artificialAnalysisLlmSourceStatus,
+      voice: voiceSourceStatus,
+    },
   };
 }
 
@@ -751,6 +788,8 @@ export function normalizeModelsDevCatalog(
     ...(AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]),
   ],
   voiceSourceStatus: VoiceSourceStatus = bundledVoiceSourceStatus(generatedAt),
+  artificialAnalysisLlmSourceStatus: ArtificialAnalysisLlmSourceStatus =
+    llmSourceStatus(artificialAnalysisModels, generatedAt),
 ): Catalog {
   const registryModels: RegistryModel[] = [];
 
@@ -807,7 +846,10 @@ export function normalizeModelsDevCatalog(
     activeModelCount: models.filter((model) => !model.deprecated).length,
     providers: buildRegistryProviderSummaries(models),
     models,
-    sourceStatus: { voice: voiceSourceStatus },
+    sourceStatus: {
+      artificialAnalysisLlm: artificialAnalysisLlmSourceStatus,
+      voice: voiceSourceStatus,
+    },
   };
 }
 
@@ -1003,16 +1045,25 @@ export function latestCostQualitySelection(
     incumbentFilters,
   )[0];
   const generatedAt = Date.parse(catalog.generatedAt);
+  const evidenceTime =
+    catalog.sourceStatus?.artificialAnalysisLlm?.evidenceTime ?? null;
+  const evidenceTimestamp = evidenceTime ? Date.parse(evidenceTime) : NaN;
   const catalogAge = now - generatedAt;
+  const evidenceAge = now - evidenceTimestamp;
   const catalogFresh =
     Number.isFinite(generatedAt) &&
     catalogAge >= 0 &&
-    catalogAge <= LATEST_COST_QUALITY_MAX_CATALOG_AGE_MS;
+    catalogAge <= LATEST_COST_QUALITY_MAX_CATALOG_AGE_MS &&
+    catalog.sourceStatus?.artificialAnalysisLlm?.state === "live" &&
+    Number.isFinite(evidenceTimestamp) &&
+    evidenceAge >= 0 &&
+    evidenceAge <= LATEST_COST_QUALITY_MAX_CATALOG_AGE_MS;
 
   if (!incumbent) {
     return {
       selectionBasis: "missing_incumbent",
       catalogFresh,
+      evidenceTime,
     };
   }
   if (!catalogFresh) {
@@ -1021,6 +1072,7 @@ export function latestCostQualitySelection(
       selected: incumbent,
       selectionBasis: "stale_catalog_incumbent",
       catalogFresh,
+      evidenceTime,
     };
   }
 
@@ -1028,7 +1080,11 @@ export function latestCostQualitySelection(
   const incumbentCost = incumbentSignals?.intelligenceCostPerTask;
   const incumbentIntelligence = incumbentSignals?.intelligence;
   const incumbentRelease = candidateDateValue(incumbent.releaseDate);
+  const liveCandidateIds = new Set(
+    catalog.sourceStatus?.artificialAnalysisLlm?.liveCandidateIds ?? [],
+  );
   if (
+    !liveCandidateIds.has(incumbent.id) ||
     !isNumber(incumbentCost) ||
     !isNumber(incumbentIntelligence) ||
     incumbentRelease <= 0
@@ -1038,6 +1094,7 @@ export function latestCostQualitySelection(
       selected: incumbent,
       selectionBasis: "benchmark_incumbent",
       catalogFresh,
+      evidenceTime,
     };
   }
 
@@ -1049,6 +1106,7 @@ export function latestCostQualitySelection(
   };
   const tier = recommendationTier(filters);
   const candidates = benchmarkCandidates(catalog, candidateFilters)
+    .filter((candidate) => liveCandidateIds.has(candidate.id))
     .filter((candidate) =>
       isBenchmarkCandidateRecommendedForFilters(candidate, candidateFilters),
     )
@@ -1074,6 +1132,7 @@ export function latestCostQualitySelection(
         ? "benchmark_incumbent"
         : "newer_aa_cost_quality",
     catalogFresh,
+    evidenceTime,
   };
 }
 

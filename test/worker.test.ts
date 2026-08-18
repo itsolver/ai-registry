@@ -1010,6 +1010,71 @@ describe("worker routes", () => {
     expect(kv.values.get(manifest.sources["free-1"])).toContain('"data"');
   });
 
+  it("captures raw AA sources sequentially", async () => {
+    const kv = memoryKv();
+    const realFetch = globalThis.fetch;
+    let activeFetches = 0;
+    let maximumActiveFetches = 0;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        activeFetches += 1;
+        maximumActiveFetches = Math.max(
+          maximumActiveFetches,
+          activeFetches,
+        );
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          return await realFetch(input, init);
+        } finally {
+          activeFetches -= 1;
+        }
+      },
+    );
+
+    try {
+      await captureArtificialAnalysisRawSources({
+        ...env(),
+        MODEL_CACHE: kv.namespace,
+      });
+      expect(maximumActiveFetches).toBe(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("retries a transient required AA source failure", async () => {
+    const kv = memoryKv();
+    const retryUrl = "https://aa.test/stt-transient";
+    const realFetch = globalThis.fetch;
+    let sttAttempts = 0;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === retryUrl) {
+          sttAttempts += 1;
+          if (sttAttempts < 3) {
+            return new Response("unavailable", { status: 503 });
+          }
+          return new Response(JSON.stringify(artificialAnalysisSpeechToTextFixture), {
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return realFetch(input, init);
+      },
+    );
+
+    try {
+      await captureArtificialAnalysisRawSources({
+        ...env(),
+        MODEL_CACHE: kv.namespace,
+        ARTIFICIAL_ANALYSIS_STT_URL: retryUrl,
+      });
+      expect(sttAttempts).toBe(3);
+      expect(kv.values.has("raw:aa:manifest:v1")).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("does not replace the raw manifest when a required AA source fails", async () => {
     const originalManifest = JSON.stringify({
       capturedAt: "2026-07-17T05:00:00.000Z",

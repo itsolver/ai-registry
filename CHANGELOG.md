@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Prevented request and scheduled events on the Workers Free plan from running the CPU-heavy complete catalog build.
 - Kept the previous raw-source manifest and normalized catalog when a required source is missing, partial, invalid, or more than two hours old.
+- Reconciled the repository cache key with the live `catalog:v31` production key so a Worker deployment keeps the existing last-good catalog.
 
 ## 2026-07-17
 

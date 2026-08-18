@@ -146,8 +146,9 @@ Current Artificial Analysis input/output pricing takes precedence when present;
 models.dev pricing is the registry fallback. Source USD pricing and benchmark
 costs are converted to AUD with the catalog's Frankfurter exchange rate.
 
-The normalized KV cache uses `catalog:v29` so older response shapes cannot be
-served after deployment. A models.dev failure or per-provider coverage drop
+The normalized KV cache uses the production `catalog:v31` key. This preserves
+the complete live catalog across Worker deployments and prevents older response
+shapes from being served. A models.dev failure or per-provider coverage drop
 below the persisted 50% high-water threshold always prevents a cache write.
 The provider high-water counts live in the separate non-expiring
 `models-dev:provider-high-water:v1` key. The Worker refreshes each hour, treats

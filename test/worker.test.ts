@@ -984,29 +984,37 @@ describe("worker routes", () => {
 
   it("serves a stale valid cache without overwriting it when models.dev fails", async () => {
     let putCount = 0;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("request refresh must not run"));
     const cached = supportCatalog([supportCandidate("cached", 0, 0.9, 10, 2)]);
     cached.generatedAt = "2020-01-01T00:00:00Z";
-    const response = await handleRequest(
-      new Request("https://ai.itsolver.au/v1/health"),
-      {
-        MODEL_CACHE: {
-          get: async () => JSON.stringify(cached),
-          put: async (key: string) => {
-            if (key.startsWith("catalog:")) putCount += 1;
-          },
-        } as unknown as KVNamespace,
-        MODELS_DEV_URL: "data:application/json,%5B%5D",
-      },
-      ctx,
-    );
+    try {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        {
+          MODEL_CACHE: {
+            get: async () => JSON.stringify(cached),
+            put: async (key: string) => {
+              if (key.startsWith("catalog:")) putCount += 1;
+            },
+          } as unknown as KVNamespace,
+          MODELS_DEV_URL: "data:application/json,%5B%5D",
+        },
+        ctx,
+      );
 
-    expect(response.status).toBe(200);
-    expect((await response.json()) as JsonObject).toMatchObject({
-      benchmarkCount: 1,
-      registryModelCount: 0,
-      catalogState: "stale",
-    });
-    expect(putCount).toBe(0);
+      expect(response.status).toBe(200);
+      expect((await response.json()) as JsonObject).toMatchObject({
+        benchmarkCount: 1,
+        registryModelCount: 0,
+        catalogState: "stale",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(putCount).toBe(0);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it("rejects empty and structurally partial models.dev responses", async () => {

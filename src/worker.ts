@@ -417,11 +417,12 @@ async function getCatalog(
   env: Env,
   ctx?: Pick<ExecutionContext, "waitUntil">,
 ): Promise<Catalog> {
-  const [cached, highWater] = await Promise.all([
-    readCachedCatalog(env),
-    readProviderCoverageHighWater(env),
-  ]);
-  if (cached && isFresh(cached)) return cached;
+  const cached = await readCachedCatalog(env);
+  // Request events have a much lower CPU allowance than scheduled events.
+  // Serve the valid seven-day last-good catalog even when it is marked stale;
+  // the hourly scheduled handler is the only automatic refresh path.
+  if (cached) return cached;
+  const highWater = await readProviderCoverageHighWater(env);
 
   try {
     const fetched = await fetchCatalog(env);
@@ -436,7 +437,6 @@ async function getCatalog(
     else await write;
     return fetched;
   } catch (error) {
-    if (cached) return cached;
     throw error;
   }
 }
@@ -1219,12 +1219,6 @@ function normalizeRoute(pathname: string): string {
   if (path === "/v1") return "/";
   if (path.startsWith("/v1/")) return path.slice(3) || "/";
   return path;
-}
-
-function isFresh(catalog: Catalog): boolean {
-  const generatedAt = Date.parse(catalog.generatedAt);
-  if (!Number.isFinite(generatedAt)) return false;
-  return Date.now() - generatedAt < CACHE_FRESHNESS_MS;
 }
 
 function htmlResponse(html: string): Response {

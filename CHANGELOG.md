@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Split front-end recommendation priorities into highest Arena score, best top-10 value, and lowest top-20 output cost.
 - Made highest Arena score the default front-end priority and exposed the top three distinct Arena-ranked model families in recommendation responses and the homepage table.
 - Credited the Arena Frontend Code leaderboard directly in the front-end recommendation view.
+- Replaced the verbose `/webdev` report with a minimal winner view, one model table, and two source notes; removed the stale excluded board from the page and audit.
 
 ### Fixed
 

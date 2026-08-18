@@ -350,26 +350,19 @@ describe("worker routes", () => {
 
       expect(response.status).toBe(200);
       const html = await response.text();
-      expect(html).toContain("Front-End Web Development Model Evidence");
-      expect(html).toContain("Checked Arena snapshot leader");
+      expect(html).toContain("Best AI Models for Front-End Web Development");
+      expect(html).toContain("Current Arena #1");
       expect(html).toContain("Claude Opus 5 Max");
-      expect(html).toContain("Arena 1692 ±9");
-      expect(html).toContain("Ranked #1 in the checked August 15 Arena snapshot");
-      expect(html).toContain("Claude Fable 5: #1 at 90.35%");
-      expect(html).toContain("Claude Opus 5: #2 at 88.40%");
-      expect(html).toContain("Kimi K3: #3 and the leading open-weight model");
-      expect(html).toContain("previous DesignArena URL now returns 404");
-      expect(html).not.toContain("OpenHands Index — Frontend");
-      expect(html).toContain("ByteDance Web-Bench (excluded)");
-      expect(html).toContain('<span class="tab active">Checked evidence</span>');
-      expect(html).toContain("Scores kept separate");
-      expect(html).toContain("https://www.vals.ai/benchmarks/vals_index");
+      expect(html).toContain("1692 ±9");
+      expect(html).toContain("Grok 4.6");
+      expect(html).toContain("GPT-5.6 Sol");
+      expect(html).toContain("Arena ranks. Vibe Code Bench checks.");
       expect(html).toContain("https://www.vals.ai/benchmarks/vibe-code");
-      expect(html).not.toContain("https://intelligence.ai/leaderboard/webapps");
-      expect(html).not.toContain("https://index.openhands.dev/frontend");
-      expect(html).toContain(
-        "Excluded from the checked ranking because the public board is stale",
-      );
+      expect(html).not.toContain("bytedance-research");
+      expect(html).not.toContain("DesignArena");
+      expect(html).not.toContain("Benchmark Breakdown");
+      expect(html).not.toContain("Evidence Profiles");
+      expect(html).not.toContain("Method");
     }
     }));
 
@@ -380,15 +373,12 @@ describe("worker routes", () => {
     );
 
     expect(html).toContain("Freshness gate expired");
-    expect(html).toContain("Historical Evidence Profiles");
+    expect(html).toContain("Snapshot expired");
+    expect(html).toContain("Historical evidence only");
     expect(html).toContain(
       "Historical snapshot only; excluded until refreshed.",
     );
-    expect(html).not.toContain(
-      '<span class="index-label">Current Arena leader</span>',
-    );
-    expect(html).not.toContain("Historical snapshot: Current Arena leader");
-    expect(html).not.toContain("Best current");
+    expect(html).not.toContain("Current Arena #1");
     expect(futureDatedHtml).toContain("Freshness gate expired");
   });
 

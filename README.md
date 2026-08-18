@@ -12,6 +12,8 @@ https://ai.itsolver.au
 The registry rebuilds a canonical base-model registry from
 [models.dev](https://models.dev/api.json), then enriches it with Artificial
 Analysis data for OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq.
+Moonshot AI models are imported from models.dev, with Arena Frontend Code
+supplying the dedicated front-end web development evidence.
 Each catalog refresh reads both the legacy Artificial Analysis LLM endpoint for
 detailed benchmark signals and the paginated current free Language Models
 endpoint for current headline indices, performance, nested pricing, and
@@ -36,7 +38,18 @@ variants such as `mini`; it is not a benchmark result or value recommendation.
 Balanced, fast, and non-opted-in best requests remain benchmark-required.
 
 Recommendations are tuned for IT Solver customer support, document processing,
-speech-to-speech voice-agent API work, and speech-to-text transcription. For
+front-end web development, speech-to-speech voice-agent API work, and
+speech-to-text transcription. Front-end recommendations use three deterministic
+policies from a checked Arena Frontend Code snapshot: highest score for `best`,
+lowest output price among eligible top-10 entries for `balanced`, and lowest
+output price among eligible top-20 entries for `fast`. Each Arena row declares
+its canonical models.dev registry ID; thinking, effort, and harness details stay
+attached as evaluation configuration instead of being treated as separate API
+model identities. Current Vibe Code Bench results are shown as separate
+functional corroboration on `/webdev`; unavailable and stale public boards are
+excluded from ranking. The checked Arena extract expires after 30 days and
+fails closed, removing front-end recommendations until a refreshed extract is
+deployed. For
 customer support, ranking is safety-first: false positives sort first, accuracy
 second, and Artificial Analysis Intelligence Index Task AUD third. Preview-only,
 experimental, latest-alias, and near-retirement text models are not default
@@ -64,7 +77,7 @@ All API endpoints are public and require no bearer token or IP allowlist.
 
 ```text
 GET /v1/health
-GET /v1/benchmarks?useCase=customer-support|document-processing|voice|speech-to-text
+GET /v1/benchmarks?useCase=customer-support|document-processing|front-end-web-dev|voice|speech-to-text
 GET /v1/models
 GET /v1/models/recommend
 GET /v1/models/providers
@@ -78,10 +91,11 @@ The endpoint datasets serve different purposes:
 - `/v1/models` returns canonical base registry records. Explicit API filters are
   still supported, but the homepage registry browser does not apply a use-case
   or recommendation-priority filter.
-- `/v1/benchmarks` returns use-case-relevant Artificial Analysis configurations
-  and other benchmark rows. Voice browsing also includes models.dev audio
-  models awaiting a benchmark, with `eligibilityReason` set to
-  `missing_voice_benchmark`.
+- `/v1/benchmarks` returns use-case-relevant Artificial Analysis and Arena
+  configurations. Arena rows expose their verified `registryModelId` and any
+  evaluation-only reasoning, effort, or harness configuration. Voice browsing
+  also includes models.dev audio models awaiting a benchmark, with
+  `eligibilityReason` set to `missing_voice_benchmark`.
 - `/v1/models/recommend` is benchmark-strict by default. An opted-in best-tier
   request may return the latest eligible full-size unbenchmarked registry model
   and labels that result in `recommendationMeta` as
@@ -129,18 +143,20 @@ default policy remains benchmark-required.
 
 Recommendation responses keep the primary model in `recommendation` and the
 next operationally distinct model for the same filters, including `provider`,
-in `recommendation.failover`. Existing top-level `failovers` still provides up
-to two customer-support overload fallbacks for older clients. Top-level
-failovers require IT Solver auto-close benchmark data; when fewer than two are
-available, `failoverStatus.reason` is `insufficient_its_autoclose_benchmarks`,
+in `recommendation.failover`. For front-end web dev, the default priority is
+highest Arena score and top-level `failovers` supplies the next two distinct
+Arena-ranked registry models, so the recommendation view shows the top three
+eligible model families. For customer support, top-level `failovers` continues
+to provide up to two auto-close-backed overload fallbacks; when fewer than two
+are available, `failoverStatus.reason` is `insufficient_its_autoclose_benchmarks`,
 or `insufficient_distinct_model_families` when enough benchmark rows exist but
 they do not cover enough operationally distinct base models.
 
 Supported filters:
 
 ```text
-provider=openai|google|xai|anthropic|nvidia|elevenlabs|groq
-tier=fast|balanced|best          # customer-support priorities: fast, balanced, lowest false-positive risk
+provider=openai|google|xai|anthropic|moonshotai|nvidia|elevenlabs|groq
+tier=fast|balanced|best          # priority semantics depend on the selected use case
 capability=vision|pdf|reasoning|toolCalling|structuredOutput
 maxInputCostPerMTok=2               # max input AUD per million tokens
 maxOutputCostPerMTok=10             # max output AUD per million tokens
@@ -157,7 +173,7 @@ maxTranscriptionCostPer1kMinutes=10 # max speech-to-text AUD per 1,000 minutes
 maxAaWer=4.6                        # max speech-to-text AA-WER error rate
 maxCostPerMTok=2                    # legacy alias for maxInputCostPerMTok
 minContextWindow=200000
-useCase=customer-support|document-processing|voice|speech-to-text  # stt is accepted as an alias
+useCase=customer-support|document-processing|front-end-web-dev|voice|speech-to-text  # webdev and stt are accepted aliases
 includeItsBenchmark=false              # omit IT Solver auto-close ranking for customer support
 allowPreview=true                      # allow preview models in customer-support recommendations
 allowUnbenchmarkedLatest=true          # best only: allow latest eligible full-size model without benchmark evidence
@@ -173,7 +189,7 @@ npm run build
 npm run dev
 ```
 
-Refresh the checked-in Artificial Analysis fallback extracts:
+Refresh the checked benchmark extracts:
 
 ```bash
 npm run refresh:aa-customer-support
@@ -181,6 +197,7 @@ npm run refresh:aa-llm-efficiency
 npm run refresh:aa-llm-pricing
 npm run refresh:aa-stt
 npm run refresh:aa-voice
+npm run refresh:arena-webdev
 ```
 
 Production speech-to-speech rows refresh automatically during catalog rebuilds;

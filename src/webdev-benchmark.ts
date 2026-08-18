@@ -1,12 +1,21 @@
+import {
+  ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+  ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+  ARENA_FRONTEND_WEBDEV_MODEL_COUNT,
+  ARENA_FRONTEND_WEBDEV_MODELS,
+  ARENA_FRONTEND_WEBDEV_SOURCE_URL,
+  ARENA_FRONTEND_WEBDEV_TOTAL_VOTES,
+  ARENA_FRONTEND_WEBDEV_UPDATED_ON,
+} from "./generated/arena-frontend-webdev";
+
 type WinnerRow = {
-  rank: string;
   model: string;
   provider: string;
   headline: string;
-  webApp: string;
-  repo: string;
-  terminal: string;
-  costTime: string;
+  arena: string;
+  valsIndex: string;
+  fullVcb: string;
+  designArena: string;
   verdict: string;
 };
 
@@ -19,195 +28,206 @@ type SignalCard = {
 
 type BenchmarkEvidenceRow = {
   benchmark: string;
-  winner: string;
-  openai: string;
-  anthropic: string;
-  google: string;
-  xai: string;
+  freshness: string;
+  measures: string;
+  leader: string;
+  kimi: string;
+  registryUse: string;
   source: string;
   sourceUrl: string;
 };
 
-const WEBDEV_SOURCE_CHECKED_AT = "2026-06-21T04:23:30Z";
+const ARENA_LEADER = ARENA_FRONTEND_WEBDEV_MODELS[0];
+
+function webdevEvidenceIsFresh(now: Date): boolean {
+  const checkedAtMs = Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT);
+  const nowMs = now.getTime();
+  const ageMs = nowMs - checkedAtMs;
+  return (
+    Number.isFinite(checkedAtMs) &&
+    Number.isFinite(nowMs) &&
+    ageMs >= 0 &&
+    ageMs <= ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
+  );
+}
+
+function arenaSummary(registryModelId: string): string {
+  const rows = ARENA_FRONTEND_WEBDEV_MODELS.filter(
+    (row) => row.registryModelId === registryModelId,
+  );
+  if (!rows.length) return "Not listed in the checked Arena top 20";
+  return rows
+    .map(
+      (row) =>
+        `${row.configuration?.displayLabel ?? "base"} #${row.rank} at ${row.score} ±${row.confidence}${row.preliminary ? " (preliminary)" : ""}`,
+    )
+    .join("; ");
+}
 
 const WINNER_ROWS: WinnerRow[] = [
   {
-    rank: "1",
+    model: "Claude Opus 5",
+    provider: "Anthropic",
+    headline: "Current Arena leader and Vibe Code Bench runner-up",
+    arena: arenaSummary("claude-opus-5"),
+    valsIndex: "Vals Index v2 leader at 67.21% across its broader economic task mix",
+    fullVcb: "#2 at 88.40% on Vibe Code Bench v1.1",
+    designArena: "The previous DesignArena URL now returns 404 and is excluded",
+    verdict:
+      "Best current front-end preference signal, with strong independent functional support.",
+  },
+  {
     model: "Claude Fable 5",
     provider: "Anthropic",
-    headline: "Best current public web-app signal",
-    webApp: "Vibe Code Bench v1.1: 90.35%",
-    repo: "SWE-bench Verified: 95.00%",
-    terminal: "Terminal-Bench v2.1 family top line: 84.6%",
-    costTime: "Use Artificial Analysis live cost/time for the current agent harness.",
+    headline: "Current Vibe Code Bench functional leader",
+    arena: arenaSummary("claude-fable-5"),
+    valsIndex: "#2 on Vals Index v2 at 66.04%",
+    fullVcb: "#1 at 90.35% on Vibe Code Bench v1.1",
+    designArena: "The previous DesignArena URL now returns 404 and is excluded",
     verdict:
-      "Default first model to test for real web-app build quality when cost is secondary.",
+      "Best functional full-app cross-check and the strongest alternative to the Arena winner.",
   },
   {
-    rank: "2",
-    model: "Claude Opus 4.8",
-    provider: "Anthropic",
-    headline: "Strongest broad runner-up",
-    webApp: "Vibe Code Bench v1.1: 82.72%",
-    repo: "SWE-bench Verified: 88.60%",
-    terminal: "Terminal-Bench v2.1 family top line: 84.6%",
-    costTime: "High-capability frontier tier; compare cost per task before standardizing.",
+    model: "Kimi K3",
+    provider: "Moonshot AI",
+    headline: "Close Arena runner-up and leading open-weight Vibe Code model",
+    arena: arenaSummary("kimi-k3"),
+    valsIndex: "Included in the current Vals model set",
+    fullVcb: "#3; the first open-weight model in the current top tier",
+    designArena: "The previous DesignArena URL now returns 404 and is excluded",
     verdict:
-      "Best fallback when Fable is unavailable or when Opus behavior is preferred.",
+      "Best open-weight choice in the current evidence and close to the Arena lead.",
   },
   {
-    rank: "3",
-    model: "GPT-5.5",
+    model: "GPT-5.6 Sol",
     provider: "OpenAI",
-    headline: "Best OpenAI all-rounder",
-    webApp: "Vibe Code Bench v1.1: 69.85%",
-    repo: "SWE-bench Verified: 82.60%",
-    terminal: "Terminal-Bench v2.1: 84.3%",
-    costTime: "Near top terminal score; check live agent cost before high-volume use.",
+    headline: "Best current OpenAI front-end row",
+    arena: arenaSummary("gpt-5.6-sol"),
+    valsIndex: "#3 on Vals Index v2 at 63.71%",
+    fullVcb: "Listed behind Claude Sonnet 5 in the current top group",
+    designArena: "The previous DesignArena URL now returns 404 and is excluded",
     verdict:
-      "Best OpenAI choice for teams already standardized on Codex/OpenAI workflows.",
+      "Best OpenAI choice, with the Arena result tied to the explicit Codex harness configuration.",
   },
   {
-    rank: "4",
-    model: "GPT-5.3 Codex",
-    provider: "OpenAI",
-    headline: "Best measured full-stack paper run",
-    webApp: "Vibe Code Bench paper: 61.8% workflow accuracy",
-    repo: "Repository task signal is covered better by GPT-5.5 in public SWE rows.",
-    terminal: "Terminal-Bench v2 Codex agent rows reach 78.4%.",
-    costTime: "VCB paper: $11.91/test and 75.8 minutes.",
-    verdict:
-      "Important if the comparison is specifically agentic app generation with browser workflow tests.",
-  },
-  {
-    rank: "5",
-    model: "Gemini 3.5 Flash",
+    model: "Gemini 3.7 Flash",
     provider: "Google",
-    headline: "Best current Gemini repo signal",
-    webApp: "No current public Gemini VCB winner surfaced in the text extract.",
-    repo: "SWE-bench Verified: 78.80%",
-    terminal: "Gemini 3.1 Pro / Gemini 3 Pro rows are competitive but below the top frontier rows.",
-    costTime: "Likely attractive where Gemini speed and price matter; verify live agent cost.",
+    headline: "Lowest output price in the current Arena top 10",
+    arena: arenaSummary("gemini-3.7-flash"),
+    valsIndex: "Included in the current Vals model set",
+    fullVcb: "Included in the current Vibe Code Bench table",
+    designArena: "The previous DesignArena URL now returns 404 and is excluded",
     verdict:
-      "Worth testing for cost-sensitive maintenance and repo tasks, not yet a public web-app winner.",
+      "Best value choice for both balanced and fast policy bands in this snapshot.",
   },
   {
-    rank: "6",
-    model: "Grok 4.20 Reasoning",
+    model: "Grok 4.6",
     provider: "xAI",
-    headline: "Best current xAI public agent signal",
-    webApp: "VCB paper Grok 4.1 Fast Reasoning: 1.2% workflow accuracy.",
-    repo: "No current top xAI SWE-bench Verified row surfaced in the public extract.",
-    terminal: "Grok CLI Grok 4.20 Reasoning: 57.3% on Terminal-Bench v2.",
-    costTime: "VCB paper Grok row was cheap but low accuracy: $0.21/test and 8.8 minutes.",
+    headline: "Best current xAI front-end row",
+    arena: arenaSummary("grok-4.6"),
+    valsIndex: "Included in the current Vals model set",
+    fullVcb: "Included in the current Vibe Code Bench table",
+    designArena: "The previous DesignArena URL now returns 404 and is excluded",
     verdict:
-      "Useful as an xAI baseline, but not a leading web-app development choice yet.",
+      "A lower-cost frontier alternative, but its current Arena result is preliminary.",
   },
 ];
 
 const SIGNAL_CARDS: SignalCard[] = [
   {
-    label: "Overall web-app winner",
+    label: "Arena leader",
+    winner: ARENA_LEADER.label,
+    score: `${ARENA_LEADER.score} ±${ARENA_LEADER.confidence}`,
+    detail: `Rank #${ARENA_LEADER.rank} from ${ARENA_LEADER.votes.toLocaleString("en-AU")} votes.`,
+  },
+  {
+    label: "Functional leader",
     winner: "Claude Fable 5",
     score: "90.35%",
-    detail: "Top Vibe Code Bench v1.1 result surfaced in the public page text.",
+    detail: "Rank #1 on Vibe Code Bench v1.1, updated August 13.",
   },
   {
-    label: "Repo maintenance winner",
-    winner: "Claude Fable 5",
-    score: "95.00%",
-    detail: "Best listed Vals SWE-bench Verified result among the frontier providers.",
+    label: "Open-weight leader",
+    winner: "Kimi K3",
+    score: "Arena #2",
+    detail: "The first open-weight model in the current Vibe Code Bench top tier.",
   },
   {
-    label: "OpenAI winner",
-    winner: "GPT-5.5",
-    score: "84.3%",
-    detail: "Near-top Terminal-Bench v2.1 plus strong VCB and SWE-bench Verified rows.",
+    label: "Best value band",
+    winner: "Gemini 3.7 Flash",
+    score: "$3.57/M out",
+    detail: "Lowest Arena-listed output price among eligible top-10 models.",
   },
   {
-    label: "Measured full-stack agent run",
-    winner: "GPT-5.3 Codex",
-    score: "61.8%",
-    detail: "Best VCB paper workflow-accuracy row among the named frontier providers.",
+    label: "Best OpenAI row",
+    winner: "GPT-5.6 Sol",
+    score: "Arena #7",
+    detail: "The score uses xhigh effort through the Codex harness.",
   },
   {
-    label: "Gemini watch",
-    winner: "Gemini 3.5 Flash",
-    score: "78.80%",
-    detail: "Best public Gemini signal here is repo-level SWE-bench Verified.",
-  },
-  {
-    label: "xAI watch",
-    winner: "Grok 4.20 Reasoning",
-    score: "57.3%",
-    detail: "Best public xAI signal here is Terminal-Bench v2, not full-stack web apps.",
+    label: "Freshness rule",
+    winner: "Checked August boards",
+    score: "13–18 Aug",
+    detail: "Unavailable and stale boards are excluded from recommendation ranking.",
   },
 ];
 
 const BENCHMARK_EVIDENCE_ROWS: BenchmarkEvidenceRow[] = [
   {
-    benchmark: "Vibe Code Bench v1.1",
-    winner: "Claude Fable 5: 90.35%",
-    openai: "GPT-5.5: 69.85%; GPT-5.4: 67.42%.",
-    anthropic: "Claude Fable 5: 90.35%; Opus 4.8: 82.72%; Opus 4.7: 71.00%.",
-    google: "Included by provider, but no current top Gemini percentage in the text extract.",
-    xai: "Included by provider, but no current top xAI percentage in the text extract.",
+    benchmark: "Arena Frontend Code",
+    freshness: `Updated ${ARENA_FRONTEND_WEBDEV_UPDATED_ON}; ${ARENA_FRONTEND_WEBDEV_TOTAL_VOTES.toLocaleString("en-AU")} votes across ${ARENA_FRONTEND_WEBDEV_MODEL_COUNT} models`,
+    measures: "Anonymous pairwise human preference over generated front ends.",
+    leader: `${ARENA_LEADER.label}: #${ARENA_LEADER.rank} at ${ARENA_LEADER.score} ±${ARENA_LEADER.confidence}`,
+    kimi: arenaSummary("kimi-k3"),
+    registryUse: "Primary source for front-end recommendations; scores are not blended.",
+    source: "Arena",
+    sourceUrl: ARENA_FRONTEND_WEBDEV_SOURCE_URL,
+  },
+  {
+    benchmark: "Vals Index v2",
+    freshness: "Updated Aug 14, 2026",
+    measures:
+      "A broader GDP-weighted mix of finance, coding, and legal tasks that includes Vibe Code Bench.",
+    leader: "Claude Opus 5: #1 at 67.21%",
+    kimi: "Included, but this composite is not used as a front-end rank",
+    registryUse: "Broad capability context only; not numerically combined with Arena.",
+    source: "Vals AI",
+    sourceUrl: "https://www.vals.ai/benchmarks/vals_index",
+  },
+  {
+    benchmark: "Vibe Code Bench v1.1 — full table",
+    freshness: "Updated Aug 13, 2026",
+    measures:
+      "End-to-end web applications tested through build checks and point-and-click workflows.",
+    leader: "Claude Fable 5: #1 at 90.35%; Claude Opus 5: #2 at 88.40%",
+    kimi: "Kimi K3: #3 and the leading open-weight model",
+    registryUse: "Independent functional corroboration; not numerically combined with Arena.",
     source: "Vals AI",
     sourceUrl: "https://www.vals.ai/benchmarks/vibe-code",
   },
   {
-    benchmark: "Vibe Code Bench paper",
-    winner: "GPT-5.3 Codex: 61.8% workflow accuracy",
-    openai:
-      "GPT-5.3-Codex: 61.8%; $11.91/test; 75.8 minutes; 29.58% on email+Stripe tasks.",
-    anthropic:
-      "Claude Opus 4.6: 57.6%; $8.69/test; 21.3 minutes; 41.59% on email+Stripe tasks.",
-    google:
-      "Gemini 3.1 Pro: $3.83/test; 20.2 minutes; 3.57% on email+Stripe tasks.",
-    xai:
-      "Grok 4.1 Fast Reasoning: 1.2%; $0.21/test; 8.8 minutes.",
-    source: "arXiv 2603.04601v3",
-    sourceUrl: "https://arxiv.org/html/2603.04601v3",
-  },
-  {
-    benchmark: "SWE-bench Verified",
-    winner: "Claude Fable 5: 95.00%",
-    openai: "GPT-5.5: 82.60%.",
-    anthropic: "Claude Fable 5: 95.00%; Claude Opus 4.8: 88.60%.",
-    google: "Gemini 3.5 Flash: 78.80%.",
-    xai: "No current top-line xAI row in the Vals page extract.",
-    source: "Vals AI",
-    sourceUrl: "https://www.vals.ai/benchmarks/swebench",
-  },
-  {
-    benchmark: "Terminal-Bench v2 / v2.1",
-    winner: "Claude Fable 5 / Opus 4.8 family: 84.6%",
-    openai: "GPT-5.5: 84.3%; GPT-5.3-Codex agent rows reach 78.4%.",
-    anthropic: "Claude Fable 5 and Opus 4.8: 84.6%; Opus 4.6 rows above 76%.",
-    google: "Gemini 3.1 Pro / Gemini 3 Pro rows range from the low 60s to mid 70s.",
-    xai: "Grok CLI Grok 4.20 Reasoning: 57.3%; OpenHands Grok 4: 27.2%.",
-    source: "Artificial Analysis",
-    sourceUrl: "https://artificialanalysis.ai/evaluations/terminalbench-v2-1",
-  },
-  {
-    benchmark: "Artificial Analysis Coding Agent Index",
-    winner: "Use the live AA page for current agent-harness winners.",
-    openai: "Tracks Codex/GPT agent variants by score, token use, cost, and time.",
-    anthropic: "Tracks Claude Code/Cursor/Opus agent variants by score, token use, cost, and time.",
-    google: "Tracks Gemini CLI and related Google agent variants.",
-    xai: "Tracks Grok agent variants when included.",
-    source: "Artificial Analysis",
-    sourceUrl: "https://artificialanalysis.ai/agents/coding-agents",
+    benchmark: "ByteDance Web-Bench (excluded)",
+    freshness: "Newest visible result files are from Jun 2025; last Space commit Jul 23, 2025",
+    measures:
+      "Sequential feature work across 50 web projects, but with an obsolete model roster.",
+    leader: "Roster tops out at 2025-era Claude, Gemini, and Kimi models",
+    kimi: "K3 is not present",
+    registryUse: "Excluded from the checked ranking because the public board is stale.",
+    source: "ByteDance Research",
+    sourceUrl:
+      "https://huggingface.co/spaces/bytedance-research/Web-Bench-Leaderboard",
   },
 ];
 
-export const WEBDEV_BENCHMARK_HTML = String.raw`<!doctype html>
+export function webdevBenchmarkHtml(now = new Date()): string {
+  const fresh = webdevEvidenceIsFresh(now);
+  return String.raw`<!doctype html>
 <html lang="en-AU">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Web App Development AI Model Winners</title>
-  <meta name="description" content="Winner-focused benchmark signals for frontier AI model performance on frontend, backend, full-stack, browser, and repository-level web application development.">
+  <title>${fresh ? "Front-End Web Development AI Model Evidence" : "Front-End Web Development Evidence Refresh Required"}</title>
+  <meta name="description" content="${fresh ? "Current Arena and Vibe Code Bench evidence for AI front-end development, with incompatible scores kept separate." : "Historical front-end development benchmark snapshot excluded from recommendations until refreshed."}">
   <style>
     :root {
       --ink: #1a1a1a;
@@ -384,11 +404,6 @@ export const WEBDEV_BENCHMARK_HTML = String.raw`<!doctype html>
       z-index: 1;
     }
     tbody tr:last-child td { border-bottom: 0; }
-    .rank {
-      color: var(--accent);
-      font-size: 1.2rem;
-      font-weight: 700;
-    }
     .model {
       color: var(--ink);
       font-weight: 700;
@@ -450,50 +465,66 @@ export const WEBDEV_BENCHMARK_HTML = String.raw`<!doctype html>
 
     <section class="hero">
       <div>
-        <h1>Web App Development Model Winners</h1>
-        <p class="lede">A winner-focused view of frontier AI models for building, modifying, debugging, and maintaining real web applications.</p>
+        <h1>Front-End Web Development Model Evidence</h1>
+        <p class="lede">${fresh ? "Checked human-preference and functional web-app snapshots, kept separate and freshness-labeled so old model data does not drive recommendations." : `The last checked Arena snapshot is older than ${ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS} days. It is now historical and excluded from API recommendations until refreshed.`}</p>
       </div>
-      <aside class="index-panel" aria-label="Current leader">
-        <span class="index-label">Current public winner</span>
-        <strong class="index-model">Claude Fable 5</strong>
-        <p>Best combined signal from Vibe Code Bench v1.1, SWE-bench Verified, and Terminal-Bench v2.1 family results.</p>
+      <aside class="index-panel" aria-label="${fresh ? "Checked snapshot leader" : "Freshness status"}">
+        ${fresh ? String.raw`
+        <span class="index-label">Checked Arena snapshot leader</span>
+        <strong class="index-model">${escapeHtml(ARENA_LEADER.label)}</strong>
+        <p>Ranked #${ARENA_LEADER.rank} in the checked August 15 Arena snapshot. Vibe Code Bench independently ranks Claude Fable 5 first and Claude Opus 5 second on functional full-app tests.</p>
         <div class="index-score">
-          <span class="pill">VCB 90.35%</span>
-          <span class="pill">SWE Verified 95.00%</span>
-          <span class="pill">Source checked ${escapeHtml(WEBDEV_SOURCE_CHECKED_AT)}</span>
+          <span class="pill">Arena ${ARENA_LEADER.score} ±${ARENA_LEADER.confidence}</span>
+          <span class="pill">${ARENA_LEADER.votes.toLocaleString("en-AU")} votes</span>
+          <span class="pill">${ARENA_LEADER.preliminary ? "preliminary" : "established"}</span>
+          <span class="pill">VCB #2</span>
+          <span class="pill">Source checked ${escapeHtml(ARENA_FRONTEND_WEBDEV_CHECKED_AT)}</span>
         </div>
+        ` : String.raw`
+        <span class="index-label">Freshness gate expired</span>
+        <strong class="index-model">Refresh required</strong>
+        <p>No front-end model is presented as the current winner from this snapshot. The historical rows below remain visible for audit only.</p>
+        <div class="index-score">
+          <span class="pill">Historical snapshot</span>
+          <span class="pill">Arena checked ${escapeHtml(ARENA_FRONTEND_WEBDEV_CHECKED_AT)}</span>
+          <span class="pill">${ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS}-day maximum age</span>
+        </div>
+        `}
       </aside>
     </section>
 
     <section class="signal-grid" aria-label="Winning signals">
-      ${SIGNAL_CARDS.map(renderSignalCard).join("\n")}
+      ${fresh ? SIGNAL_CARDS.map(renderSignalCard).join("\n") : String.raw`<div class="signal">
+        <span>Freshness gate</span>
+        <strong>Historical only</strong>
+        <b>Refresh required</b>
+        <p>The API has stopped ingesting this Arena snapshot, so its old ranking cannot drive recommendations.</p>
+      </div>`}
     </section>
 
-    <p class="note">This page now follows the Artificial Analysis pattern: headline winners first, then benchmark breakdown, cost, and runtime context. It still avoids a fake universal score because web-app benchmarks do not share one harness.</p>
+    <p class="note">${fresh ? "Arena Frontend Code is the only score used for the registry recommendation because it directly ranks front-end preference. Vibe Code Bench supplies a separate functional full-app cross-check. The previous DesignArena URL is unavailable, and stale boards are excluded. These incompatible scores are not blended." : `This snapshot no longer feeds the registry. Arena must be rechecked and the extract redeployed before front-end recommendations resume; the ${ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS}-day gate fails closed.`}</p>
 
-    <h2>Leaderboard</h2>
+    <h2>${fresh ? "Evidence Profiles — Not A Composite Rank" : "Historical Evidence Profiles — Excluded From Ranking"}</h2>
     <div class="tabs" aria-label="Leaderboard views">
-      <span class="tab active">Performance</span>
-      <span class="tab">Benchmark breakdown</span>
-      <span class="tab">Cost</span>
-      <span class="tab">Execution time</span>
+      <span class="tab active">${fresh ? "Checked evidence" : "Historical evidence"}</span>
+      <span class="tab">Scores kept separate</span>
+      <span class="tab">Freshness checked</span>
     </div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Rank</th>
             <th>Model</th>
-            <th>Why it wins</th>
-            <th>Web app signal</th>
-            <th>Repo signal</th>
-            <th>Terminal/browser signal</th>
-            <th>Cost / time signal</th>
+            <th>${fresh ? "Checked snapshot read" : "Historical snapshot"}</th>
+            <th>Arena Frontend</th>
+            <th>Vals Index VCB</th>
+            <th>Full VCB v1.1</th>
+            <th>Other source status</th>
             <th>Practical verdict</th>
           </tr>
         </thead>
         <tbody>
-          ${WINNER_ROWS.map(renderWinnerRow).join("\n")}
+          ${WINNER_ROWS.map((row) => renderWinnerRow(row, !fresh)).join("\n")}
         </tbody>
       </table>
     </div>
@@ -504,15 +535,15 @@ export const WEBDEV_BENCHMARK_HTML = String.raw`<!doctype html>
         <thead>
           <tr>
             <th>Benchmark</th>
-            <th>Current winner</th>
-            <th>OpenAI best</th>
-            <th>Anthropic best</th>
-            <th>Gemini best</th>
-            <th>xAI best</th>
+            <th>Freshness</th>
+            <th>What it measures</th>
+            <th>Snapshot leader</th>
+            <th>K3 status</th>
+            <th>Registry use</th>
           </tr>
         </thead>
         <tbody>
-          ${BENCHMARK_EVIDENCE_ROWS.map(renderEvidenceRow).join("\n")}
+          ${BENCHMARK_EVIDENCE_ROWS.map((row) => renderEvidenceRow(row, !fresh)).join("\n")}
         </tbody>
       </table>
     </div>
@@ -520,25 +551,26 @@ export const WEBDEV_BENCHMARK_HTML = String.raw`<!doctype html>
     <h2>Method</h2>
     <section class="method" aria-label="Scoring method">
       <div>
-        <strong>Performance first</strong>
-        <p>Rank by the strongest public web-app and software-engineering evidence, not by provider completeness.</p>
+        <strong>Freshness first</strong>
+        <p>${fresh ? `Exclude stale public boards and stop ingesting the checked Arena snapshot after ${ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS} days.` : `The ${ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS}-day gate has expired, so this snapshot is historical until refreshed.`}</p>
       </div>
       <div>
-        <strong>Break ties by task type</strong>
-        <p>Full-stack app generation, repository maintenance, and terminal workflows are related but not interchangeable.</p>
+        <strong>Keep harnesses explicit</strong>
+        <p>Human preference and functional full-app tests are related but not interchangeable.</p>
       </div>
       <div>
-        <strong>Cost is separate</strong>
-        <p>Use cost and execution time after narrowing to models that can actually pass the workflow.</p>
+        <strong>One primary rank</strong>
+        <p>${fresh ? "The API follows Arena score and rank; other dated boards are corroboration, never hidden inputs to a composite." : "When refreshed, the API follows Arena score and rank; other boards remain separate corroboration."}</p>
       </div>
       <div>
         <strong>Missing rows stay visible</strong>
-        <p>If a provider has no current public full-stack web-app winner, the page says so instead of filling the gap with generic coding scores.</p>
+        <p>If a checked board has not evaluated K3, the page says so instead of borrowing an older Kimi or generic coding result.</p>
       </div>
     </section>
   </main>
 </body>
 </html>`;
+}
 
 function renderSignalCard(row: SignalCard): string {
   return String.raw`<div class="signal">
@@ -549,27 +581,29 @@ function renderSignalCard(row: SignalCard): string {
       </div>`;
 }
 
-function renderWinnerRow(row: WinnerRow): string {
+function renderWinnerRow(row: WinnerRow, historical = false): string {
   return String.raw`<tr>
-            <td class="rank">${escapeHtml(row.rank)}</td>
             <td><span class="model">${escapeHtml(row.model)}</span><span class="provider">${escapeHtml(row.provider)}</span></td>
-            <td>${escapeHtml(row.headline)}</td>
-            <td>${escapeHtml(row.webApp)}</td>
-            <td>${escapeHtml(row.repo)}</td>
-            <td>${escapeHtml(row.terminal)}</td>
-            <td>${escapeHtml(row.costTime)}</td>
-            <td>${escapeHtml(row.verdict)}</td>
+            <td>${escapeHtml(historical ? "Historical evidence profile" : row.headline)}</td>
+            <td>${escapeHtml(row.arena)}</td>
+            <td>${escapeHtml(row.valsIndex)}</td>
+            <td>${escapeHtml(row.fullVcb)}</td>
+            <td>${escapeHtml(row.designArena)}</td>
+            <td>${escapeHtml(historical ? "Historical context only; do not use as a current recommendation." : row.verdict)}</td>
           </tr>`;
 }
 
-function renderEvidenceRow(row: BenchmarkEvidenceRow): string {
+function renderEvidenceRow(
+  row: BenchmarkEvidenceRow,
+  historical = false,
+): string {
   return String.raw`<tr>
             <td><strong>${escapeHtml(row.benchmark)}</strong><br><a class="source-link" href="${escapeAttribute(row.sourceUrl)}">${escapeHtml(row.source)}</a></td>
-            <td>${escapeHtml(row.winner)}</td>
-            <td>${escapeHtml(row.openai)}</td>
-            <td>${escapeHtml(row.anthropic)}</td>
-            <td>${escapeHtml(row.google)}</td>
-            <td>${escapeHtml(row.xai)}</td>
+            <td>${escapeHtml(row.freshness)}</td>
+            <td>${escapeHtml(row.measures)}</td>
+            <td>${escapeHtml(row.leader)}</td>
+            <td>${escapeHtml(row.kimi)}</td>
+            <td>${escapeHtml(historical ? "Historical snapshot only; excluded until refreshed." : row.registryUse)}</td>
           </tr>`;
 }
 

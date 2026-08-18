@@ -9,6 +9,14 @@ import worker, {
 import type { BenchmarkCandidate, Catalog } from "../src/registry";
 import { parseArtificialAnalysisSpeechToSpeechApi } from "../src/aa-speech-to-speech";
 import {
+  normalizeModelsDevCatalog,
+} from "../src/registry";
+import { webdevBenchmarkHtml } from "../src/webdev-benchmark";
+import {
+  ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+  ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+} from "../src/generated/arena-frontend-webdev";
+import {
   artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
   artificialAnalysisSpeechToSpeechApiFixture,
@@ -120,6 +128,17 @@ function memoryKv(initial: Record<string, string> = {}) {
 
   return { namespace, puts, values };
 }
+
+const ARENA_FRESH_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) + 60 * 60 * 1000,
+).toISOString();
+const ARENA_EXPIRED_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) +
+    (ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000,
+).toISOString();
+const ARENA_BEFORE_CHECK = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) - 1,
+).toISOString();
 
 function envWithCachedCatalog(catalog: Catalog): Env {
   return {
@@ -269,6 +288,8 @@ describe("worker routes", () => {
     );
     expect(html).toContain('<option value="benchmarks">browse benchmark rows</option>');
     expect(html).toContain('<option value="document-processing">document processing (OCR)</option>');
+    expect(html).toContain('<option value="front-end-web-dev">front-end web dev</option>');
+    expect(html).toContain('data-benchmark-panel="front-end-web-dev" hidden');
     expect(html).toContain('<option value="voice">speech to speech (voice)</option>');
   });
 
@@ -318,7 +339,8 @@ describe("worker routes", () => {
     expect(html).not.toContain("raw_output");
   });
 
-  it("serves the web development benchmark composite without catalog access", async () => {
+  it("serves front-end web development evidence without catalog access", async () =>
+    withSystemTime(ARENA_FRESH_NOW, async () => {
     for (const path of ["/webdev", "/webdev/"]) {
       const response = await handleRequest(
         new Request(`https://ai.itsolver.au${path}`),
@@ -328,19 +350,46 @@ describe("worker routes", () => {
 
       expect(response.status).toBe(200);
       const html = await response.text();
-      expect(html).toContain("Web App Development Model Winners");
-      expect(html).toContain("Current public winner");
-      expect(html).toContain("GPT-5.5: 69.85%");
-      expect(html).toContain("Claude Fable 5: 90.35%");
-      expect(html).toContain("Gemini 3.5 Flash: 78.80%");
-      expect(html).toContain("Grok CLI Grok 4.20 Reasoning: 57.3%");
-      expect(html).toContain('<span class="tab active">Performance</span>');
-      expect(html).toContain("Cost / time signal");
+      expect(html).toContain("Front-End Web Development Model Evidence");
+      expect(html).toContain("Checked Arena snapshot leader");
+      expect(html).toContain("Claude Opus 5 Max");
+      expect(html).toContain("Arena 1692 ±9");
+      expect(html).toContain("Ranked #1 in the checked August 15 Arena snapshot");
+      expect(html).toContain("Claude Fable 5: #1 at 90.35%");
+      expect(html).toContain("Claude Opus 5: #2 at 88.40%");
+      expect(html).toContain("Kimi K3: #3 and the leading open-weight model");
+      expect(html).toContain("previous DesignArena URL now returns 404");
+      expect(html).not.toContain("OpenHands Index — Frontend");
+      expect(html).toContain("ByteDance Web-Bench (excluded)");
+      expect(html).toContain('<span class="tab active">Checked evidence</span>');
+      expect(html).toContain("Scores kept separate");
+      expect(html).toContain("https://www.vals.ai/benchmarks/vals_index");
       expect(html).toContain("https://www.vals.ai/benchmarks/vibe-code");
+      expect(html).not.toContain("https://intelligence.ai/leaderboard/webapps");
+      expect(html).not.toContain("https://index.openhands.dev/frontend");
       expect(html).toContain(
-        "headline winners first, then benchmark breakdown, cost, and runtime context",
+        "Excluded from the checked ranking because the public board is stale",
       );
     }
+    }));
+
+  it("labels the web-development evidence historical after its freshness gate expires", () => {
+    const html = webdevBenchmarkHtml(new Date(ARENA_EXPIRED_NOW));
+    const futureDatedHtml = webdevBenchmarkHtml(
+      new Date(ARENA_BEFORE_CHECK),
+    );
+
+    expect(html).toContain("Freshness gate expired");
+    expect(html).toContain("Historical Evidence Profiles");
+    expect(html).toContain(
+      "Historical snapshot only; excluded until refreshed.",
+    );
+    expect(html).not.toContain(
+      '<span class="index-label">Current Arena leader</span>',
+    );
+    expect(html).not.toContain("Historical snapshot: Current Arena leader");
+    expect(html).not.toContain("Best current");
+    expect(futureDatedHtml).toContain("Freshness gate expired");
   });
 
   it("serves health metadata", async () => {
@@ -362,14 +411,228 @@ describe("worker routes", () => {
         quote: "AUD",
         rate: 1.5,
       },
-      providerCount: 6,
+      providerCount: 7,
     });
-    expect(body.modelCount).toBe(8);
-    expect(body.activeModelCount).toBe(8);
-    expect(body.registryModelCount).toBe(8);
+    expect(body.modelCount).toBe(19);
+    expect(body.activeModelCount).toBe(19);
+    expect(body.registryModelCount).toBe(19);
     expect(body.benchmarkCount).toBeGreaterThan(body.registryModelCount);
     expect(body.recommendableCount).toBeGreaterThan(0);
   });
+
+  it("sanitizes frontend evidence when a fresh cache crosses snapshot expiry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(ARENA_FRESH_NOW));
+    try {
+      const cached = normalizeModelsDevCatalog(
+        modelsDevFixture,
+        ARENA_FRESH_NOW,
+        undefined,
+        artificialAnalysisFreeFixture.data,
+      );
+      const rawBenchmarkCount = cached.benchmarkCandidates?.length ?? 0;
+      expect(
+        cached.benchmarkCandidates?.find((row) => row.id === "grok-4-5")
+          ?.benchmarks.frontendWebDev,
+      ).toBeDefined();
+
+      vi.setSystemTime(new Date(ARENA_EXPIRED_NOW));
+      const cachedEnv = envWithCachedCatalog(cached);
+      const [benchmarkResponse, healthResponse, modelsResponse, latestResponse] =
+        await Promise.all([
+          handleRequest(
+            new Request("https://ai.itsolver.au/v1/benchmarks"),
+            cachedEnv,
+            ctx,
+          ),
+          handleRequest(
+            new Request("https://ai.itsolver.au/v1/health"),
+            cachedEnv,
+            ctx,
+          ),
+          handleRequest(
+            new Request(
+              "https://ai.itsolver.au/v1/models?provider=moonshotai",
+            ),
+            cachedEnv,
+            ctx,
+          ),
+          handleRequest(
+            new Request(
+              "https://ai.itsolver.au/v1/models/moonshotai/latest",
+            ),
+            cachedEnv,
+            ctx,
+          ),
+        ]);
+      const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
+      const healthBody = (await healthResponse.json()) as JsonObject;
+      const modelsBody = (await modelsResponse.json()) as JsonObject;
+      const latestBody = (await latestResponse.json()) as JsonObject;
+      const grok = benchmarkBody.benchmarks.find(
+        (row: JsonObject) => row.id === "grok-4-5",
+      );
+      const kimiModel = modelsBody.models.find(
+        (row: JsonObject) => row.id === "kimi-k3",
+      );
+
+      expect(benchmarkResponse.status).toBe(200);
+      expect(healthResponse.status).toBe(200);
+      expect(modelsResponse.status).toBe(200);
+      expect(latestResponse.status).toBe(200);
+      expect(benchmarkBody.benchmarkCount).toBeLessThan(rawBenchmarkCount);
+      expect(
+        benchmarkBody.benchmarks.every(
+          (row: JsonObject) => !row.benchmarks.frontendWebDev,
+        ),
+      ).toBe(true);
+      expect(
+        benchmarkBody.benchmarks.map((row: JsonObject) => row.id),
+      ).not.toContain("kimi-k3-max");
+      expect(grok?.benchmarks.llm).toBeDefined();
+      expect(grok?.benchmarks.frontendWebDev).toBeUndefined();
+      expect(healthBody.benchmarkCount).toBe(benchmarkBody.benchmarkCount);
+      expect(healthBody.recommendableCount).toBe(
+        benchmarkBody.benchmarks.filter(
+          (row: JsonObject) => row.recommendable,
+        ).length,
+      );
+      expect(kimiModel).toBeDefined();
+      expect(kimiModel?.benchmarks?.frontendWebDev).toBeUndefined();
+      expect(latestBody.model.id).toBe("kimi-k3");
+      expect(latestBody.model.benchmarks?.frontendWebDev).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns Claude Opus 5 Max as the Arena-backed front-end leader", async () =>
+    withSystemTime(ARENA_FRESH_NOW, async () => {
+    const benchmarkResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=front-end-web-dev",
+      ),
+      env(),
+      ctx,
+    );
+    const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
+    const leader = benchmarkBody.benchmarks.find(
+      (row: JsonObject) => row.id === "claude-opus-5-max",
+    );
+
+    expect(benchmarkResponse.status).toBe(200);
+    expect(benchmarkBody.benchmarkCount).toBeGreaterThan(0);
+    expect(leader).toMatchObject({
+      id: "claude-opus-5-max",
+      provider: "anthropic",
+      registryModelId: "claude-opus-5",
+      recommendable: true,
+      eligibilityReason: "eligible",
+      pricing: {
+        inputPerMTok: 7.5,
+        outputPerMTok: 37.5,
+      },
+      benchmarks: {
+        frontendWebDev: {
+          score: 1692,
+          rank: 1,
+          rankLow: 1,
+          rankHigh: 2,
+          confidence: 9,
+          votes: 6_448,
+          preliminary: false,
+          source: "arena",
+          sourceUrl: "https://arena.ai/leaderboard/code/webdev",
+        },
+      },
+    });
+
+    const recommendationResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=best",
+      ),
+      env(),
+      ctx,
+    );
+    const recommendationBody =
+      (await recommendationResponse.json()) as JsonObject;
+
+    expect(recommendationResponse.status).toBe(200);
+    expect(recommendationBody.recommendation).toMatchObject({
+      id: "claude-opus-5-max",
+      provider: "anthropic",
+      registryModelId: "claude-opus-5",
+      pricing: {
+        inputPerMTok: 7.5,
+        outputPerMTok: 37.5,
+      },
+      benchmarks: {
+        frontendWebDev: {
+          rank: 1,
+          preliminary: false,
+          source: "arena",
+        },
+      },
+    });
+    }));
+
+  it("maps configured Arena rows and applies distinct front-end tiers", async () =>
+    withSystemTime(ARENA_FRESH_NOW, async () => {
+      const urls = [
+        "https://ai.itsolver.au/v1/benchmarks?useCase=front-end-web-dev",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=best",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=balanced",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=fast",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=best&provider=openai",
+      ];
+      const responses = await Promise.all(
+        urls.map((url) => handleRequest(new Request(url), env(), ctx)),
+      );
+      const [benchmarks, defaultBest, best, balanced, fast, openaiBest] = await Promise.all(
+        responses.map((response) => response.json() as Promise<JsonObject>),
+      );
+      const configuredGpt = benchmarks.benchmarks.find(
+        (row: JsonObject) =>
+          row.id === "gpt-5-6-sol-xhigh-codex-harness",
+      );
+
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+      expect(
+        benchmarks.benchmarks.filter(
+          (row: JsonObject) => row.eligibilityReason === "missing_registry_model",
+        ),
+      ).toEqual([]);
+      expect(configuredGpt).toMatchObject({
+        registryModelId: "gpt-5.6-sol",
+        recommendable: true,
+        eligibilityReason: "eligible",
+        benchmarks: {
+          frontendWebDev: {
+            configuration: {
+              displayLabel: "xhigh via Codex harness",
+              effort: "xhigh",
+              harness: "codex",
+            },
+          },
+        },
+      });
+      expect(defaultBest.recommendation.id).toBe("claude-opus-5-max");
+      expect(defaultBest.recommendation.failover).toMatchObject({
+        id: "kimi-k3-max",
+        registryModelId: "kimi-k3",
+      });
+      expect(
+        defaultBest.failovers.map((row: JsonObject) => row.registryModelId),
+      ).toEqual(["kimi-k3", "grok-4.6"]);
+      expect(best.recommendation.id).toBe("claude-opus-5-max");
+      expect(balanced.recommendation.id).toBe("gemini-3-7-flash-high");
+      expect(fast.recommendation.id).toBe("gemini-3-7-flash-high");
+      expect(openaiBest.recommendation).toMatchObject({
+        id: "gpt-5-6-sol-xhigh-codex-harness",
+        registryModelId: "gpt-5.6-sol",
+      });
+    }));
 
   it("loads every page from the current Artificial Analysis free endpoint", async () => {
     const realFetch = globalThis.fetch;
@@ -659,7 +922,7 @@ describe("worker routes", () => {
 
     expect(
       JSON.parse(kv.values.get(modelsDevCoverageKey) ?? "null").openai,
-    ).toBe(3);
+    ).toBe(4);
     kv.values.delete(catalogCacheKey);
     await expect(
       refreshCatalog({ ...fullEnv, MODELS_DEV_URL: oneModelUrl }),
@@ -669,7 +932,7 @@ describe("worker routes", () => {
     expect(kv.values.has(catalogCacheKey)).toBe(false);
     expect(
       JSON.parse(kv.values.get(modelsDevCoverageKey) ?? "null").openai,
-    ).toBe(3);
+    ).toBe(4);
   });
 
   it("ignores cached provider coverage that the current registry no longer supports", async () => {
@@ -1895,13 +2158,13 @@ describe("worker routes", () => {
     const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
     expect(response.status).toBe(200);
     expect(benchmarkResponse.status).toBe(200);
-    expect(body.modelCount).toBe(1);
-    expect(body.models[0]).toMatchObject({
+    expect(body.modelCount).toBe(7);
+    expect(body.models).toContainEqual(expect.objectContaining({
       id: "claude-fable-5",
       provider: "anthropic",
-      capabilities: { pdf: true },
-    });
-    expect(body.models[0].source).toBeUndefined();
+      capabilities: expect.objectContaining({ pdf: true }),
+    }));
+    expect(body.models.every((model: JsonObject) => model.source === undefined)).toBe(true);
     expect(benchmarkBody.benchmarks).toContainEqual(
       expect.objectContaining({
         id: "claude-fable-5-high",
@@ -2956,7 +3219,15 @@ describe("worker routes", () => {
     expect(response.status).toBe(200);
     expect(
       body.providers.map((provider: { provider: string }) => provider.provider),
-    ).toEqual(["openai", "google", "xai", "anthropic", "nvidia", "groq"]);
+    ).toEqual([
+      "openai",
+      "google",
+      "xai",
+      "anthropic",
+      "moonshotai",
+      "nvidia",
+      "groq",
+    ]);
   });
 
   it("does not serve the old static registry URLs", async () => {

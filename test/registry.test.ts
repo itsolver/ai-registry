@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  benchmarkCandidateEligibilityReason,
   benchmarkCandidates,
   isBenchmarkCandidateRecommendedForFilters,
   latestCostQualitySelection,
@@ -18,6 +19,12 @@ import {
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
 import { AI_AUTOCLOSE_BENCHMARKS } from "../src/generated/ai-autoclose-benchmarks";
 import { parseArtificialAnalysisSpeechToSpeechApi } from "../src/aa-speech-to-speech";
+import {
+  ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+  ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+  ARENA_FRONTEND_WEBDEV_MODELS,
+  ARENA_FRONTEND_WEBDEV_VOTE_CUTOFF_AT,
+} from "../src/generated/arena-frontend-webdev";
 import {
   artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
@@ -113,6 +120,30 @@ function aaSupportMedian(candidates: BenchmarkCandidate[]): BenchmarkCandidate {
   return ordered[Math.floor((ordered.length - 1) / 2)];
 }
 
+function withDateNow<T>(now: string, task: () => T): T {
+  const dateNow = vi.spyOn(Date, "now").mockReturnValue(Date.parse(now));
+  try {
+    return task();
+  } finally {
+    dateNow.mockRestore();
+  }
+}
+
+const ARENA_FRESH_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) + 60 * 60 * 1000,
+).toISOString();
+const ARENA_EXPIRED_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) +
+    (ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000,
+).toISOString();
+const ARENA_LAST_VALID_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) +
+    ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
+).toISOString();
+const ARENA_BEFORE_CHECK = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) - 1,
+).toISOString();
+
 describe("filter parsing", () => {
   it("parses supported filters and legacy use-case aliases", () => {
     const filters = parseFilters(
@@ -166,6 +197,17 @@ describe("filter parsing", () => {
     expect(
       parseFilters(new URLSearchParams("useCase=document-ocr")).useCase,
     ).toBe("document-processing");
+    for (const alias of [
+      "front-end-web-dev",
+      "webdev",
+      "frontend-web-dev",
+      "frontend-web-development",
+      "front-end-web-development",
+    ]) {
+      expect(parseFilters(new URLSearchParams(`useCase=${alias}`)).useCase).toBe(
+        "front-end-web-dev",
+      );
+    }
     expect(
       parseFilters(new URLSearchParams("useCase=billing-incident")),
     ).toMatchObject({
@@ -883,18 +925,457 @@ describe("Artificial Analysis catalog", () => {
       "google",
       "xai",
       "anthropic",
+      "moonshotai",
       "nvidia",
       "elevenlabs",
       "groq",
     ]);
   });
 
-  it("keeps models.dev registry rows distinct while enriching AA variants", () => {
+  it("joins the current Arena leader to its live registry model", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
     const catalog = normalizeModelsDevCatalog(
       modelsDevFixture,
-      "2026-07-16T00:00:00Z",
+      ARENA_FRESH_NOW,
       { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-opus-5-max",
+    );
+    const registryModel = catalog.models.find(
+      (model) => model.provider === "anthropic" && model.id === "claude-opus-5",
+    );
+
+    expect(candidate).toMatchObject({
+      id: "claude-opus-5-max",
+      provider: "anthropic",
+      name: "Claude Opus 5",
+      source: "arena",
+      registryModelId: "claude-opus-5",
+      recommendable: true,
+      contextWindow: 1_000_000,
+      pricing: {
+        inputPerMTok: 7.5,
+        outputPerMTok: 37.5,
+      },
+      benchmarks: {
+        frontendWebDev: {
+          score: 1692,
+          rank: 1,
+          rankLow: 1,
+          rankHigh: 2,
+          confidence: 9,
+          votes: 6_448,
+          preliminary: false,
+          source: "arena",
+          sourceUrl: "https://arena.ai/leaderboard/code/webdev",
+          extractedAt: ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+          voteCutoffAt: ARENA_FRONTEND_WEBDEV_VOTE_CUTOFF_AT,
+          configuration: { displayLabel: "max" },
+        },
+      },
+    });
+    expect(registryModel).toMatchObject({
+      id: "claude-opus-5",
+      provider: "anthropic",
+      pricing: {
+        inputPerMTok: 7.5,
+        outputPerMTok: 37.5,
+      },
+    });
+    expect(registryModel?.benchmarks?.frontendWebDev).toBeUndefined();
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+      }),
+    ).toMatchObject({ id: "claude-opus-5-max", provider: "anthropic" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        tier: "best",
+      }),
+    ).toMatchObject({ id: "claude-opus-5-max", provider: "anthropic" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        tier: "balanced",
+      }),
+    ).toMatchObject({ id: "gemini-3-7-flash-high", provider: "google" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        tier: "fast",
+      }),
+    ).toMatchObject({ id: "gemini-3-7-flash-high", provider: "google" });
+    }));
+
+  it("does not recommend a non-production K3 by default", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    source.moonshotai.models["kimi-k3"].status = "preview";
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      ARENA_FRESH_NOW,
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "kimi-k3-max",
+    );
+
+    expect(candidate).toMatchObject({
+      registryModelId: "kimi-k3",
+      recommendable: false,
+      availability: { status: "preview", acceptedRisk: false },
+    });
+    expect(
+      candidate &&
+        isBenchmarkCandidateRecommendedForFilters(candidate, {
+          useCase: "front-end-web-dev",
+        }),
+    ).toBe(false);
+    expect(
+      recommendModel(catalog, { useCase: "front-end-web-dev" })?.id,
+    ).not.toBe("kimi-k3-max");
+    }));
+
+  it("fails closed when the checked Arena snapshot is older than 30 days", () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_EXPIRED_NOW,
+    );
+
+    expect(
+      benchmarkCandidates(catalog, { useCase: "front-end-web-dev" }),
+    ).toEqual([]);
+    expect(
+      recommendModel(catalog, { useCase: "front-end-web-dev" }),
+    ).toBeUndefined();
+    expect(
+      catalog.models.find((model) => model.id === "kimi-k3")?.benchmarks
+        ?.frontendWebDev,
+    ).toBeUndefined();
+    expect(
+      benchmarkCandidates(
+        normalizeModelsDevCatalog(
+          modelsDevFixture,
+          ARENA_BEFORE_CHECK,
+        ),
+        { useCase: "front-end-web-dev" },
+      ),
+    ).toEqual([]);
+    expect(
+      withDateNow(ARENA_LAST_VALID_NOW, () =>
+        benchmarkCandidates(
+          normalizeModelsDevCatalog(modelsDevFixture, ARENA_LAST_VALID_NOW),
+          { useCase: "front-end-web-dev" },
+        ),
+      ),
+    ).not.toEqual([]);
+  });
+
+  it("rejects a cached Arena candidate once the live freshness window expires", () => {
+    const catalog = withDateNow(ARENA_FRESH_NOW, () =>
+      normalizeModelsDevCatalog(
+        modelsDevFixture,
+        ARENA_FRESH_NOW,
+        undefined,
+        artificialAnalysisFreeFixture.data,
+      ),
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "kimi-k3-max",
+    );
+    const cachedGrok = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "grok-4-5",
+    );
+    expect(candidate).toBeDefined();
+    expect(cachedGrok?.benchmarks).toMatchObject({
+      llm: expect.any(Object),
+      frontendWebDev: expect.any(Object),
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(ARENA_EXPIRED_NOW));
+    try {
+      const currentRows = benchmarkCandidates(catalog, {});
+      const currentGrok = currentRows.find((row) => row.id === "grok-4-5");
+
+      expect(currentRows.map((row) => row.id)).not.toContain("kimi-k3-max");
+      expect(
+        currentRows.every((row) => !row.benchmarks.frontendWebDev),
+      ).toBe(true);
+      expect(currentGrok?.benchmarks.llm).toBeDefined();
+      expect(currentGrok?.benchmarks.frontendWebDev).toBeUndefined();
+      expect(cachedGrok?.benchmarks.frontendWebDev).toBeDefined();
+      expect(
+        benchmarkCandidates(catalog, { useCase: "front-end-web-dev" }),
+      ).toEqual([]);
+      expect(
+        candidate &&
+          isBenchmarkCandidateRecommendedForFilters(candidate, {
+            useCase: "front-end-web-dev",
+          }),
+      ).toBe(false);
+      expect(
+        candidate &&
+          benchmarkCandidateEligibilityReason(candidate, {
+            useCase: "front-end-web-dev",
+          }),
+      ).toBe("stale_benchmark_snapshot");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("maps Arena configurations to explicit deployable registry models", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+    );
+
+    for (const expected of [
+      {
+        id: "gpt-5-6-sol-xhigh-codex-harness",
+        registryModelId: "gpt-5.6-sol",
+        configuration: {
+          displayLabel: "xhigh via Codex harness",
+          effort: "xhigh",
+          harness: "codex",
+        },
+      },
+      {
+        id: "claude-opus-4-8-high",
+        registryModelId: "claude-opus-4-8",
+        configuration: {
+          displayLabel: "high effort",
+          effort: "high",
+        },
+      },
+      {
+        id: "claude-opus-5-max",
+        registryModelId: "claude-opus-5",
+        configuration: {
+          displayLabel: "max",
+        },
+      },
+    ]) {
+      const candidate = catalog.benchmarkCandidates?.find(
+        (row) => row.id === expected.id,
+      );
+      expect(candidate).toMatchObject({
+        registryModelId: expected.registryModelId,
+        recommendable: true,
+        benchmarks: {
+          frontendWebDev: { configuration: expected.configuration },
+        },
+      });
+      expect(
+        candidate &&
+          benchmarkCandidateEligibilityReason(candidate, {
+            useCase: "front-end-web-dev",
+          }),
+      ).toBe("eligible");
+    }
+    const opusHigh = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-opus-4-7-high",
+    );
+    const opusBase = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-opus-4-7",
+    );
+    expect(opusHigh && recommendationFamilyKey(opusHigh)).toBe(
+      opusBase && recommendationFamilyKey(opusBase),
+    );
+    expect(
+      catalog.models.find((model) => model.id === "gpt-5.6-sol")?.benchmarks
+        ?.frontendWebDev,
+    ).toBeUndefined();
+    }));
+
+  it("reports an unavailable explicit Arena mapping target precisely", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    delete source.openai.models["gpt-5.6-sol"];
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      ARENA_FRESH_NOW,
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "gpt-5-6-sol-xhigh-codex-harness",
+    );
+
+    expect(candidate).toMatchObject({
+      registryMappingTargetId: "gpt-5.6-sol",
+      recommendable: false,
+    });
+    expect(candidate?.registryModelId).toBeUndefined();
+    expect(
+      candidate &&
+        benchmarkCandidateEligibilityReason(candidate, {
+          useCase: "front-end-web-dev",
+        }),
+    ).toBe("registry_mapping_target_unavailable");
+    }));
+
+  it("merges same-model AA evidence into an explicitly mapped Arena configuration", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    const artificialAnalysisModels = structuredClone(
       artificialAnalysisFreeFixture.data,
+    ) as any[];
+    artificialAnalysisModels.push({
+      id: "aa-claude-opus-4-8-high",
+      name: "Claude Opus 4.8 (high)",
+      slug: "claude-opus-4-8-high",
+      release_date: "2026-07-16",
+      model_creator: { name: "Anthropic", slug: "anthropic" },
+      evaluations: {
+        artificial_analysis_intelligence_index: 96,
+        artificial_analysis_agentic_index: 94,
+        ifbench: 0.97,
+      },
+      pricing: {
+        price_1m_input_tokens: 5,
+        price_1m_output_tokens: 30,
+      },
+      performance: { median_output_tokens_per_second: 80 },
+    });
+
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      ARENA_FRESH_NOW,
+      undefined,
+      artificialAnalysisModels,
+    );
+    const aaCandidate = catalog.benchmarkCandidates?.find(
+      (candidate) =>
+        candidate.id === "claude-opus-4-8-high" &&
+        Boolean(candidate.benchmarks.llm),
+    );
+    const arenaCandidate = catalog.benchmarkCandidates?.find(
+      (candidate) =>
+        candidate.id ===
+        "arena-frontend-claude-opus-4-8-high",
+    );
+    const registryModel = catalog.models.find(
+      (model) => model.id === "claude-opus-4-8",
+    );
+
+    expect(aaCandidate).toMatchObject({
+      registryModelId: "claude-opus-4-8",
+      recommendable: true,
+      benchmarks: { llm: { agentic: 94 } },
+    });
+    expect(aaCandidate?.benchmarks.frontendWebDev).toMatchObject({
+      rank: 12,
+      source: "arena",
+      configuration: {
+        displayLabel: "high effort",
+        effort: "high",
+      },
+    });
+    expect(arenaCandidate).toBeUndefined();
+    expect(registryModel?.benchmarks?.frontendWebDev).toMatchObject({ rank: 18 });
+    }));
+
+  it("declares and resolves every checked Arena row", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+    );
+    const rows = benchmarkCandidates(catalog, {
+      useCase: "front-end-web-dev",
+    });
+
+    expect(rows).toHaveLength(ARENA_FRONTEND_WEBDEV_MODELS.length);
+    expect(rows.every((row) => row.registryModelId && row.recommendable)).toBe(
+      true,
+    );
+    expect(
+      rows.map((row) => row.registryModelId),
+    ).toEqual(
+      expect.arrayContaining(
+        ARENA_FRONTEND_WEBDEV_MODELS.map((row) => row.registryModelId),
+      ),
+    );
+    }));
+
+  it("uses mapped Arena configurations with provider and price filters", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+      { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+    );
+
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        provider: "openai",
+        tier: "best",
+      }),
+    ).toMatchObject({
+      id: "gpt-5-6-sol-xhigh-codex-harness",
+      registryModelId: "gpt-5.6-sol",
+    });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        provider: "anthropic",
+        tier: "best",
+      }),
+    ).toMatchObject({ id: "claude-opus-5-max" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        provider: "anthropic",
+        tier: "best",
+        maxOutputCostPerMTok: 20,
+      }),
+    ).toMatchObject({
+      id: "claude-sonnet-5-high",
+      registryModelId: "claude-sonnet-5",
+    });
+    }));
+
+  it("uses current registry pricing ahead of the static Arena fallback", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    source.moonshotai.models["kimi-k3"].cost = { input: 2, output: 8 };
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      ARENA_FRESH_NOW,
+      { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "kimi-k3-max",
+    );
+
+    expect(candidate?.pricing).toMatchObject({
+      inputPerMTok: 3,
+      outputPerMTok: 12,
+    });
+    expect(
+      catalog.models.find((model) => model.id === "kimi-k3")?.pricing,
+    ).toMatchObject({ inputPerMTok: 3, outputPerMTok: 12 });
+    }));
+
+  it("keeps models.dev registry rows distinct while enriching AA variants", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const artificialAnalysisModels = structuredClone(
+      artificialAnalysisFreeFixture.data,
+    ) as any[];
+    const fableFixture = artificialAnalysisModels.find(
+      (model) => model.slug === "claude-fable-5-high",
+    );
+    fableFixture.slug = "claude-fable-5";
+    fableFixture.name =
+      "Claude Fable 5 (Adaptive Reasoning, Max Effort, Opus 4.8 Fallback)";
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+      { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+      artificialAnalysisModels,
     );
 
     expect(catalog.models.map((model) => model.id)).toEqual(
@@ -906,7 +1387,7 @@ describe("Artificial Analysis catalog", () => {
     );
 
     const fable = catalog.benchmarkCandidates?.find(
-      (candidate) => candidate.id === "claude-fable-5-high",
+      (candidate) => candidate.id === "claude-fable-5",
     );
     expect(fable).toMatchObject({
       registryModelId: "claude-fable-5",
@@ -926,6 +1407,18 @@ describe("Artificial Analysis catalog", () => {
         },
       },
     });
+    expect(
+      catalog.models.find((model) => model.id === "claude-fable-5")
+        ?.benchmarks,
+    ).toMatchObject({
+      llm: { agentic: 88 },
+      frontendWebDev: { rank: 6, source: "arena" },
+    });
+    expect(
+      catalog.benchmarkCandidates?.find(
+        (candidate) => candidate.id === "claude-fable-5",
+      )?.name,
+    ).toContain("Opus 4.8 Fallback");
 
     const gpt = catalog.benchmarkCandidates?.find(
       (candidate) => candidate.id === "gpt-5-6-sol-high",
@@ -940,7 +1433,7 @@ describe("Artificial Analysis catalog", () => {
         (candidate) => candidate.id,
       ),
     ).not.toContain("grok-4-5");
-  });
+    }));
 
   it("preserves base registry metadata when fallback support rows add effort variants", () => {
     const source = structuredClone(modelsDevFixture) as any;
@@ -968,14 +1461,6 @@ describe("Artificial Analysis catalog", () => {
 
   it("joins compound effort variants without collapsing canonical max models", () => {
     const source = structuredClone(modelsDevFixture) as any;
-    const anthropicTemplate = source.anthropic.models["claude-fable-5"];
-    source.anthropic.models["claude-sonnet-4.6"] = {
-      ...anthropicTemplate,
-      id: "claude-sonnet-4.6",
-      name: "Claude Sonnet 4.6",
-      family: "claude-sonnet",
-      modalities: { input: ["text", "pdf"], output: ["text"] },
-    };
     const openAiTemplate = source.openai.models["gpt-5.6"];
     source.openai.models["gpt-5.1-codex"] = {
       ...openAiTemplate,
@@ -999,7 +1484,7 @@ describe("Artificial Analysis catalog", () => {
     );
 
     expect(byId.get("claude-sonnet-4-6-adaptive")).toMatchObject({
-      registryModelId: "claude-sonnet-4.6",
+      registryModelId: "claude-sonnet-4-6",
       family: "claude-sonnet",
       capabilities: {
         vision: true,
@@ -1009,7 +1494,7 @@ describe("Artificial Analysis catalog", () => {
     expect(
       byId.get("claude-sonnet-4-6-non-reasoning-low-effort"),
     ).toMatchObject({
-      registryModelId: "claude-sonnet-4.6",
+      registryModelId: "claude-sonnet-4-6",
       family: "claude-sonnet",
       capabilities: {
         vision: true,
@@ -1039,13 +1524,6 @@ describe("Artificial Analysis catalog", () => {
 
   it("preserves registry capabilities that an AA effort row omits", () => {
     const source = structuredClone(modelsDevFixture) as any;
-    const anthropicTemplate = source.anthropic.models["claude-fable-5"];
-    source.anthropic.models["claude-sonnet-4.6"] = {
-      ...anthropicTemplate,
-      id: "claude-sonnet-4.6",
-      name: "Claude Sonnet 4.6",
-      family: "claude-sonnet",
-    };
     const efficiencyRecord = AA_LLM_EFFICIENCY_MODELS.find(
       (record) =>
         record.slug === "claude-sonnet-4-6-non-reasoning-low-effort",
@@ -1070,7 +1548,7 @@ describe("Artificial Analysis catalog", () => {
             "claude-sonnet-4-6-non-reasoning-low-effort",
         ),
       ).toMatchObject({
-        registryModelId: "claude-sonnet-4.6",
+        registryModelId: "claude-sonnet-4-6",
         capabilities: {
           vision: true,
           reasoning: false,

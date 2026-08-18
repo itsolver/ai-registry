@@ -14,7 +14,7 @@ describe("homepage copy", () => {
       '<a href="/its-eval">Our reopened-ticket classifier replay</a>',
     );
     expect(HOME_HTML).toContain(
-      '<a href="/webdev">Our web app development benchmark composite</a>',
+      '<a href="/webdev">Our front-end development evidence page</a>',
     );
     expect(HOME_HTML).toContain(
       '<option value="benchmarks">browse benchmark rows</option>',
@@ -93,7 +93,14 @@ describe("homepage copy", () => {
     );
     const documentBranch = buildPath.slice(
       buildPath.indexOf("fields.usecase.value === 'document-processing'"),
-      buildPath.indexOf("} else {", buildPath.indexOf("fields.usecase.value === 'document-processing'")),
+      buildPath.indexOf("fields.usecase.value === 'front-end-web-dev'"),
+    );
+    const frontendBranch = buildPath.slice(
+      buildPath.indexOf("fields.usecase.value === 'front-end-web-dev'"),
+      buildPath.indexOf(
+        "} else {",
+        buildPath.indexOf("fields.usecase.value === 'front-end-web-dev'"),
+      ),
     );
 
     expect(speechToTextBranch).toContain(
@@ -113,6 +120,186 @@ describe("homepage copy", () => {
     expect(documentBranch).not.toContain("includeItsEval");
     expect(documentBranch).not.toContain("minInputCostPerMTok");
     expect(documentBranch).not.toContain("minContextWindow");
+    expect(frontendBranch).toContain("params.set('minInputCostPerMTok'");
+    expect(frontendBranch).toContain("params.set('maxInputCostPerMTok'");
+    expect(frontendBranch).toContain("params.set('minOutputCostPerMTok'");
+    expect(frontendBranch).toContain("params.set('maxOutputCostPerMTok'");
+    expect(frontendBranch).toContain("params.set('minContextWindow'");
+    expect(frontendBranch).toContain("params.set('maxContextWindow'");
+    expect(frontendBranch).not.toContain("includeItsEval");
+    expect(frontendBranch).not.toContain("minVisualReasoning");
+    expect(frontendBranch).not.toContain("maxAaWer");
+
+    const createBuildPath = new Function(
+      "fields",
+      "includeItsBenchmark",
+      `${buildPath}\nreturn buildPath;`,
+    ) as (
+      fields: Record<string, { value: string }>,
+      includeItsBenchmark: () => boolean,
+    ) => () => string;
+    const populated = (value: string) => ({ value });
+    const frontendPath = createBuildPath(
+      {
+        endpoint: populated("benchmarks"),
+        tier: populated("fast"),
+        provider: populated("moonshotai"),
+        usecase: populated("front-end-web-dev"),
+        capability: populated("reasoning"),
+        mincost: populated("4.5"),
+        maxcost: populated("15"),
+        minoutputcost: populated("22.5"),
+        maxoutputcost: populated("75"),
+        minruncost: populated("0.1"),
+        maxruncost: populated("5"),
+        minintelligence: populated("80"),
+        minvisualreasoning: populated("70"),
+        maximagecost: populated("3"),
+        maxaudioinputcost: populated("4"),
+        maxaudiooutputcost: populated("5"),
+        maxtranscriptioncost: populated("6"),
+        maxaawer: populated("3"),
+        minctx: populated("1000"),
+        maxctx: populated("1200"),
+      },
+      () => {
+        throw new Error("frontend serialization must not read ITS state");
+      },
+    )();
+    const frontendUrl = new URL(frontendPath, "https://ai.itsolver.au");
+    expect(frontendUrl.pathname).toBe("/v1/benchmarks");
+    expect(Object.fromEntries(frontendUrl.searchParams)).toEqual({
+      tier: "fast",
+      provider: "moonshotai",
+      useCase: "front-end-web-dev",
+      minInputCostPerMTok: "4.5",
+      maxInputCostPerMTok: "15",
+      minOutputCostPerMTok: "22.5",
+      maxOutputCostPerMTok: "75",
+      minContextWindow: "1000000",
+      maxContextWindow: "1200000",
+    });
+  });
+
+  it("exposes the front-end web dev option, panel, and Arena caveat", () => {
+    expect(HOME_HTML).toContain(
+      '<option value="front-end-web-dev">front-end web dev</option>',
+    );
+    expect(HOME_HTML).toContain(
+      '<option value="moonshotai">moonshot ai</option>',
+    );
+    expect(HOME_HTML).toContain(
+      'data-benchmark-panel="front-end-web-dev" hidden',
+    );
+    expect(HOME_HTML).toContain('id="frontendRows"');
+    expect(HOME_HTML).toContain("Front-End Web Dev Benchmark");
+    expect(HOME_HTML).toContain("Arena Frontend Code");
+    expect(HOME_HTML).toContain(
+      'id="frontendRecommendationCredit" hidden>Source: <a href="https://arena.ai/leaderboard/code/webdev">Arena Frontend Code leaderboard</a>',
+    );
+    expect(HOME_HTML).toContain(
+      "In the checked August 15, 2026 snapshot, Claude Opus 5 Max ranked first",
+    );
+    expect(HOME_HTML).toContain("Kimi K3 ranked third");
+    expect(HOME_HTML).toContain("fresh checked Arena snapshot");
+    expect(HOME_HTML).toContain("best value in Arena top 10");
+    expect(HOME_HTML).toContain("lowest output cost in Arena top 20");
+    expect(HOME_HTML).toContain("highest Arena score");
+    expect(HOME_HTML).toContain("Configuration</th>");
+    expect(HOME_HTML).toContain("Registry model</th>");
+    expect(HOME_HTML).toContain("Codex-harness labels describe evaluation context");
+    expect(HOME_HTML).not.toContain("Kimi K3 is currently first");
+    expect(HOME_HTML).toContain("renderFrontendWebDevBenchmarks(models || [])");
+  });
+
+  it("defaults front-end web dev to highest Arena score", () => {
+    const defaultTierSource = HOME_HTML.slice(
+      HOME_HTML.indexOf("function defaultTierForUseCase"),
+      HOME_HTML.indexOf("function updateTierOptions"),
+    );
+    const createDefaultTier = new Function(
+      `${defaultTierSource}\nreturn defaultTierForUseCase;`,
+    ) as () => (useCase: string) => string;
+    const defaultTier = createDefaultTier();
+
+    expect(defaultTier("front-end-web-dev")).toBe("best");
+    expect(defaultTier("customer-support")).toBe("fast");
+    expect(HOME_HTML).toContain(
+      "fields.tier.value = defaultTierForUseCase(fields.usecase.value);",
+    );
+  });
+
+  it("shows preliminary Arena status in front-end recommendation mode", () => {
+    const recommendationColumnsSource = HOME_HTML.slice(
+      HOME_HTML.indexOf("function recommendationColumns(useCase)"),
+      HOME_HTML.indexOf("function renderRecommendationResponse"),
+    );
+    type RecommendationColumn = {
+      label: string;
+      render: (row: { model: unknown }) => string;
+    };
+    const createRecommendationColumns = new Function(
+      "frontendWebDevSignals",
+      "frontendConfigurationLabel",
+      "frontendRegistryModelLabel",
+      "frontendArenaScoreLabel",
+      "money",
+      "renderModelCell",
+      "escapeHtml",
+      `${recommendationColumnsSource}\nreturn recommendationColumns;`,
+    ) as (
+      frontendWebDevSignals: (model: unknown) => { preliminary?: boolean },
+      frontendConfigurationLabel: (model: unknown) => string,
+      frontendRegistryModelLabel: (model: unknown) => string,
+      frontendArenaScoreLabel: (model: unknown) => string,
+      money: (value: unknown) => string,
+      renderModelCell: (model: unknown) => string,
+      escapeHtml: (value: unknown) => string,
+    ) => (useCase: string) => RecommendationColumn[];
+    const recommendationColumns = createRecommendationColumns(
+      (model) =>
+        (model as {
+          benchmarks?: { frontendWebDev?: { preliminary?: boolean } };
+        }).benchmarks?.frontendWebDev ?? {},
+      (model) =>
+        (model as { benchmarks?: { frontendWebDev?: { configuration?: { displayLabel?: string } } } })
+          .benchmarks?.frontendWebDev?.configuration?.displayLabel ?? "base model",
+      (model) =>
+        (model as { registryModelId?: string }).registryModelId ?? "-",
+      () => "",
+      () => "",
+      () => "",
+      (value) => String(value),
+    );
+    const columns = recommendationColumns("front-end-web-dev");
+    const status = columns.find((column) => column.label === "Status");
+    const configuration = columns.find(
+      (column) => column.label === "Configuration",
+    );
+    const registryModel = columns.find(
+      (column) => column.label === "Registry model",
+    );
+
+    expect(status).toBeDefined();
+    expect(
+      status?.render({
+        model: { benchmarks: { frontendWebDev: { preliminary: true } } },
+      }),
+    ).toBe("preliminary");
+    expect(
+      configuration?.render({
+        model: {
+          benchmarks: {
+            frontendWebDev: {
+              configuration: { displayLabel: "xhigh via Codex harness" },
+            },
+          },
+        },
+      }),
+    ).toBe("xhigh via Codex harness");
+    expect(
+      registryModel?.render({ model: { registryModelId: "gpt-5.6-sol" } }),
+    ).toContain("gpt-5.6-sol");
   });
 
   it("shows and clears the latest-model option only for best recommendations", () => {
@@ -430,7 +617,7 @@ describe("homepage copy", () => {
   });
 
   it("updates all three mode panels and rejects stale response identities", () => {
-    type FakeElement = { textContent: string };
+    type FakeElement = { textContent: string; hidden?: boolean };
     type FakePanel = {
       hidden: boolean;
       getAttribute: (name: string) => string;
@@ -445,6 +632,7 @@ describe("homepage copy", () => {
     const benchmarkPanels: FakePanel[] = [
       "customer-support",
       "document-processing",
+      "front-end-web-dev",
       "voice",
       "speech-to-text",
     ].map((useCase) => ({
@@ -455,6 +643,7 @@ describe("homepage copy", () => {
     const elements: Record<string, FakeElement> = {
       benchmarkTitle: { textContent: "" },
       benchmarkHint: { textContent: "" },
+      frontendRecommendationCredit: { textContent: "", hidden: true },
     };
     const documentStub = {
       querySelectorAll: (selector: string) =>
@@ -497,6 +686,9 @@ describe("homepage copy", () => {
       true,
       true,
     ]);
+
+    updateView("front-end-web-dev");
+    expect(elements.frontendRecommendationCredit.hidden).toBe(false);
 
     fields.endpoint.value = "benchmarks";
     updateView("voice");

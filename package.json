@@ -15,6 +15,7 @@
     "refresh:aa-llm-pricing": "node scripts/extract-aa-llm-pricing.mjs",
     "refresh:aa-stt": "node scripts/extract-aa-speech-to-text.mjs",
     "refresh:aa-voice": "node scripts/extract-aa-speech-to-speech.mjs",
+    "refresh:arena-webdev": "node scripts/extract-arena-frontend-webdev.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck"

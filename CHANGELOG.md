@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added the opt-in `selectionPolicy=latest-cost-quality` customer-support policy. It selects a newer stable Artificial Analysis configuration only when task cost does not increase, Intelligence does not decrease, required capabilities are present, and comparable IT Solver evidence does not show a safety regression.
 - Added complete recommendation audit metadata for the incumbent, selected configuration, release date, Artificial Analysis cost per task, Intelligence, and evidence time.
+- Added `front-end-web-dev` benchmark browsing and recommendations from Arena Frontend Code, with Claude Opus 5 Max as the current preference leader.
+- Added Moonshot AI and the canonical `kimi-k3` models.dev/API identity to the public registry.
+- Added a guarded Arena refresh command that validates supported rows and canonical models.dev mappings before it writes the generated snapshot.
 
 ### Changed
 
@@ -18,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved complete catalog construction to an hourly GitHub Actions job. The Worker now streams authenticated Artificial Analysis responses into KV before the Action validates and normalizes them.
 - Kept successful catalog entries for seven days as last-good data. Requests do not run source refreshes and mark data older than one hour as stale.
 - Rejected Artificial Analysis refreshes that return less than half of the last-good row coverage.
+- Refreshed `/webdev` with the August 15 Arena snapshot and the August 13 Vibe Code Bench functional cross-check; unavailable and stale boards are excluded rather than blended.
+- Added a 30-day fail-closed freshness gate so the Arena extract cannot keep driving recommendations after it becomes stale.
+- Split front-end recommendation priorities into highest Arena score, best top-10 value, and lowest top-20 output cost.
+- Made highest Arena score the default front-end priority and exposed the top three distinct Arena-ranked model families in recommendation responses and the homepage table.
+- Credited the Arena Frontend Code leaderboard directly in the front-end recommendation view.
+
+### Fixed
+
+- Mapped Arena harness and effort configurations to explicit deployable registry IDs, preserving their evaluation metadata and keeping configuration-specific scores off base registry rows.
 
 ### Fixed
 

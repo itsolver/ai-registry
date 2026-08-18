@@ -7,12 +7,20 @@ import { AA_CUSTOMER_SUPPORT_RECOMMENDATIONS } from "./generated/aa-customer-sup
 import { AA_LLM_EFFICIENCY_MODELS } from "./generated/aa-llm-efficiency";
 import { AA_LLM_PRICING_MODELS } from "./generated/aa-llm-pricing";
 import { AI_AUTOCLOSE_BENCHMARKS } from "./generated/ai-autoclose-benchmarks";
+import {
+  ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+  ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+  ARENA_FRONTEND_WEBDEV_MODELS,
+  ARENA_FRONTEND_WEBDEV_SOURCE_URL,
+  ARENA_FRONTEND_WEBDEV_VOTE_CUTOFF_AT,
+} from "./generated/arena-frontend-webdev";
 
 export const SUPPORTED_PROVIDERS = [
   "openai",
   "google",
   "xai",
   "anthropic",
+  "moonshotai",
   "nvidia",
   "elevenlabs",
   "groq",
@@ -30,6 +38,7 @@ export const TIERS = ["fast", "balanced", "best"] as const;
 export const USE_CASES = [
   "customer-support",
   "document-processing",
+  "front-end-web-dev",
   "voice",
   "speech-to-text",
 ] as const;
@@ -39,6 +48,7 @@ const RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES = {
   google: ["gemini"],
   xai: ["grok"],
   anthropic: ["claude"],
+  moonshotai: ["kimi"],
   nvidia: ["nvidia", "parakeet", "canary"],
   elevenlabs: ["elevenlabs", "scribe"],
   groq: ["groq", "whisper"],
@@ -49,6 +59,7 @@ const PROVIDER_DISPLAY_NAMES = {
   google: "Google",
   xai: "xAI",
   anthropic: "Anthropic",
+  moonshotai: "Moonshot AI",
   nvidia: "NVIDIA",
   elevenlabs: "ElevenLabs",
   groq: "Groq",
@@ -132,6 +143,26 @@ export interface SpeechToTextBenchmarks {
   hostingProviderSlug?: string;
   source: "artificialanalysis";
   extractedAt: string;
+}
+
+export interface FrontendWebDevBenchmarks {
+  score: number;
+  rank: number;
+  rankLow: number;
+  rankHigh: number;
+  confidence: number;
+  votes: number;
+  preliminary: boolean;
+  source: "arena";
+  sourceUrl: string;
+  extractedAt: string;
+  voteCutoffAt: string;
+  configuration?: {
+    displayLabel: string;
+    reasoningMode?: "thinking";
+    effort?: "high" | "xhigh";
+    harness?: "codex";
+  };
 }
 
 export type ModelAvailabilityStatus =
@@ -218,6 +249,7 @@ export interface RegistryModel {
     voice?: VoiceBenchmarks;
     llm?: BenchmarkSignals;
     speechToText?: SpeechToTextBenchmarks;
+    frontendWebDev?: FrontendWebDevBenchmarks;
   };
 }
 
@@ -295,14 +327,16 @@ export interface BenchmarkCandidate {
   id: string;
   provider: ProviderId;
   name: string;
-  source: "artificialanalysis" | "models.dev";
+  source: "artificialanalysis" | "models.dev" | "arena";
   benchmarks: {
     voice?: VoiceBenchmarks;
     llm?: BenchmarkSignals;
     speechToText?: SpeechToTextBenchmarks;
+    frontendWebDev?: FrontendWebDevBenchmarks;
   };
   pricing: ModelPricing;
   registryModelId?: string;
+  registryMappingTargetId?: string;
   recommendable: boolean;
   eligibilityReason?: string;
   availability?: ModelAvailabilityMetadata;
@@ -857,7 +891,7 @@ export function filterModels(
   models: RegistryModel[],
   filters: ModelFilters,
 ): RegistryModel[] {
-  return models.filter((model) => {
+  return models.map(withoutExpiredFrontendWebDevModelEvidence).filter((model) => {
     if (filters.unsupportedProvider) return false;
     if (model.deprecated) return false;
     if (filters.provider && model.provider !== filters.provider) return false;
@@ -967,6 +1001,27 @@ export function filterModels(
     }
     return true;
   });
+}
+
+function withoutExpiredFrontendWebDevModelEvidence(
+  model: RegistryModel,
+): RegistryModel {
+  const frontendWebDev = model.benchmarks?.frontendWebDev;
+  if (!frontendWebDev || frontendWebDevSnapshotIsFresh(frontendWebDev)) {
+    return model;
+  }
+
+  const benchmarks: NonNullable<RegistryModel["benchmarks"]> = {
+    ...model.benchmarks,
+  };
+  delete benchmarks.frontendWebDev;
+  if (Object.values(benchmarks).some(Boolean)) {
+    return { ...model, benchmarks };
+  }
+
+  const sanitized = { ...model };
+  delete sanitized.benchmarks;
+  return sanitized;
 }
 
 export function recommendModel(
@@ -1223,8 +1278,29 @@ export function recommendModelFailovers(
   catalog: Catalog,
   filters: ModelFilters,
   limit = 2,
-): BenchmarkCandidate[] {
-  if (filters.useCase !== "customer-support" || limit <= 0) return [];
+): RecommendedModel[] {
+  if (limit <= 0) return [];
+
+  if (filters.useCase === "front-end-web-dev") {
+    const recommendations = rankedRecommendedModels(catalog, filters);
+    const recommendation = recommendations[0];
+    const seenFamilies = new Set<string>();
+    if (recommendation) {
+      seenFamilies.add(recommendationFamilyKey(recommendation));
+    }
+
+    return recommendations
+      .slice(1)
+      .filter((candidate) => {
+        const family = recommendationFamilyKey(candidate);
+        if (!family || seenFamilies.has(family)) return false;
+        seenFamilies.add(family);
+        return true;
+      })
+      .slice(0, limit);
+  }
+
+  if (filters.useCase !== "customer-support") return [];
 
   const recommendation = recommendModel(catalog, filters);
   const seenFamilies = new Set<string>();
@@ -1268,8 +1344,13 @@ export function benchmarkCandidates(
 ): BenchmarkCandidate[] {
   const effectiveFilters = filtersWithUsdRunCost(catalog, filters);
   const useCase = effectiveFilters.useCase;
+  const currentCandidates = (catalog.benchmarkCandidates ?? [])
+    .map(withoutExpiredFrontendWebDevEvidence)
+    .filter(
+      (candidate): candidate is BenchmarkCandidate => candidate !== undefined,
+    );
 
-  return (catalog.benchmarkCandidates ?? []).filter((candidate) => {
+  return currentCandidates.filter((candidate) => {
     if (effectiveFilters.unsupportedProvider) return false;
     if (isDeprecatedBenchmarkCandidate(candidate)) return false;
     if (
@@ -1288,6 +1369,12 @@ export function benchmarkCandidates(
       useCase &&
       !candidate.benchmarks[benchmarkKeyForUseCase(useCase)] &&
       !(useCase === "voice" && isUnbenchmarkedVoiceCandidate(candidate))
+    ) {
+      return false;
+    }
+    if (
+      useCase === "front-end-web-dev" &&
+      !frontendWebDevSnapshotIsFresh(candidate.benchmarks.frontendWebDev)
     ) {
       return false;
     }
@@ -1523,10 +1610,32 @@ function isUnbenchmarkedVoiceCandidate(candidate: BenchmarkCandidate): boolean {
   );
 }
 
+function withoutExpiredFrontendWebDevEvidence(
+  candidate: BenchmarkCandidate,
+): BenchmarkCandidate | undefined {
+  const frontendWebDev = candidate.benchmarks.frontendWebDev;
+  if (!frontendWebDev || frontendWebDevSnapshotIsFresh(frontendWebDev)) {
+    return candidate;
+  }
+
+  const benchmarks: BenchmarkCandidate["benchmarks"] = {
+    ...candidate.benchmarks,
+  };
+  delete benchmarks.frontendWebDev;
+  if (!Object.values(benchmarks).some(Boolean)) return undefined;
+  return { ...candidate, benchmarks };
+}
+
 export function isBenchmarkCandidateRecommendedForFilters(
   candidate: BenchmarkCandidate,
   filters: ModelFilters,
 ): boolean {
+  if (
+    filters.useCase === "front-end-web-dev" &&
+    !frontendWebDevSnapshotIsFresh(candidate.benchmarks.frontendWebDev)
+  ) {
+    return false;
+  }
   return (
     hasRecommendableBenchmarkBasics(candidate) &&
     candidateAvailabilityAllowed(candidate, filters) &&
@@ -1542,8 +1651,37 @@ export function benchmarkCandidateEligibilityReason(
     return "eligible";
   }
   if (isDeprecatedBenchmarkCandidate(candidate)) return "deprecated";
+  if (
+    filters.useCase === "front-end-web-dev" &&
+    !frontendWebDevSnapshotIsFresh(candidate.benchmarks.frontendWebDev)
+  ) {
+    return "stale_benchmark_snapshot";
+  }
   if (!candidateAvailabilityAllowed(candidate, filters)) {
     return candidate.availability?.status ?? "not_production";
+  }
+
+  if (filters.useCase === "front-end-web-dev") {
+    if (!candidate.registryModelId && candidate.registryMappingTargetId) {
+      return "registry_mapping_target_unavailable";
+    }
+    if (!candidate.registryModelId) return "missing_registry_model";
+    if (!isNumber(candidate.benchmarks.frontendWebDev?.score)) {
+      return "missing_arena_frontend_score";
+    }
+    if (
+      candidate.pricing.inputPerMTok === undefined ||
+      candidate.pricing.inputPerMTok <= 0
+    ) {
+      return "missing_input_pricing";
+    }
+    if (
+      candidate.pricing.outputPerMTok === undefined ||
+      candidate.pricing.outputPerMTok <= 0
+    ) {
+      return "missing_output_pricing";
+    }
+    return "insufficient_recommendation_evidence";
   }
 
   if (candidate.benchmarks.voice) {
@@ -1623,6 +1761,13 @@ function candidateAvailabilityAllowed(
   candidate: BenchmarkCandidate,
   filters: ModelFilters,
 ): boolean {
+  if (candidate.benchmarks.frontendWebDev) {
+    return isProductionAvailabilityAllowed(
+      candidate.availability ??
+        heuristicAvailabilityForTextModel(candidate.id, candidate.name),
+      filters,
+    );
+  }
   if (!candidate.benchmarks.llm) return true;
   if (
     filters.useCase === "document-processing" &&
@@ -1744,6 +1889,13 @@ function isUseCaseRecommendationCandidate(
   candidate: BenchmarkCandidate,
   filters: ModelFilters,
 ): boolean {
+  if (filters.useCase === "front-end-web-dev") {
+    return (
+      Boolean(candidate.registryModelId) &&
+      isNumber(candidate.benchmarks.frontendWebDev?.score)
+    );
+  }
+
   if (filters.useCase === "document-processing") {
     return (
       candidate.capabilities?.vision === true &&
@@ -1950,6 +2102,7 @@ function passesCostFilters(
 
 function recommendationTier(filters: ModelFilters): Tier {
   if (filters.tier) return filters.tier;
+  if (filters.useCase === "front-end-web-dev") return "best";
   return "fast";
 }
 
@@ -1957,9 +2110,7 @@ export function latestForProvider(
   catalog: Catalog,
   provider: ProviderId,
 ): RegistryModel | undefined {
-  return catalog.models
-    .filter((model) => model.provider === provider && !model.deprecated)
-    .sort(compareNewest)[0];
+  return filterModels(catalog.models, { provider }).sort(compareNewest)[0];
 }
 
 export function isRecommendationCandidate(
@@ -2070,6 +2221,7 @@ function benchmarkKeyForUseCase(
 ): keyof BenchmarkCandidate["benchmarks"] {
   if (useCase === "voice") return "voice";
   if (useCase === "speech-to-text") return "speechToText";
+  if (useCase === "front-end-web-dev") return "frontendWebDev";
   return "llm";
 }
 
@@ -2100,6 +2252,15 @@ function asUseCase(value: string | null): UseCase | undefined {
   }
   if (value === "ocr" || value === "document-ocr") {
     return "document-processing";
+  }
+
+  if (
+    value === "webdev" ||
+    value === "frontend-web-dev" ||
+    value === "frontend-web-development" ||
+    value === "front-end-web-development"
+  ) {
+    return "front-end-web-dev";
   }
   if (
     value === "billing" ||
@@ -2277,14 +2438,25 @@ function enrichRegistryModels(
       (candidate) =>
         candidate.provider === model.provider &&
         candidate.registryModelId === model.id &&
-        candidate.benchmarks.llm,
+        (candidate.benchmarks.llm || candidate.benchmarks.frontendWebDev),
     );
-    const exact = joined.find(
+    const unconfigured = joined.filter(
+      (candidate) => !candidate.benchmarks.frontendWebDev?.configuration,
+    );
+    const exact = unconfigured.find(
       (candidate) =>
         normalizeMatchKey(candidate.id) === normalizeMatchKey(model.id),
     );
-    const benchmark = exact ?? joined[0];
-    if (!benchmark) return model;
+    if (!joined.length) return model;
+
+    const llm =
+      exact?.benchmarks.llm ??
+      unconfigured.find((candidate) => candidate.benchmarks.llm)?.benchmarks
+        .llm;
+    const frontendWebDev =
+      exact?.benchmarks.frontendWebDev ??
+      unconfigured.find((candidate) => candidate.benchmarks.frontendWebDev)
+        ?.benchmarks.frontendWebDev;
 
     return {
       ...model,
@@ -2293,7 +2465,8 @@ function enrichRegistryModels(
         : {}),
       benchmarks: {
         ...model.benchmarks,
-        llm: benchmark.benchmarks.llm,
+        ...(llm ? { llm } : {}),
+        ...(frontendWebDev ? { frontendWebDev } : {}),
       },
     };
   });
@@ -2624,6 +2797,73 @@ function buildBenchmarkCandidates(
     }
   }
 
+  const arenaModels = staticBenchmarkSnapshotIsFresh(
+    ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+    generatedAt,
+    ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+  )
+    ? ARENA_FRONTEND_WEBDEV_MODELS
+    : [];
+
+  for (const arenaModel of arenaModels) {
+    const registryModel = findRegistryModelById(
+      models,
+      arenaModel.provider,
+      arenaModel.registryModelId,
+    );
+    const existing = candidates.get(arenaModel.id);
+    const mergeExisting =
+      registryModel && existing?.registryModelId === registryModel.id
+        ? existing
+        : undefined;
+    const candidateId =
+      existing && !mergeExisting
+        ? `arena-frontend-${arenaModel.id}`
+        : arenaModel.id;
+    const arenaPricing: ModelPricing = {
+      inputPerMTok: arenaModel.inputPriceUsd,
+      outputPerMTok: arenaModel.outputPriceUsd,
+    };
+    const candidate = benchmarkCandidateFromRegistry({
+      id: candidateId,
+      provider: arenaModel.provider,
+      name: mergeExisting?.name ?? registryModel?.name ?? arenaModel.label,
+      source: mergeExisting?.source ?? "arena",
+      benchmarks: {
+        ...mergeExisting?.benchmarks,
+        frontendWebDev: {
+          score: arenaModel.score,
+          rank: arenaModel.rank,
+          rankLow: arenaModel.rankLow,
+          rankHigh: arenaModel.rankHigh,
+          confidence: arenaModel.confidence,
+          votes: arenaModel.votes,
+          preliminary: arenaModel.preliminary,
+          source: "arena",
+          sourceUrl: ARENA_FRONTEND_WEBDEV_SOURCE_URL,
+          extractedAt: ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+          voteCutoffAt: ARENA_FRONTEND_WEBDEV_VOTE_CUTOFF_AT,
+          ...(arenaModel.configuration
+            ? { configuration: arenaModel.configuration }
+            : {}),
+        },
+      },
+      pricing: mergePricing(
+        exchangeRate ? convertPricing(arenaPricing, exchangeRate) : arenaPricing,
+        registryModel?.pricing,
+        mergeExisting?.pricing,
+      ),
+      registryModel,
+      registryMappingTargetId: arenaModel.registryModelId,
+      contextWindow:
+        mergeExisting?.contextWindow ??
+        registryModel?.contextWindow ??
+        arenaModel.contextWindow ??
+        null,
+    });
+    candidates.set(candidate.id, candidate);
+  }
+
   return [...candidates.values()];
 }
 
@@ -2728,6 +2968,7 @@ function benchmarkCandidateFromRegistry(input: {
   benchmarks: BenchmarkCandidate["benchmarks"];
   pricing: ModelPricing;
   registryModel?: RegistryModel;
+  registryMappingTargetId?: string;
   contextWindow?: number | null;
   capabilities?: Partial<Record<Capability, boolean>> | null;
   deprecated?: boolean | null;
@@ -2769,6 +3010,9 @@ function benchmarkCandidateFromRegistry(input: {
     benchmarks: input.benchmarks,
     pricing: input.pricing,
     ...(model ? { registryModelId: model.id } : {}),
+    ...(!model && input.registryMappingTargetId
+      ? { registryMappingTargetId: input.registryMappingTargetId }
+      : {}),
     recommendable,
     ...(availability ? { availability } : {}),
     family: model?.family ?? null,
@@ -2885,6 +3129,18 @@ function isBenchmarkCandidateRecommendable(
     );
   }
 
+  if (benchmarks.frontendWebDev) {
+    return (
+      Boolean(registryModel) &&
+      isNumber(benchmarks.frontendWebDev.score) &&
+      frontendWebDevSnapshotIsFresh(benchmarks.frontendWebDev) &&
+      hasTokenPricing(pricing) &&
+      isProductionAvailabilityAllowed(
+        availability ?? heuristicAvailabilityForTextModel(id, name),
+      )
+    );
+  }
+
   return (
     hasRecommendableTextBenchmarkBasics(benchmarks, pricing) &&
     isProductionAvailabilityAllowed(
@@ -2910,6 +3166,13 @@ function hasRecommendableBenchmarkBasics(
       isNumber(candidate.benchmarks.speechToText.aaWer) &&
       candidate.pricing.transcriptionCostPer1kMinutes !== undefined &&
       candidate.pricing.transcriptionCostPer1kMinutes > 0
+    );
+  }
+
+  if (candidate.benchmarks.frontendWebDev) {
+    return (
+      isNumber(candidate.benchmarks.frontendWebDev.score) &&
+      hasTokenPricing(candidate.pricing)
     );
   }
 
@@ -3365,6 +3628,46 @@ function mergePricing(
   return merged;
 }
 
+function findRegistryModelById(
+  models: RegistryModel[],
+  provider: ProviderId,
+  registryModelId: string,
+): RegistryModel | undefined {
+  const target = normalizeMatchKey(registryModelId);
+  return models.find(
+    (model) =>
+      model.provider === provider && normalizeMatchKey(model.id) === target,
+  );
+}
+
+function staticBenchmarkSnapshotIsFresh(
+  checkedAt: string,
+  generatedAt: string,
+  maxAgeDays: number,
+): boolean {
+  const checkedAtMs = Date.parse(checkedAt);
+  const generatedAtMs = Date.parse(generatedAt);
+  if (!Number.isFinite(checkedAtMs) || !Number.isFinite(generatedAtMs)) {
+    return false;
+  }
+  const ageMs = generatedAtMs - checkedAtMs;
+  return ageMs >= 0 && ageMs <= maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
+function frontendWebDevSnapshotIsFresh(
+  benchmarks: FrontendWebDevBenchmarks | undefined,
+  nowMs = Date.now(),
+): boolean {
+  const checkedAtMs = Date.parse(benchmarks?.extractedAt ?? "");
+  const ageMs = nowMs - checkedAtMs;
+  return (
+    Number.isFinite(checkedAtMs) &&
+    Number.isFinite(nowMs) &&
+    ageMs >= 0 &&
+    ageMs <= ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
+  );
+}
+
 function pricingFromCustomerSupportRecommendation(
   model: ArtificialAnalysisCustomerSupportRecommendation,
   exchangeRate?: ExchangeRate,
@@ -3407,6 +3710,14 @@ function providerFromArtificialAnalysis(
   if (slug.includes("xai") || name.includes("xai")) return "xai";
   if (slug.includes("anthropic") || name.includes("anthropic"))
     return "anthropic";
+  if (
+    slug.includes("kimi") ||
+    slug.includes("moonshot") ||
+    name.includes("kimi") ||
+    name.includes("moonshot")
+  ) {
+    return "moonshotai";
+  }
   return undefined;
 }
 
@@ -3418,6 +3729,7 @@ function providerFromArtificialAnalysisEfficiency(
   if (provider === "google") return "google";
   if (provider === "xai") return "xai";
   if (provider === "anthropic") return "anthropic";
+  if (provider === "kimi" || provider === "moonshotai") return "moonshotai";
 
   const searchable = `${model.slug} ${model.label}`.toLowerCase();
   if (searchable.includes("gpt") || searchable.includes("openai"))
@@ -3427,6 +3739,9 @@ function providerFromArtificialAnalysisEfficiency(
   if (searchable.includes("grok") || searchable.includes("xai")) return "xai";
   if (searchable.includes("claude") || searchable.includes("anthropic")) {
     return "anthropic";
+  }
+  if (searchable.includes("kimi") || searchable.includes("moonshot")) {
+    return "moonshotai";
   }
   return undefined;
 }
@@ -4036,6 +4351,10 @@ function compareBenchmarkCandidates(
     return compareDocumentProcessingAccuracyCandidates(left, right);
   }
 
+  if (filters.useCase === "front-end-web-dev") {
+    return compareFrontendWebDevCandidates(left, right, tier);
+  }
+
   if (filters.useCase === "speech-to-text") {
     return compareSpeechToTextBenchmarkCandidates(left, right, tier);
   }
@@ -4048,6 +4367,65 @@ function compareBenchmarkCandidates(
     scoreBenchmarkCandidate(right, filters, tier) -
       scoreBenchmarkCandidate(left, filters, tier) ||
     compareBenchmarkCandidateForTier(left, right, tier)
+  );
+}
+
+function compareFrontendWebDevCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+  tier: Tier,
+): number {
+  if (tier === "balanced" || tier === "fast") {
+    const maxPreferredRank = tier === "balanced" ? 10 : 20;
+    const leftPreferred =
+      isNumber(left.benchmarks.frontendWebDev?.rank) &&
+      left.benchmarks.frontendWebDev.rank <= maxPreferredRank;
+    const rightPreferred =
+      isNumber(right.benchmarks.frontendWebDev?.rank) &&
+      right.benchmarks.frontendWebDev.rank <= maxPreferredRank;
+
+    return (
+      Number(!leftPreferred) - Number(!rightPreferred) ||
+      compareOptionalAsc(
+        left.pricing.outputPerMTok,
+        right.pricing.outputPerMTok,
+      ) ||
+      compareOptionalAsc(
+        left.pricing.inputPerMTok,
+        right.pricing.inputPerMTok,
+      ) ||
+      compareOptionalDesc(
+        left.benchmarks.frontendWebDev?.score,
+        right.benchmarks.frontendWebDev?.score,
+      ) ||
+      compareOptionalAsc(
+        left.benchmarks.frontendWebDev?.rank,
+        right.benchmarks.frontendWebDev?.rank,
+      ) ||
+      compareOptionalDesc(
+        left.benchmarks.frontendWebDev?.votes,
+        right.benchmarks.frontendWebDev?.votes,
+      ) ||
+      left.id.localeCompare(right.id)
+    );
+  }
+
+  const scoreOrder = compareOptionalDesc(
+    left.benchmarks.frontendWebDev?.score,
+    right.benchmarks.frontendWebDev?.score,
+  );
+  const rankOrder = compareOptionalAsc(
+    left.benchmarks.frontendWebDev?.rank,
+    right.benchmarks.frontendWebDev?.rank,
+  );
+  return (
+    scoreOrder ||
+    rankOrder ||
+    compareOptionalDesc(
+      left.benchmarks.frontendWebDev?.votes,
+      right.benchmarks.frontendWebDev?.votes,
+    ) ||
+    left.id.localeCompare(right.id)
   );
 }
 

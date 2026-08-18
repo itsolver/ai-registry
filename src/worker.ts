@@ -1,6 +1,6 @@
 import { HOME_HTML } from "./html";
 import { ITS_BENCHMARK_HTML } from "./its-benchmark";
-import { WEBDEV_BENCHMARK_HTML } from "./webdev-benchmark";
+import { webdevBenchmarkHtml } from "./webdev-benchmark";
 import {
   normalizeArtificialAnalysisSpeechToSpeechRecords,
   parseArtificialAnalysisSpeechToSpeechApi,
@@ -70,6 +70,7 @@ const REQUIRED_MODELS_DEV_PROVIDERS = [
   "google",
   "xai",
   "anthropic",
+  "moonshotai",
   "nvidia",
   "groq",
 ] as const;
@@ -133,7 +134,7 @@ export async function handleRequest(
   }
 
   if (route === "/webdev") {
-    return htmlResponse(WEBDEV_BENCHMARK_HTML);
+    return htmlResponse(webdevBenchmarkHtml());
   }
 
   if (route === "/favicon.ico") {
@@ -359,6 +360,7 @@ async function routeApi(
   catalog: Catalog,
 ): Promise<Response> {
   if (route === "/health") {
+    const candidates = benchmarkCandidates(catalog, {});
     return jsonResponse({
       ...catalogResponseMetadata(catalog),
       status: "ok",
@@ -367,10 +369,10 @@ async function routeApi(
       modelCount: catalog.modelCount,
       activeModelCount: catalog.activeModelCount,
       registryModelCount: catalog.models.length,
-      benchmarkCount: catalog.benchmarkCandidates?.length ?? 0,
-      recommendableCount:
-        catalog.benchmarkCandidates?.filter((candidate) => candidate.recommendable)
-          .length ?? 0,
+      benchmarkCount: candidates.length,
+      recommendableCount: candidates.filter((candidate) =>
+        isBenchmarkCandidateRecommendedForFilters(candidate, {}),
+      ).length,
     });
   }
 

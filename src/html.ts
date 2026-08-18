@@ -4,7 +4,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ai.itsolver.au - stop hardcoding model names</title>
-  <meta name="description" content="A public IT Solver API that recommends current AI models from OpenAI, Google, xAI, and Anthropic.">
+  <meta name="description" content="A public IT Solver API that recommends current AI models from OpenAI, Google, xAI, Anthropic, Moonshot AI, and other supported providers.">
   <style>
     :root {
       --ink: #1a1a1a;
@@ -799,6 +799,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           <select id="b-usecase">
             <option value="customer-support" selected>customer support</option>
             <option value="document-processing">document processing (OCR)</option>
+            <option value="front-end-web-dev">front-end web dev</option>
             <option value="voice">speech to speech (voice)</option>
             <option value="speech-to-text">speech to text</option>
           </select>
@@ -826,6 +827,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="google">google</option>
             <option value="xai">xai</option>
             <option value="anthropic">anthropic</option>
+            <option value="moonshotai">moonshot ai</option>
             <option value="nvidia">nvidia</option>
             <option value="elevenlabs">elevenlabs</option>
             <option value="groq">groq</option>
@@ -938,8 +940,8 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="range-group" data-filter-scope="customer-support">
-        <div class="b-field" data-filter-scope="customer-support">
+        <div class="range-group" data-filter-scope="customer-support front-end-web-dev">
+        <div class="b-field" data-filter-scope="customer-support front-end-web-dev">
           <label for="b-input-min-range">Input AUD/MTok range</label>
           <input type="hidden" id="b-mincost">
           <input type="hidden" id="b-maxcost">
@@ -958,7 +960,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="b-field" data-filter-scope="customer-support">
+        <div class="b-field" data-filter-scope="customer-support front-end-web-dev">
           <label for="b-output-min-range">Output AUD/MTok range</label>
           <input type="hidden" id="b-minoutputcost">
           <input type="hidden" id="b-maxoutputcost">
@@ -977,7 +979,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="b-field" data-filter-scope="customer-support">
+        <div class="b-field" data-filter-scope="customer-support front-end-web-dev">
           <label for="b-context-min-range">Context range</label>
           <input type="hidden" id="b-minctx">
           <input type="hidden" id="b-maxctx">
@@ -1057,6 +1059,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         </table>
       </div>
     </div>
+    <p class="bench-note" id="frontendRecommendationCredit" hidden>Source: <a href="https://arena.ai/leaderboard/code/webdev">Arena Frontend Code leaderboard</a>. Arena's anonymous pairwise human votes provide the ranks and scores shown here.</p>
   </div>
   <div class="benchmark-panels mode-panel" data-mode-panel="benchmarks" hidden>
     <div class="benchmark-panel" data-benchmark-panel="customer-support" hidden>
@@ -1120,6 +1123,40 @@ export const HOME_HTML = String.raw`<!doctype html>
         </div>
       </div>
       <p class="bench-note">Document processing rows use Artificial Analysis vision data for MMMU Pro visual reasoning, image input pricing, single-image latency, instruction following, intelligence, and Task AUD. Long-context reasoning is only a weak tie-breaker.</p>
+    </div>
+    <div class="benchmark-panel" data-benchmark-panel="front-end-web-dev" hidden>
+      <div class="voice-bench">
+        <div class="voice-head">
+          <strong>Front-end web development</strong>
+          <div class="voice-head-meta">
+            <span id="frontendSource">loading...</span>
+          </div>
+        </div>
+        <div class="voice-table-wrap">
+          <table class="voice-table">
+            <thead>
+              <tr>
+                <th data-table="frontendRows" data-sort="rank">Rank</th>
+                <th data-table="frontendRows" data-sort="model">Model</th>
+                <th data-table="frontendRows" data-sort="configuration">Configuration</th>
+                <th data-table="frontendRows" data-sort="registry">Registry model</th>
+                <th data-table="frontendRows" data-sort="score">Arena score</th>
+                <th data-table="frontendRows" data-sort="spread">Rank spread</th>
+                <th data-table="frontendRows" data-sort="votes">Votes</th>
+                <th data-table="frontendRows" data-sort="input">Input AUD/MTok</th>
+                <th data-table="frontendRows" data-sort="output">Output AUD/MTok</th>
+                <th data-table="frontendRows" data-sort="context">Context</th>
+                <th data-table="frontendRows" data-sort="status">Status</th>
+                <th data-table="frontendRows" data-sort="eligibility">Eligibility</th>
+              </tr>
+            </thead>
+            <tbody id="frontendRows">
+              <tr><td class="empty" colspan="12">loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="bench-note"><a href="https://arena.ai/leaderboard/code/webdev">Arena Frontend Code</a> uses anonymous pairwise human votes on generated front-end work. In the checked August 15, 2026 snapshot, Claude Opus 5 Max ranked first at 1692 ±9 from 6,448 votes. This table is limited to Arena rows that map to supported registry providers. The August 13, 2026 <a href="https://www.vals.ai/benchmarks/vibe-code">Vibe Code Bench v1.1</a> provides a separate functional cross-check: Claude Fable 5 ranked first, Claude Opus 5 ranked second, and Kimi K3 ranked third. These incompatible scores are not blended.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
       <div class="voice-bench">
@@ -1199,13 +1236,13 @@ export const HOME_HTML = String.raw`<!doctype html>
     <h3 id="definitionsTitle">Definitions</h3>
     <dl>
       <dt>any tier</dt>
-      <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
+      <dd>No tier filter for <code>/v1/models</code>. Front-end web dev recommendations default to highest Arena score; other use cases default to fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. For document processing, fast and cheap prioritizes image/input/output cost and latency after usable visual reasoning. For speech to speech (voice), fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. Front-end web dev prioritizes the lowest output price among eligible Arena top-20 entries, then input price and Arena score; if active filters remove the top-20 band, it falls back to the cheapest remaining eligible row. For document processing, fast and cheap prioritizes image/input/output cost and latency after usable visual reasoning. For speech to speech (voice), fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Document processing blends visual reasoning, image/text cost, and latency. Speech to speech (voice) picks the middle filtered candidate after AA Speech-to-Speech Index ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Front-end web dev prioritizes the lowest output price among eligible Arena top-10 entries, then input price and Arena score; if active filters remove the top-10 band, it falls back to the cheapest remaining eligible row. Document processing blends visual reasoning, image/text cost, and latency. Speech to speech (voice) picks the middle filtered candidate after AA Speech-to-Speech Index ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For document processing, highest accuracy prioritizes AA visual reasoning, then instruction following and intelligence. For speech to speech (voice), highest quality prioritizes the AA Speech-to-Speech Index, with τ-Voice and the other voice signals as tie-breakers. For speech to text, highest accuracy prioritizes lower AA-WER. The optional latest-model evidence policy replaces these benchmark rankings with a capability-first release heuristic only when the selected latest full-size candidate has no qualifying benchmark.</dd>
+      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. Front-end web dev prioritizes score and rank from a fresh checked Arena Frontend Code snapshot. For document processing, highest accuracy prioritizes AA visual reasoning, then instruction following and intelligence. For speech to speech (voice), highest quality prioritizes the AA Speech-to-Speech Index, with τ-Voice and the other voice signals as tie-breakers. For speech to text, highest accuracy prioritizes lower AA-WER. The optional latest-model evidence policy replaces these benchmark rankings with a capability-first release heuristic only when the selected latest full-size candidate has no qualifying benchmark.</dd>
       <dt>AA Support Score</dt>
       <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS safety score.</dd>
       <dt>cost caps</dt>
@@ -1221,11 +1258,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       <dt>STT AUD/1k min</dt>
       <dd>Australian dollars per 1,000 minutes of speech-to-text audio, converted from Artificial Analysis provider pricing where available.</dd>
       <dt>benchmark table</dt>
-      <dd>Benchmark-required recommendations appear in the matching table. An opted-in best-tier latest release can instead appear there as a benchmark-pending registry row with an explicit capability-first warning.</dd>
+      <dd>Benchmark-required recommendations appear in the matching use-case table. An opted-in best-tier latest release can instead appear there as a benchmark-pending registry row with an explicit capability-first warning.</dd>
       <dt>IT Solver auto-close benchmark</dt>
       <dd><a href="/its-eval">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
-      <dt>web development benchmark composite</dt>
-      <dd><a href="/webdev">Our web app development benchmark composite</a>. Use it to compare frontier-provider signals across frontend, backend, full-stack, browser, repository, cost, and latency dimensions.</dd>
+      <dt>web development evidence</dt>
+      <dd><a href="/webdev">Our front-end development evidence page</a>. It uses Arena as the primary preference rank, keeps Vibe Code Bench separate as a functional cross-check, and excludes unavailable or stale boards.</dd>
       <dt>false positives / accuracy</dt>
       <dd>False positives are unresolved tickets predicted as resolved. Accuracy is overall classifier correctness on the auto-close replay set.</dd>
       <dt>ITS columns</dt>
@@ -1255,7 +1292,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   </div>
   <div class="endpoint">
     <code>GET /v1/benchmarks</code>
-    <p>Benchmark rows for customer support, document processing, speech to speech (voice), and speech to text, plus relevant registry rows still awaiting evidence. Filter by provider, capability, cost caps, and minimum intelligence where relevant.</p>
+    <p>Benchmark rows for customer support, document processing, front-end web dev, speech to speech (voice), and speech to text, plus relevant registry rows still awaiting evidence. Filter by provider, capability, cost caps, and minimum intelligence where relevant.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
@@ -1621,6 +1658,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (useCase === 'voice') return 'voiceRows';
       if (useCase === 'speech-to-text') return 'sttRows';
       if (useCase === 'document-processing') return 'documentRows';
+      if (useCase === 'front-end-web-dev') return 'frontendRows';
       if (useCase === 'customer-support') return 'supportRows';
       return '';
     }
@@ -1629,6 +1667,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (useCase === 'voice') return 'voice';
       if (useCase === 'speech-to-text') return 'speech-to-text';
       if (useCase === 'document-processing') return 'document-processing';
+      if (useCase === 'front-end-web-dev') return 'front-end-web-dev';
       if (useCase === 'customer-support') return 'customer-support';
       return '';
     }
@@ -1638,6 +1677,12 @@ export const HOME_HTML = String.raw`<!doctype html>
         return {
           title: 'Document Processing Benchmark',
           hint: 'Document processing priorities are explicit: highest accuracy sorts by AA visual reasoning, then instruction following and intelligence; fast and cheap prioritizes image/input/output cost and latency; balanced combines visual reasoning, cost, and latency.'
+        };
+      }
+      if (useCase === 'front-end-web-dev') {
+        return {
+          title: 'Front-End Web Dev Benchmark',
+          hint: 'Front-end web development uses a fresh checked Arena snapshot: highest score for best, lowest output price in the eligible top 10 for balanced, and lowest output price in the eligible top 20 for fast. Configuration-specific Arena entries map explicitly to deployable registry models, and Codex-harness labels describe evaluation context rather than guaranteed API parameters.'
         };
       }
       if (useCase === 'voice') {
@@ -1669,6 +1714,10 @@ export const HOME_HTML = String.raw`<!doctype html>
       document.querySelectorAll('[data-benchmark-panel]').forEach(function (panel) {
         panel.hidden = panel.getAttribute('data-benchmark-panel') !== active;
       });
+      var frontendRecommendationCredit = document.getElementById('frontendRecommendationCredit');
+      if (frontendRecommendationCredit) {
+        frontendRecommendationCredit.hidden = mode !== 'recommend' || useCase !== 'front-end-web-dev';
+      }
       var copy = benchmarkCopy(useCase);
       if (mode === 'models') {
         setText('benchmarkTitle', 'Registry Models');
@@ -1682,12 +1731,25 @@ export const HOME_HTML = String.raw`<!doctype html>
       hint.textContent = mode === 'models'
         ? 'Registry rows show deployable base model metadata. Registry visibility does not imply recommendation eligibility.'
         : mode === 'recommend'
-          ? 'The primary recommendation is followed by distinct failover model families for the same active filters.'
+          ? useCase === 'front-end-web-dev'
+            ? copy.hint
+            : 'The primary recommendation is followed by distinct failover model families for the same active filters.'
           : copy.hint + ' Incomplete rows remain visible with an eligibility reason.';
     }
 
+    function defaultTierForUseCase(useCase) {
+      return useCase === 'front-end-web-dev' ? 'best' : 'fast';
+    }
+
     function updateTierOptions(useCase) {
-      var labels = useCase === 'speech-to-text'
+      var labels = useCase === 'front-end-web-dev'
+        ? {
+            '': 'highest Arena score',
+            balanced: 'best value in Arena top 10',
+            fast: 'lowest output cost in Arena top 20',
+            best: 'highest Arena score'
+          }
+        : useCase === 'speech-to-text'
         ? {
             '': 'balanced trade-off',
             balanced: 'balanced trade-off',
@@ -1957,6 +2019,70 @@ export const HOME_HTML = String.raw`<!doctype html>
 
       var tier = fields.tier.value || 'balanced';
       renderSortableTable('sttRows', rows, columns, tier === 'fast' ? 'cost' : 'wer', 'asc');
+    }
+
+    function frontendWebDevSignals(model) {
+      return ((model.benchmarks || {}).frontendWebDev || {});
+    }
+
+    function frontendArenaScore(model) {
+      var value = frontendWebDevSignals(model).score;
+      return typeof value === 'number' ? value : -Infinity;
+    }
+
+    function frontendArenaScoreLabel(model) {
+      var signals = frontendWebDevSignals(model);
+      if (typeof signals.score !== 'number') return '-';
+      var confidence = typeof signals.confidence === 'number' ? ' ±' + Math.round(signals.confidence) : '';
+      return Math.round(signals.score).toLocaleString() + confidence;
+    }
+
+    function frontendRankSpread(model) {
+      var signals = frontendWebDevSignals(model);
+      if (typeof signals.rankLow !== 'number' || typeof signals.rankHigh !== 'number') return '-';
+      return signals.rankLow === signals.rankHigh
+        ? '#' + signals.rankLow
+        : '#' + signals.rankLow + '–#' + signals.rankHigh;
+    }
+
+    function frontendConfigurationLabel(model) {
+      var configuration = frontendWebDevSignals(model).configuration;
+      return configuration && configuration.displayLabel
+        ? configuration.displayLabel
+        : 'base model';
+    }
+
+    function frontendRegistryModelLabel(model) {
+      return model.registryModelId || model.registryMappingTargetId || '-';
+    }
+
+    function renderFrontendWebDevBenchmarks(models) {
+      var rows = (models || []).filter(function (model) {
+        return model.benchmarks && model.benchmarks.frontendWebDev;
+      });
+      if (!rows.length) {
+        renderSortableTable('frontendRows', [], [], 'rank', 'asc');
+        setText('frontendSource', 'unavailable');
+        return;
+      }
+
+      var source = frontendWebDevSignals(rows[0]);
+      setText('frontendSource', source.extractedAt ? 'Arena · checked ' + formatAge(source.extractedAt) : 'Arena');
+      var columns = [
+        { key: 'rank', label: 'Rank', value: function (model) { return frontendWebDevSignals(model).rank; }, render: function (model) { var rank = frontendWebDevSignals(model).rank; return typeof rank === 'number' ? '#' + rank : '-'; } },
+        { key: 'model', label: 'Model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'configuration', label: 'Configuration', value: frontendConfigurationLabel, render: function (model) { return escapeHtml(frontendConfigurationLabel(model)); } },
+        { key: 'registry', label: 'Registry model', value: frontendRegistryModelLabel, render: function (model) { return '<code>' + escapeHtml(frontendRegistryModelLabel(model)) + '</code>'; } },
+        { key: 'score', label: 'Arena score', value: frontendArenaScore, render: frontendArenaScoreLabel },
+        { key: 'spread', label: 'Rank spread', value: function (model) { return frontendWebDevSignals(model).rankLow; }, render: frontendRankSpread },
+        { key: 'votes', label: 'Votes', value: function (model) { return frontendWebDevSignals(model).votes; }, render: function (model) { var votes = frontendWebDevSignals(model).votes; return typeof votes === 'number' ? votes.toLocaleString() : '-'; } },
+        { key: 'input', label: 'Input AUD/MTok', value: function (model) { return (model.pricing || {}).inputPerMTok; }, render: function (model) { return money((model.pricing || {}).inputPerMTok); } },
+        { key: 'output', label: 'Output AUD/MTok', value: function (model) { return (model.pricing || {}).outputPerMTok; }, render: function (model) { return money((model.pricing || {}).outputPerMTok); } },
+        { key: 'context', label: 'Context', value: function (model) { return model.contextWindow; }, render: function (model) { return registryContext(model.contextWindow); } },
+        { key: 'status', label: 'Status', value: function (model) { return frontendWebDevSignals(model).preliminary ? 0 : 1; }, render: function (model) { return frontendWebDevSignals(model).preliminary ? 'preliminary' : 'established'; } },
+        { key: 'eligibility', label: 'Eligibility', value: function (model) { return model.recommendable !== false ? 1 : 0; }, render: renderEligibility }
+      ];
+      renderSortableTable('frontendRows', rows, columns, 'rank', 'asc');
     }
 
     function llmSignals(row) {
@@ -2579,6 +2705,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         }
         return;
       }
+      if (fields.usecase.value === 'front-end-web-dev') return;
 
       loadCurrentTextBenchmarks();
     }
@@ -2590,6 +2717,10 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
       if (fields.usecase.value === 'speech-to-text') {
         renderSpeechToTextBenchmarks(models || []);
+        return;
+      }
+      if (fields.usecase.value === 'front-end-web-dev') {
+        renderFrontendWebDevBenchmarks(models || []);
         return;
       }
 
@@ -2660,6 +2791,18 @@ export const HOME_HTML = String.raw`<!doctype html>
           { label: 'AA-WER', render: function (row) { return wer(sttSignals(row.model).aaWer); } },
           { label: 'Speed', render: function (row) { return speedFactor(sttSignals(row.model).speedFactor); } },
           { label: 'AUD/1k min', render: function (row) { return money(sttCost(row.model)); } }
+        ]);
+      }
+      if (useCase === 'front-end-web-dev') {
+        return base.concat([
+          { label: 'Configuration', render: function (row) { return escapeHtml(frontendConfigurationLabel(row.model)); } },
+          { label: 'Registry model', render: function (row) { return '<code>' + escapeHtml(frontendRegistryModelLabel(row.model)) + '</code>'; } },
+          { label: 'Arena rank', render: function (row) { var rank = frontendWebDevSignals(row.model).rank; return typeof rank === 'number' ? '#' + rank : '-'; } },
+          { label: 'Arena score', render: function (row) { return frontendArenaScoreLabel(row.model); } },
+          { label: 'Votes', render: function (row) { var votes = frontendWebDevSignals(row.model).votes; return typeof votes === 'number' ? votes.toLocaleString() : '-'; } },
+          { label: 'Status', render: function (row) { return frontendWebDevSignals(row.model).preliminary ? 'preliminary' : 'established'; } },
+          { label: 'Input AUD/MTok', render: function (row) { return money((row.model.pricing || {}).inputPerMTok); } },
+          { label: 'Output AUD/MTok', render: function (row) { return money((row.model.pricing || {}).outputPerMTok); } }
         ]);
       }
       if (useCase === 'document-processing') {
@@ -3249,6 +3392,13 @@ export const HOME_HTML = String.raw`<!doctype html>
         if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
         if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
         if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
+      } else if (fields.usecase.value === 'front-end-web-dev') {
+        if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
+        if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+        if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
+        if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+        if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+        if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
       } else {
         if (fields.usecase.value === 'customer-support' && !includeItsBenchmark()) params.set('includeItsEval', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
@@ -3305,6 +3455,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       setSelectValue(fields.usecase, params.get('useCase'));
       fields.allowlatest.checked =
         params.get('allowUnbenchmarkedLatest') === 'true';
+      if (!params.get('tier')) {
+        fields.tier.value = defaultTierForUseCase(fields.usecase.value);
+      }
       if (
         fields.includeits &&
         (params.get('includeItsEval') === 'false' ||
@@ -3375,7 +3528,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             if (!isCurrentBuilderRequest(requestId, requestedMode, requestedPath)) return;
             modeResponses[requestedMode] = { path: requestedPath, data: data };
             if (requestedMode === 'recommend' && data.recommendation) {
-              fields.result.textContent = data.recommendation.id;
+              fields.result.textContent = data.recommendation.registryModelId || data.recommendation.id;
             } else if (requestedMode === 'benchmarks') {
               fields.result.textContent = (data.benchmarkCount || (data.benchmarks || []).length || 0).toLocaleString() + ' benchmarks';
             } else {
@@ -3393,6 +3546,9 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     ['change', 'input'].forEach(function (eventName) {
       document.querySelector('.builder').addEventListener(eventName, refreshBuilder);
+    });
+    fields.usecase.addEventListener('change', function () {
+      fields.tier.value = defaultTierForUseCase(fields.usecase.value);
     });
     inputCostRange = {
       min: 0,

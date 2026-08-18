@@ -1,6 +1,6 @@
 # Data Source Audit
 
-Last audited: 2026-07-17
+Last audited: 2026-08-18
 
 Sources checked:
 
@@ -10,6 +10,13 @@ Sources checked:
 - `https://artificialanalysis.ai/api/v2/media/speech-to-speech/models`
 - `https://artificialanalysis.ai/leaderboards/models`
 - `https://artificialanalysis.ai/speech-to-speech`
+- `https://arena.ai/leaderboard/code/webdev`
+- `https://www.vals.ai/benchmarks/vals_index`
+- `https://www.vals.ai/benchmarks/vibe-code`
+- `https://intelligence.ai/leaderboard/webapps`
+- `https://index.openhands.dev/frontend`
+- `https://index.openhands.dev/api/leaderboard`
+- `https://platform.kimi.ai/docs/pricing/chat-k3`
 - Live registry: `https://ai.itsolver.au/v1/models`
 - Live benchmarks: `https://ai.itsolver.au/v1/benchmarks`
 
@@ -35,6 +42,50 @@ models.dev model with both audio input and output modalities is included in
 voice benchmark browsing even before Artificial Analysis evaluates it. Such a
 row has `source: "models.dev"`, `recommendable: false`, and
 `eligibilityReason: "missing_voice_benchmark"`.
+
+Moonshot AI is also a supported provider. Kimi K3 uses the canonical direct-API
+identity `moonshotai:kimi-k3`; the official Kimi price table, mirrored by the
+Arena row, supplies current positive token pricing because the direct models.dev
+row did not expose price fields at audit time.
+
+### Arena Frontend Code
+
+The checked Arena page dated 2026-08-15 contained 579,848 total votes across 115
+models. Claude Opus 5 Max ranked first at 1692 (±9) from 6,448 votes. Kimi K3
+Max ranked second at 1674 (±11), and Claude Opus 5 High ranked fourth at 1663
+(±9). Arena's human-preference rating is the only score used for this use case
+and is not numerically combined with independent boards.
+
+Every checked Arena entry declares a same-provider canonical models.dev ID.
+Configuration labels such as `max`, `high`, and `xhigh via Codex harness`
+remain on the benchmark candidate while `registryModelId` identifies the
+deployable base model. This allows GPT-5.6 Sol xhigh, Claude effort rows, and
+Gemini 3.7 Flash high to participate in recommendations without treating a
+harness/configuration name as a separate provider model. A declared target that
+is absent from the live catalog fails closed as
+`registry_mapping_target_unavailable`; broad suffix or cross-provider matching
+is not used.
+
+The front-end tiers are deterministic: `best` sorts by Arena score, `balanced`
+prefers the lowest output price among eligible top-10 entries, and `fast`
+prefers the lowest output price among eligible top-20 entries. Active filters
+remain hard constraints, with cost-first fallback among remaining eligible rows
+when an entire preferred rank band is removed.
+
+The checked Arena extract has a 30-day maximum age. Once that gate expires, the
+catalog stops ingesting its rows and `/webdev` labels the evidence historical;
+front-end recommendations remain unavailable until the extract is refreshed.
+
+The Vals Index v2 page updated 2026-08-14 is a broad GDP-weighted composite, not
+a front-end rank. Claude Opus 5 leads that index at 67.21%, followed by Claude
+Fable 5 at 66.04% and GPT-5.6 Sol at 63.71%. It is shown only as broad context.
+The separate Vibe Code Bench v1.1 table updated 2026-08-13 directly measures
+functional full-app creation. Claude Fable 5 leads at 90.35%, Claude Opus 5 is
+second at 88.40%, and Kimi K3 is third and is the leading open-weight model.
+
+The previous DesignArena Frontend Web App URL returned 404 during this audit,
+and the OpenHands Frontend page did not expose a usable current table. Neither
+source is presented as current corroboration.
 
 Every accepted models.dev refresh must retain at least 50% of each provider's
 persisted high-water row count. Structurally valid but truncated responses do

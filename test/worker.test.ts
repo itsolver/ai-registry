@@ -232,6 +232,14 @@ function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
   };
 }
 
+async function refreshAndHandleRequest(
+  request: Request,
+  requestEnv: Env,
+): Promise<Response> {
+  await refreshCatalog(requestEnv);
+  return handleRequest(request, requestEnv, ctx);
+}
+
 describe("worker routes", () => {
   it("serves the homepage without auth", async () => {
     const response = await handleRequest(
@@ -429,14 +437,13 @@ describe("worker routes", () => {
 
     try {
       await withSystemTime("2026-07-17T00:00:00Z", async () => {
-        const response = await handleRequest(
+        const response = await refreshAndHandleRequest(
           new Request("https://ai.itsolver.au/v1/health"),
           {
             ...env(),
             MODEL_CACHE: kv.namespace,
             ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
           },
-          ctx,
         );
         const body = (await response.json()) as JsonObject;
         const snapshot = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
@@ -494,7 +501,7 @@ describe("worker routes", () => {
 
     try {
       await withSystemTime("2026-07-17T00:00:00Z", async () => {
-        const response = await handleRequest(
+        const response = await refreshAndHandleRequest(
           new Request("https://ai.itsolver.au/v1/health"),
           {
             ...env(),
@@ -502,7 +509,6 @@ describe("worker routes", () => {
             ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
             ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
           },
-          ctx,
         );
         const body = (await response.json()) as JsonObject;
         const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
@@ -536,14 +542,13 @@ describe("worker routes", () => {
 
     try {
       await withSystemTime("2026-07-17T00:00:00Z", async () => {
-        const response = await handleRequest(
+        const response = await refreshAndHandleRequest(
           new Request("https://ai.itsolver.au/v1/health"),
           {
             ...env(),
             MODEL_CACHE: kv.namespace,
             ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: "data:text/html,unavailable",
           },
-          ctx,
         );
         const body = (await response.json()) as JsonObject;
         const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
@@ -572,10 +577,9 @@ describe("worker routes", () => {
     });
 
     await withSystemTime("2026-07-17T00:00:00Z", async () => {
-      const response = await handleRequest(
+      const response = await refreshAndHandleRequest(
         new Request("https://ai.itsolver.au/v1/health"),
         { ...env(), MODEL_CACHE: kv.namespace },
-        ctx,
       );
       const body = (await response.json()) as JsonObject;
       const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
@@ -608,10 +612,9 @@ describe("worker routes", () => {
     });
 
     await withSystemTime("2026-07-17T00:00:00Z", async () => {
-      const response = await handleRequest(
+      const response = await refreshAndHandleRequest(
         new Request("https://ai.itsolver.au/v1/health"),
         { ...env(), MODEL_CACHE: kv.namespace },
-        ctx,
       );
       const body = (await response.json()) as JsonObject;
       const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
@@ -705,7 +708,7 @@ describe("worker routes", () => {
 
     try {
       await withSystemTime("2026-07-17T00:00:00Z", async () => {
-        const response = await handleRequest(
+        const response = await refreshAndHandleRequest(
           new Request("https://ai.itsolver.au/v1/health"),
           {
             ...env(),
@@ -713,7 +716,6 @@ describe("worker routes", () => {
             ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
             ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
           },
-          ctx,
         );
         const body = (await response.json()) as JsonObject;
 
@@ -753,10 +755,9 @@ describe("worker routes", () => {
 
     try {
       await withSystemTime("2026-07-17T00:00:00Z", async () => {
-        const response = await handleRequest(
+        const response = await refreshAndHandleRequest(
           new Request("https://ai.itsolver.au/v1/health"),
           { ...env(), MODEL_CACHE: namespace },
-          ctx,
         );
         const body = (await response.json()) as JsonObject;
 
@@ -795,7 +796,7 @@ describe("worker routes", () => {
 
     try {
       await withSystemTime("2026-07-17T00:00:00Z", async () => {
-        const response = await handleRequest(
+        const response = await refreshAndHandleRequest(
           new Request(
             "https://ai.itsolver.au/v1/benchmarks?useCase=voice",
           ),
@@ -805,7 +806,6 @@ describe("worker routes", () => {
             ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
             ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
           },
-          ctx,
         );
         const body = (await response.json()) as JsonObject;
         const cachedRow = body.benchmarks.find(
@@ -859,7 +859,7 @@ describe("worker routes", () => {
 
     try {
       await withSystemTime("2026-07-17T00:00:00Z", async () => {
-        const response = await handleRequest(
+        const response = await refreshAndHandleRequest(
           new Request(
             "https://ai.itsolver.au/v1/benchmarks?useCase=voice",
           ),
@@ -869,7 +869,6 @@ describe("worker routes", () => {
             ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
             ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
           },
-          ctx,
         );
         const body = (await response.json()) as JsonObject;
         const staleRow = body.benchmarks.find(
@@ -924,7 +923,7 @@ describe("worker routes", () => {
 
     try {
       await withSystemTime("2026-07-16T23:59:00Z", async () => {
-        const response = await handleRequest(
+        const response = await refreshAndHandleRequest(
           new Request("https://ai.itsolver.au/v1/health"),
           requestEnv,
         );
@@ -1125,6 +1124,28 @@ describe("worker routes", () => {
     }
   });
 
+  it("fails a production cache miss without running request source work", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("request source work must not run"));
+    try {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        { MODEL_CACHE: memoryKv().namespace },
+        ctx,
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        error: "catalog_unavailable",
+        message: "No valid cached catalog is available",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("rejects empty and structurally partial models.dev responses", async () => {
     for (const source of [
       {},
@@ -1145,29 +1166,29 @@ describe("worker routes", () => {
         supportCandidate("cached", 0, 0.9, 10, 2),
       ]);
       cached.generatedAt = "2020-01-01T00:00:00Z";
-      const response = await handleRequest(
-        new Request("https://ai.itsolver.au/v1/health"),
-        {
+      const kv = memoryKv({ [catalogCacheKey]: JSON.stringify(cached) });
+      await expect(
+        refreshCatalog({
           ...env(),
           MODEL_CACHE: {
-            get: async () => JSON.stringify(cached),
-            put: async (key: string) => {
+            ...kv.namespace,
+            put: async (
+              key: string,
+              value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+              options?: KVNamespacePutOptions,
+            ) => {
               if (key.startsWith("catalog:")) putCount += 1;
+              await kv.namespace.put(key, value, options);
             },
-          } as unknown as KVNamespace,
+          } as KVNamespace,
           MODELS_DEV_URL:
             "data:application/json," +
             encodeURIComponent(JSON.stringify(source)),
-        },
-        ctx,
-      );
+        }),
+      ).rejects.toThrow("models.dev returned an incomplete");
 
-      expect(response.status).toBe(200);
-      expect((await response.json()) as JsonObject).toMatchObject({
-        benchmarkCount: 1,
-        registryModelCount: 0,
-      });
       expect(putCount).toBe(0);
+      expect(kv.values.get(catalogCacheKey)).toBe(JSON.stringify(cached));
     }
   });
 
@@ -1249,27 +1270,27 @@ describe("worker routes", () => {
           data: [],
         }),
       );
-    const response = await handleRequest(
-      new Request("https://ai.itsolver.au/v1/health"),
-      {
+    const kv = memoryKv({ [catalogCacheKey]: JSON.stringify(cached) });
+    await expect(
+      refreshCatalog({
         ...env(),
         MODEL_CACHE: {
-          get: async () => JSON.stringify(cached),
-          put: async (key: string) => {
+          ...kv.namespace,
+          put: async (
+            key: string,
+            value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+            options?: KVNamespacePutOptions,
+          ) => {
             if (key.startsWith("catalog:")) putCount += 1;
+            await kv.namespace.put(key, value, options);
           },
-        } as unknown as KVNamespace,
+        } as KVNamespace,
         ARTIFICIAL_ANALYSIS_FREE_LLM_URL: emptyAaUrl,
-      },
-      ctx,
-    );
+      }),
+    ).rejects.toThrow("returned invalid data on page 1");
 
-    expect(response.status).toBe(200);
-    expect((await response.json()) as JsonObject).toMatchObject({
-      benchmarkCount: 1,
-      registryModelCount: 0,
-    });
     expect(putCount).toBe(0);
+    expect(kv.values.get(catalogCacheKey)).toBe(JSON.stringify(cached));
   });
 
   it("rejects malformed current-free pagination and model identities", async () => {
@@ -1299,29 +1320,29 @@ describe("worker routes", () => {
         supportCandidate("cached", 0, 0.9, 10, 2),
       ]);
       cached.generatedAt = "2020-01-01T00:00:00Z";
-      const response = await handleRequest(
-        new Request("https://ai.itsolver.au/v1/health"),
-        {
+      const kv = memoryKv({ [catalogCacheKey]: JSON.stringify(cached) });
+      await expect(
+        refreshCatalog({
           ...env(),
           MODEL_CACHE: {
-            get: async () => JSON.stringify(cached),
-            put: async (key: string) => {
+            ...kv.namespace,
+            put: async (
+              key: string,
+              value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+              options?: KVNamespacePutOptions,
+            ) => {
               if (key.startsWith("catalog:")) putCount += 1;
+              await kv.namespace.put(key, value, options);
             },
-          } as unknown as KVNamespace,
+          } as KVNamespace,
           ARTIFICIAL_ANALYSIS_FREE_LLM_URL:
             "data:application/json," +
             encodeURIComponent(JSON.stringify(body)),
-        },
-        ctx,
-      );
+        }),
+      ).rejects.toThrow(/free language models returned/);
 
-      expect(response.status).toBe(200);
-      expect((await response.json()) as JsonObject).toMatchObject({
-        benchmarkCount: 1,
-        registryModelCount: 0,
-      });
       expect(putCount).toBe(0);
+      expect(kv.values.get(catalogCacheKey)).toBe(JSON.stringify(cached));
     }
   });
 

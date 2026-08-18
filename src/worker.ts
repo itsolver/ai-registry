@@ -502,30 +502,20 @@ function catalogResponseMetadata(catalog: Catalog): Record<string, unknown> {
 
 async function getCatalog(
   env: Env,
-  ctx?: Pick<ExecutionContext, "waitUntil">,
+  _ctx?: Pick<ExecutionContext, "waitUntil">,
 ): Promise<Catalog> {
   const cached = await readCachedCatalog(env);
   // Request events have a much lower CPU allowance than scheduled events.
   // Serve the valid seven-day last-good catalog even when it is marked stale;
   // the hourly scheduled handler is the only automatic refresh path.
   if (cached) return cached;
-  const highWater = await readProviderCoverageHighWater(env);
-
-  try {
-    const fetched = await fetchCatalog(env);
-    assertProviderCoverage(fetched, cached, highWater);
-    const nextHighWater = providerCoverageHighWater(
-      fetched,
-      cached,
-      highWater,
-    );
-    const write = writeCatalogState(env, fetched, nextHighWater);
-    if (ctx) ctx.waitUntil(write);
-    else await write;
-    return fetched;
-  } catch (error) {
-    throw error;
+  if (env.MODEL_CACHE) {
+    throw new Error("No valid cached catalog is available");
   }
+
+  // Local development and unit tests can run without a KV binding. Production
+  // always has MODEL_CACHE and therefore never performs source work on request.
+  return fetchCatalog(env);
 }
 
 async function readCachedCatalog(env: Env): Promise<Catalog | undefined> {

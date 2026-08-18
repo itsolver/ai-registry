@@ -200,6 +200,7 @@ function speechToSpeechApiModel(input: {
 }
 
 export const artificialAnalysisSpeechToSpeechApiFixture = {
+  tier: "pro",
   data: [
     speechToSpeechApiModel({
       id: "voice-high",

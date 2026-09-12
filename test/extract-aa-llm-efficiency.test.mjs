@@ -24,11 +24,15 @@ describe("AA LLM efficiency extractor", () => {
           scicode: 0.5,
           coding_index: 52,
           lcr: 0.7,
+          mmmu_pro: 0.82,
           hle: 0.31,
           gpqa: 0.88,
           critpt: 0.06,
           price_1m_input_tokens: 99,
           price_1m_output_tokens: 199,
+          price_per_1k_1mp_images: 2.5,
+          input_modality_image: true,
+          reasoning_model: true,
           cache_hit_price: 9,
           timescaleData: { median_output_speed: 45 },
           time_to_first_answer_token_metrics: { total_time: 2.5 },
@@ -116,6 +120,34 @@ describe("AA LLM efficiency extractor", () => {
           detailsUrl: "/models/claude-frontier",
         },
       ]),
+      dataset("Visual Reasoning Intelligence (MMMU Pro evaluation)", [
+        {
+          label: "Claude Frontier",
+          visualReasoning: 0.84,
+          detailsUrl: "/models/claude-frontier",
+        },
+      ]),
+      dataset("Image Input Pricing", [
+        {
+          label: "Claude Frontier",
+          imageInputPrice: 3.25,
+          detailsUrl: "/models/claude-frontier",
+        },
+      ]),
+      dataset("Latency (Single Image & 1,000 Language Tokens Input)", [
+        {
+          label: "Claude Frontier",
+          latency: 3.5,
+          detailsUrl: "/models/claude-frontier",
+        },
+      ]),
+      dataset("Output Speed (Single Image & 1,000 Language Tokens Input)", [
+        {
+          label: "Claude Frontier",
+          outputSpeed: 62,
+          detailsUrl: "/models/claude-frontier",
+        },
+      ]),
       `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script>`,
     ].join("");
 
@@ -133,6 +165,12 @@ describe("AA LLM efficiency extractor", () => {
       terminalBenchHard: 0.44,
       codingIndex: 52,
       lcr: 0.7,
+      visualReasoning: 0.84,
+      visualLatency: 3.5,
+      visualOutputSpeed: 62,
+      imageInputPrice: 3.25,
+      imageInput: true,
+      reasoning: true,
       inputPrice: 3.75,
       outputPrice: 15,
       cacheHitPrice: 0.3,
@@ -176,6 +214,33 @@ describe("AA LLM efficiency extractor", () => {
     expect(records[0]).toMatchObject({
       slug: "claude-frontier",
       intelligenceCostPerTask: 1.5,
+    });
+  });
+
+  it("keeps benchmark-bearing rows when AA omits the frontier flag", () => {
+    const flight = `35:${JSON.stringify({
+      defaultData: [
+        {
+          slug: "vision-model",
+          name: "Vision Model",
+          model_url: "/models/vision-model",
+          model_creators: { slug: "google" },
+          mmmu_pro: 0.75,
+          input_modality_image: true,
+          reasoning_model: true,
+        },
+      ],
+    })}`;
+    const html = `<script>self.__next_f.push([1,${JSON.stringify(flight)}])</script>`;
+
+    const records = extractLlmEfficiencyRecords(html);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      slug: "vision-model",
+      visualReasoning: 0.75,
+      imageInput: true,
+      reasoning: true,
     });
   });
 

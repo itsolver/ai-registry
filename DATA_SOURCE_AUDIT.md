@@ -1,96 +1,223 @@
 # Data Source Audit
 
-Last audited: 2026-05-20
+Last audited: 2026-08-18
 
 Sources checked:
 
 - `https://models.dev/api.json`
 - `https://artificialanalysis.ai/api/v2/data/llms/models`
+- `https://artificialanalysis.ai/api/v2/language/models/free` (all pages)
+- `https://artificialanalysis.ai/api/v2/media/speech-to-speech/models`
 - `https://artificialanalysis.ai/leaderboards/models`
 - `https://artificialanalysis.ai/speech-to-speech`
-- Live registry: `https://ai.itsolver.au/v1/models?includeDeprecated=true`
+- `https://arena.ai/leaderboard/code/webdev`
+- `https://www.vals.ai/benchmarks/vals_index`
+- `https://www.vals.ai/benchmarks/vibe-code`
+- `https://intelligence.ai/leaderboard/webapps`
+- `https://index.openhands.dev/frontend`
+- `https://index.openhands.dev/api/leaderboard`
+- `https://platform.kimi.ai/docs/pricing/chat-k3`
+- Live registry: `https://ai.itsolver.au/v1/models`
+- Live benchmarks: `https://ai.itsolver.au/v1/benchmarks`
 
 ## Findings
 
 ### models.dev import
 
-The live registry matched the current models.dev source for the supported providers.
+models.dev is the mandatory canonical source for base model identity, provider,
+release/update dates, context and output limits, capabilities, modalities,
+availability, deprecation state, and fallback pricing. The source can be
+overridden for tests with `MODELS_DEV_URL`.
 
-- Supported models.dev records: 129
-- Live registry records: 144
-- Extra records: 15 Artificial Analysis speech-to-speech records
-- Missing models.dev records: 0
-- AUD pricing mismatches after USD to AUD conversion: 0
-- Context window / output limit / deprecated status mismatches: 0
+`/v1/models` returns these base registry records. Artificial Analysis effort
+configurations are not promoted into duplicate registry models, so a newly
+published model can be visible before it has enough benchmark evidence to be
+recommended. Fable 5, Grok 4.5, and GPT-5.6 should appear as base families
+whenever models.dev publishes them for a supported provider.
 
-No code change was needed for models.dev normalization.
+models.dev `cost.input_audio` and `cost.output_audio` values are normalized to
+`audioInputPerMTok` and `audioOutputPerMTok`, then converted from USD to the
+catalog currency with the same exchange rate as other token prices. An active
+models.dev model with both audio input and output modalities is included in
+voice benchmark browsing even before Artificial Analysis evaluates it. Such a
+row has `source: "models.dev"`, `recommendable: false`, and
+`eligibilityReason: "missing_voice_benchmark"`.
 
-### Artificial Analysis speech-to-speech scrape
+Moonshot AI is also a supported provider. Kimi K3 uses the canonical direct-API
+identity `moonshotai:kimi-k3`; the official Kimi price table, mirrored by the
+Arena row, supplies current positive token pricing because the direct models.dev
+row did not expose price fields at audit time.
 
-The public speech-to-speech page scrape produced the same 15 records as the committed generated data. Only the extraction timestamp changed.
+### Arena Frontend Code
 
-The live registry matched the extracted AA speech records after AUD conversion:
+The checked Arena page dated 2026-08-15 contained 579,848 total votes across 115
+models. Claude Opus 5 Max ranked first at 1692 (±9) from 6,448 votes. Kimi K3
+Max ranked second at 1674 (±11), and Claude Opus 5 High ranked fourth at 1663
+(±9). Arena's human-preference rating is the only score used for this use case
+and is not numerically combined with independent boards.
 
-- AA speech records: 15
-- Live AA voice records: 15
-- Missing records: 0
-- Pricing mismatches: 0
+Every checked Arena entry declares a same-provider canonical models.dev ID.
+Configuration labels such as `max`, `high`, and `xhigh via Codex harness`
+remain on the benchmark candidate while `registryModelId` identifies the
+deployable base model. This allows GPT-5.6 Sol xhigh, Claude effort rows, and
+Gemini 3.7 Flash high to participate in recommendations without treating a
+harness/configuration name as a separate provider model. A declared target that
+is absent from the live catalog fails closed as
+`registry_mapping_target_unavailable`; broad suffix or cross-provider matching
+is not used.
 
-AA source records without `costPerHourOfInputAudio`:
+The front-end tiers are deterministic: `best` sorts by Arena score, `balanced`
+prefers the lowest output price among eligible top-10 entries, and `fast`
+prefers the lowest output price among eligible top-20 entries. Active filters
+remain hard constraints, with cost-first fallback among remaining eligible rows
+when an entire preferred rank band is removed.
 
-- `google-gemini-2-5-flash-native-audio-dialog-thinking`
-- `google-gemini-2-5-flash-native-audio-preview-dec-2025`
-- `openai-4o-audio-chatcompletions`
+The checked Arena extract has a 30-day maximum age. Once that gate expires, the
+catalog stops ingesting its rows and `/webdev` labels the evidence historical;
+front-end recommendations remain unavailable until the extract is refreshed.
 
-These are not simple registry bugs. The source page does not provide the benchmark input-audio cost field for those rows, so the registry correctly avoids using them for `maxAudioInputCostPerHour` recommendations.
+The Vals Index v2 page updated 2026-08-14 is a broad GDP-weighted composite, not
+a front-end rank. Claude Opus 5 leads that index at 67.21%, followed by Claude
+Fable 5 at 66.04% and GPT-5.6 Sol at 63.71%. It is shown only as broad context.
+The separate Vibe Code Bench v1.1 table updated 2026-08-13 directly measures
+functional full-app creation. Claude Fable 5 leads at 90.35%, Claude Opus 5 is
+second at 88.40%, and Kimi K3 is third and is the leading open-weight model.
+
+The previous DesignArena Frontend Web App URL returned 404 during this audit,
+and the OpenHands Frontend page did not expose a usable current table. Neither
+source is presented as current corroboration.
+
+Every accepted models.dev refresh must retain at least 50% of each provider's
+persisted high-water row count. Structurally valid but truncated responses do
+not replace the cached catalog.
+
+### Artificial Analysis speech-to-speech refresh
+
+Speech-to-speech data is now refreshed automatically during every catalog
+rebuild. When `ARTIFICIAL_ANALYSIS_API_KEY` is configured, the Worker first
+requests the structured speech-to-speech endpoint. It then tries the complete
+serialized dataset on the public leaderboard page, whether the API is absent,
+unavailable, or invalid. The page parser accepts only OpenAI, Google, xAI, and
+Anthropic rows, deduplicates slugs, and keeps the most complete copy.
+
+A live result is accepted only when it retains at least 50% of that live
+source's persisted coverage high-water mark and at least half of its rows individually contain a
+positive Speech-to-Speech Index plus positive input and output audio prices.
+The structured API's `price_per_hour_input` list price is used when the
+page-only benchmark input cost is unavailable; the two fields remain distinct.
+Valid live data and the API/public-page high-water counts are saved separately in KV as the
+last-known-good voice snapshot. Malformed, incomplete, or unpersistable fetches
+never replace it. The fallback order is:
+
+1. Authenticated Artificial Analysis API.
+2. Artificial Analysis public leaderboard page.
+3. Last-known-good KV snapshot.
+4. Checked-in emergency snapshot.
+
+API and public-page results have `state: "live"`. KV and bundled fallbacks are
+`fallback_fresh` for at most 14 days after their successful fetch/extraction
+time, then `fallback_stale`. Stale voice rows remain browseable, carry
+`stale_voice_benchmark`, and cannot be recommended. `sourceStatus.voice` exposes
+the state, origin, fetch time, and row count in catalog response metadata and
+`/v1/health`. The age boundary is re-evaluated whenever a cached catalog is read,
+so the daily catalog refresh cannot extend recommendation eligibility.
+
+Best-tier benchmark-backed voice ranking starts with Artificial Analysis's
+source-provided Speech-to-Speech Index; absent quality values sort last. The
+checked-in snapshot is only an emergency fallback and `npm run refresh:aa-voice`
+is not required for normal upstream refreshes.
+
+Some bundled rows lack the page's input-audio benchmark cost. A row with positive
+input and output list prices can still satisfy pricing eligibility through the
+documented API fallback; a row with no usable prices remains visible but
+ineligible. List price is not exposed as benchmark cost.
 
 ### Artificial Analysis LLM data
 
-The live registry matched all 47 benchmarked text models back to public Artificial Analysis leaderboard records by provider and model id/name/slug.
+When `ARTIFICIAL_ANALYSIS_API_KEY` is configured, each catalog refresh merges:
 
-Simple fix applied:
+- The legacy detailed endpoint from `ARTIFICIAL_ANALYSIS_LLM_URL` for existing
+  benchmark signals.
+- Every page of the current free endpoint from
+  `ARTIFICIAL_ANALYSIS_FREE_LLM_URL` for current headline indices, nested
+  pricing, nested median performance, and Intelligence Index total/per-task
+  cost.
 
-- `tau2` is now accepted as a telecom benchmark alias.
-- `gdpval_normalized` is now accepted as a professional-task benchmark alias if the API provides it.
-- `0` speed / latency values are now treated as missing, not real benchmark values.
+Current free-feed fields take precedence. Legacy and checked-in extracts fill
+missing fields only and never replace fresher live values. The current parser
+follows `pagination.has_more`, `page`, and `total_pages` rather than assuming the
+first page is complete.
 
-After deployment and cache refresh:
+Artificial Analysis rows are matched to a models.dev family by normalized
+provider and model identity. Effort variants such as `gpt-5-6-sol-high` keep
+distinct benchmark rows and scores while inheriting applicable base-family
+metadata. Fable and GPT-5.6 variants can therefore appear in customer-support
+benchmarks when their required signals exist; Grok 4.5 is not forced into a
+customer-support recommendation without those signals.
 
-- Text models with AA LLM benchmarks: 47
-- Intelligence signals: 45
-- Coding signals: 43
-- IFBench signals: 34
-- TerminalBench signals: 34
-- Telecom signals: 34
-- Speed signals: 37
-- Latency signals: 37
-- Zero speed / latency placeholders: 0
+### Visibility and recommendation eligibility
 
-Remaining unresolved issue:
+The API intentionally exposes different datasets:
 
-- The public AA leaderboard includes GDPval-style professional-task values, but the free AA LLM API response available to the Worker did not populate `professional` in the live registry after the alias patch. Fixing this likely requires either scraping the public leaderboard payload or using a richer AA API/data product. That is possible, but brittle enough that it should be a deliberate product decision.
+- `/v1/models` contains base registry records and honors explicitly supplied
+  filters.
+- `/v1/benchmarks` contains use-case benchmark/configuration rows, including
+  relevant incomplete rows with a recommendation-eligibility reason. For voice,
+  this includes current models.dev audio models awaiting Artificial Analysis.
+- `/v1/models/recommend` retains its existing response shape and only considers
+  rows with positive pricing, production availability, and all evidence
+  required by the selected use case by default.
+- `/v1/health` reports registry, benchmark, and recommendable counts separately;
+  `/v1/models/providers` derives provider totals from registry records.
 
-### Source disagreements
+This is a show-first, qualify-later policy: visibility in a registry or
+benchmark response does not imply recommendation eligibility.
 
-Some overlapping public AA leaderboard pricing values disagree with models.dev. The registry currently treats models.dev as the source of truth for text model pricing.
+`allowUnbenchmarkedLatest=true` is an explicit exception for best-tier
+use-case recommendations. When the latest eligible full-size production
+registry model has no valid matching benchmark, it may become the primary
+recommendation. The heuristic requires the selected use case's modalities, capabilities, and
+positive comparable pricing; it excludes deprecated, open-weight, preview-risk,
+and `latest` aliases. Benchmark-only threshold filters disable the exception.
 
-Examples in USD:
+The heuristic ranks full-size candidates ahead of explicitly reduced variants
+such as `mini`, then sorts by release date, update date, context window, and
+higher use-case-specific comparable price when the units match. Recency and those
+tie-breakers are only proxies for likely capability: they are not measured
+intelligence, benchmark evidence, or value optimization. Responses make that
+distinction explicit with
+`recommendationMeta.policy: "allow_unbenchmarked_latest"`,
+`selectionBasis: "latest_release"`, `benchmarkEligible: false`, and
+`valueOptimized: false`. Fast and balanced tiers, and best without the flag,
+remain benchmark-backed.
 
-| Model | models.dev input/output | AA public input/output |
-| --- | ---: | ---: |
-| `openai:o1-preview` | 15 / 60 | 16.5 / 66 |
-| `google:gemini-2.0-flash` | 0.1 / 0.4 | 0.15 / 0.6 |
-| `anthropic:claude-sonnet-4-6` | 3 / 15 | 3.75 / 15 |
-| `anthropic:claude-opus-4-7` | 5 / 25 | 6.25 / 25 |
-| `google:gemma-3-27b-it` | 0 / 0 | 0.1095 / 0.25 |
+### Freshness and source precedence
 
-These are not safe to auto-rectify without deciding which source should own pricing. The current implementation keeps the simpler rule: models.dev owns text model pricing; Artificial Analysis owns benchmark scores and voice benchmark-run pricing.
+Current Artificial Analysis input/output pricing takes precedence when present;
+models.dev pricing is the registry fallback. Source USD pricing and benchmark
+costs are converted to AUD with the catalog's Frankfurter exchange rate.
 
-AA public speed/latency values also differ from the AA free API values for some models, even after a fresh cache refresh. Example:
+The normalized KV cache uses the production `catalog:v31` key. This preserves
+the complete live catalog across Worker deployments and prevents older response
+shapes from being served. A models.dev failure or per-provider coverage drop
+below the persisted 50% high-water threshold always prevents a cache write.
+The provider high-water counts live in the separate non-expiring
+`models-dev:provider-high-water:v1` key. The Worker captures source data daily at
+06:00 Australia/Brisbane, the GitHub Action rebuilds the catalog at 06:10, and
+catalog data stays fresh for 24 hours. A complete last-good catalog remains
+available for seven days.
+When an Artificial Analysis key is configured, failure of any current-free page
+or an LLM row-count drop below half of the last-good catalog also prevents a
+cache write; legacy LLM and speech-to-text failures may use
+checked-in fallback extracts. Speech-to-speech has the independent validated
+live/page/KV/bundled fallback sequence described above. If a valid older catalog
+is already cached, the Worker continues serving it rather than overwriting it
+with partial data.
 
-- `openai:gpt-5.2`
-  - Live AA API-derived speed / latency: 66.747 tok/s / 68.508s
-  - Public leaderboard speed / latency: 75.999 tok/s / 103.381s
-
-This may be due to different prompt options, API freshness, or leaderboard-specific aggregation. The registry continues to use the AA free API values because they are the supported API source.
-
+After deployment, verify that the three named model families appear in registry
+JSON when present upstream, `/v1/models` and `/v1/benchmarks` differ as intended,
+incomplete rows are visible but not recommendable, health/provider counts match
+their respective datasets, and all three homepage modes render distinct table
+content. Also verify `sourceStatus.voice`, an unbenchmarked models.dev voice row
+such as `gpt-realtime-2.1` when present upstream, strict best-tier exclusion, and
+its explicitly opted-in `latest_release` recommendation metadata.

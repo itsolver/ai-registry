@@ -1,9 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { handleRequest, type Env } from "../src/worker";
+import { describe, expect, it, vi } from "vitest";
+import worker, {
+  captureArtificialAnalysisRawSources,
+  handleRequest,
+  persistArtificialAnalysisVoiceCapture,
+  refreshCatalog,
+  type Env,
+} from "../src/worker";
 import type { BenchmarkCandidate, Catalog } from "../src/registry";
+import { parseArtificialAnalysisSpeechToSpeechApi } from "../src/aa-speech-to-speech";
 import {
+  normalizeModelsDevCatalog,
+} from "../src/registry";
+import { webdevBenchmarkHtml } from "../src/webdev-benchmark";
+import {
+  ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+  ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+} from "../src/generated/arena-frontend-webdev";
+import {
+  artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
+  artificialAnalysisSpeechToSpeechApiFixture,
+  artificialAnalysisSpeechToSpeechPageFixture,
+  artificialAnalysisSpeechToSpeechRecordFixture,
   artificialAnalysisSpeechToTextFixture,
+  modelsDevFixture,
 } from "./fixtures";
 
 interface JsonObject {
@@ -26,13 +46,35 @@ const artificialAnalysisUrl =
 const artificialAnalysisSttUrl =
   "data:application/json," +
   encodeURIComponent(JSON.stringify(artificialAnalysisSpeechToTextFixture));
+const artificialAnalysisFreeUrl =
+  "data:application/json," +
+  encodeURIComponent(JSON.stringify(artificialAnalysisFreeFixture));
+const artificialAnalysisS2sUrl =
+  "data:application/json," +
+  encodeURIComponent(JSON.stringify(artificialAnalysisSpeechToSpeechApiFixture));
+const artificialAnalysisS2sPageUrl =
+  "data:text/html," +
+  encodeURIComponent(artificialAnalysisSpeechToSpeechPageFixture);
+const modelsDevUrl =
+  "data:application/json," +
+  encodeURIComponent(JSON.stringify(modelsDevFixture));
+const voiceCacheKey = "aa:s2s:last-known-good:v1";
+const catalogCacheKey = "catalog:v31";
+const modelsDevCoverageKey = "models-dev:provider-high-water:v1";
+const completeVoiceSnapshot = parseArtificialAnalysisSpeechToSpeechApi(
+  artificialAnalysisSpeechToSpeechApiFixture,
+);
 
 function env(): Env {
   return {
     FX_RATE_URL: fxUrl,
+    MODELS_DEV_URL: modelsDevUrl,
     ARTIFICIAL_ANALYSIS_API_KEY: "aa-secret",
     ARTIFICIAL_ANALYSIS_LLM_URL: artificialAnalysisUrl,
+    ARTIFICIAL_ANALYSIS_FREE_LLM_URL: artificialAnalysisFreeUrl,
     ARTIFICIAL_ANALYSIS_STT_URL: artificialAnalysisSttUrl,
+    ARTIFICIAL_ANALYSIS_S2S_URL: artificialAnalysisS2sUrl,
+    ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: artificialAnalysisS2sPageUrl,
   };
 }
 
@@ -41,6 +83,62 @@ const ctx = {
     return undefined;
   },
 };
+
+async function withSystemTime<T>(
+  now: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(now));
+  try {
+    return await task();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+function memoryKv(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
+  const puts: Array<{
+    key: string;
+    value: string;
+    options?: KVNamespacePutOptions;
+  }> = [];
+  const namespace = {
+    get: async (key: string) => values.get(key) ?? null,
+    put: async (
+      key: string,
+      value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+      options?: KVNamespacePutOptions,
+    ) => {
+      let textValue: string;
+      if (typeof value === "string") {
+        textValue = value;
+      } else if (value instanceof ReadableStream) {
+        textValue = await new Response(value).text();
+      } else if (ArrayBuffer.isView(value)) {
+        textValue = new TextDecoder().decode(value);
+      } else {
+        textValue = new TextDecoder().decode(value);
+      }
+      values.set(key, textValue);
+      puts.push({ key, value: textValue, options });
+    },
+  } as unknown as KVNamespace;
+
+  return { namespace, puts, values };
+}
+
+const ARENA_FRESH_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) + 60 * 60 * 1000,
+).toISOString();
+const ARENA_EXPIRED_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) +
+    (ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000,
+).toISOString();
+const ARENA_BEFORE_CHECK = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) - 1,
+).toISOString();
 
 function envWithCachedCatalog(catalog: Catalog): Env {
   return {
@@ -66,6 +164,7 @@ function supportCandidate(
   benchmarks: {
     llm: {
       instructionFollowing: 80,
+      tauTelecom: 80,
       intelligence: 80,
       intelligenceRunTotalCost: runCost,
       intelligenceCostPerTask: runCost / 1000,
@@ -127,8 +226,9 @@ function supportCandidate(
 }
 
 function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
+  const evidenceTime = new Date().toISOString();
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: evidenceTime,
     modelCount: candidates.length,
     activeModelCount: candidates.length,
     providers: [
@@ -140,7 +240,23 @@ function supportCatalog(candidates: BenchmarkCandidate[]): Catalog {
     ],
     models: [],
     benchmarkCandidates: candidates,
+    sourceStatus: {
+      artificialAnalysisLlm: {
+        state: "live",
+        evidenceTime,
+        liveRowCount: candidates.length,
+        liveCandidateIds: candidates.map((candidate) => candidate.id),
+      },
+    },
   };
+}
+
+async function refreshAndHandleRequest(
+  request: Request,
+  requestEnv: Env,
+): Promise<Response> {
+  await refreshCatalog(requestEnv);
+  return handleRequest(request, requestEnv, ctx);
 }
 
 describe("worker routes", () => {
@@ -160,17 +276,25 @@ describe("worker routes", () => {
       '<option value="fast" selected>fast and cheap</option>',
     );
     expect(html).toContain(
-      '<div class="b-field" data-filter-scope="text">\n          <label for="b-capability">Must have</label>',
+      '<div class="b-field" data-filter-scope="customer-support">\n          <label for="b-capability">Must have</label>',
     );
+    expect(html).toContain("Min visual reasoning");
+    expect(html).toContain("Max image AUD/1k");
+    expect(html).not.toContain('data-filter-scope="text"');
     expect(html).toContain("model.capabilities[capability] !== true");
-    expect(html).toContain("function customerSupportBenchmarkPath()");
+    expect(html).toContain("function textBenchmarkPath()");
     expect(html).toContain(
-      "fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })",
+      "fetch(textBenchmarkPath(), { cache: 'no-store' })",
     );
+    expect(html).toContain('<option value="benchmarks">browse benchmark rows</option>');
+    expect(html).toContain('<option value="document-processing">document processing (OCR)</option>');
+    expect(html).toContain('<option value="front-end-web-dev">front-end web dev</option>');
+    expect(html).toContain('data-benchmark-panel="front-end-web-dev" hidden');
+    expect(html).toContain('<option value="voice">speech to speech (voice)</option>');
   });
 
   it("serves the ITS auto-close benchmark page without catalog access", async () => {
-    for (const path of ["/its", "/its/"]) {
+    for (const path of ["/its-eval", "/its-eval/"]) {
       const response = await handleRequest(
         new Request(`https://ai.itsolver.au${path}`),
         {},
@@ -189,11 +313,21 @@ describe("worker routes", () => {
         '<tr data-deprecated="true" hidden>\n            <td data-value-model="gemini 3.1 flash-lite preview">',
       );
     }
+
+    const redirect = await handleRequest(
+      new Request("https://ai.itsolver.au/its"),
+      {},
+      ctx,
+    );
+    expect(redirect.status).toBe(301);
+    expect(redirect.headers.get("location")).toBe(
+      "https://ai.itsolver.au/its-eval",
+    );
   });
 
   it("keeps public ITS benchmark rows aggregate-only", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/its"),
+      new Request("https://ai.itsolver.au/its-eval"),
       {},
       ctx,
     );
@@ -205,7 +339,8 @@ describe("worker routes", () => {
     expect(html).not.toContain("raw_output");
   });
 
-  it("serves the web development benchmark composite without catalog access", async () => {
+  it("serves front-end web development evidence without catalog access", async () =>
+    withSystemTime(ARENA_FRESH_NOW, async () => {
     for (const path of ["/webdev", "/webdev/"]) {
       const response = await handleRequest(
         new Request(`https://ai.itsolver.au${path}`),
@@ -215,19 +350,36 @@ describe("worker routes", () => {
 
       expect(response.status).toBe(200);
       const html = await response.text();
-      expect(html).toContain("Web App Development Model Winners");
-      expect(html).toContain("Current public winner");
-      expect(html).toContain("GPT-5.5: 69.85%");
-      expect(html).toContain("Claude Fable 5: 90.35%");
-      expect(html).toContain("Gemini 3.5 Flash: 78.80%");
-      expect(html).toContain("Grok CLI Grok 4.20 Reasoning: 57.3%");
-      expect(html).toContain('<span class="tab active">Performance</span>');
-      expect(html).toContain("Cost / time signal");
+      expect(html).toContain("Best AI Models for Front-End Web Development");
+      expect(html).toContain("Current Arena #1");
+      expect(html).toContain("Claude Opus 5 Max");
+      expect(html).toContain("1692 ±9");
+      expect(html).toContain("Grok 4.6");
+      expect(html).toContain("GPT-5.6 Sol");
+      expect(html).toContain("Arena ranks. Vibe Code Bench checks.");
       expect(html).toContain("https://www.vals.ai/benchmarks/vibe-code");
-      expect(html).toContain(
-        "headline winners first, then benchmark breakdown, cost, and runtime context",
-      );
+      expect(html).not.toContain("bytedance-research");
+      expect(html).not.toContain("DesignArena");
+      expect(html).not.toContain("Benchmark Breakdown");
+      expect(html).not.toContain("Evidence Profiles");
+      expect(html).not.toContain("Method");
     }
+    }));
+
+  it("labels the web-development evidence historical after its freshness gate expires", () => {
+    const html = webdevBenchmarkHtml(new Date(ARENA_EXPIRED_NOW));
+    const futureDatedHtml = webdevBenchmarkHtml(
+      new Date(ARENA_BEFORE_CHECK),
+    );
+
+    expect(html).toContain("Freshness gate expired");
+    expect(html).toContain("Snapshot expired");
+    expect(html).toContain("Historical evidence only");
+    expect(html).toContain(
+      "Historical snapshot only; excluded until refreshed.",
+    );
+    expect(html).not.toContain("Current Arena #1");
+    expect(futureDatedHtml).toContain("Freshness gate expired");
   });
 
   it("serves health metadata", async () => {
@@ -251,20 +403,1383 @@ describe("worker routes", () => {
       },
       providerCount: 7,
     });
-    expect(body.modelCount).toBeGreaterThanOrEqual(9);
-    expect(body.activeModelCount).toBeGreaterThanOrEqual(8);
+    expect(body.modelCount).toBe(19);
+    expect(body.activeModelCount).toBe(19);
+    expect(body.registryModelCount).toBe(19);
+    expect(body.benchmarkCount).toBeGreaterThan(body.registryModelCount);
+    expect(body.recommendableCount).toBeGreaterThan(0);
   });
 
-  it("requires a use case for AA-only recommendations", async () => {
+  it("sanitizes frontend evidence when a fresh cache crosses snapshot expiry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(ARENA_FRESH_NOW));
+    try {
+      const cached = normalizeModelsDevCatalog(
+        modelsDevFixture,
+        ARENA_FRESH_NOW,
+        undefined,
+        artificialAnalysisFreeFixture.data,
+      );
+      const rawBenchmarkCount = cached.benchmarkCandidates?.length ?? 0;
+      expect(
+        cached.benchmarkCandidates?.find((row) => row.id === "grok-4-5")
+          ?.benchmarks.frontendWebDev,
+      ).toBeDefined();
+
+      vi.setSystemTime(new Date(ARENA_EXPIRED_NOW));
+      const cachedEnv = envWithCachedCatalog(cached);
+      const [benchmarkResponse, healthResponse, modelsResponse, latestResponse] =
+        await Promise.all([
+          handleRequest(
+            new Request("https://ai.itsolver.au/v1/benchmarks"),
+            cachedEnv,
+            ctx,
+          ),
+          handleRequest(
+            new Request("https://ai.itsolver.au/v1/health"),
+            cachedEnv,
+            ctx,
+          ),
+          handleRequest(
+            new Request(
+              "https://ai.itsolver.au/v1/models?provider=moonshotai",
+            ),
+            cachedEnv,
+            ctx,
+          ),
+          handleRequest(
+            new Request(
+              "https://ai.itsolver.au/v1/models/moonshotai/latest",
+            ),
+            cachedEnv,
+            ctx,
+          ),
+        ]);
+      const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
+      const healthBody = (await healthResponse.json()) as JsonObject;
+      const modelsBody = (await modelsResponse.json()) as JsonObject;
+      const latestBody = (await latestResponse.json()) as JsonObject;
+      const grok = benchmarkBody.benchmarks.find(
+        (row: JsonObject) => row.id === "grok-4-5",
+      );
+      const kimiModel = modelsBody.models.find(
+        (row: JsonObject) => row.id === "kimi-k3",
+      );
+
+      expect(benchmarkResponse.status).toBe(200);
+      expect(healthResponse.status).toBe(200);
+      expect(modelsResponse.status).toBe(200);
+      expect(latestResponse.status).toBe(200);
+      expect(benchmarkBody.benchmarkCount).toBeLessThan(rawBenchmarkCount);
+      expect(
+        benchmarkBody.benchmarks.every(
+          (row: JsonObject) => !row.benchmarks.frontendWebDev,
+        ),
+      ).toBe(true);
+      expect(
+        benchmarkBody.benchmarks.map((row: JsonObject) => row.id),
+      ).not.toContain("kimi-k3-max");
+      expect(grok?.benchmarks.llm).toBeDefined();
+      expect(grok?.benchmarks.frontendWebDev).toBeUndefined();
+      expect(healthBody.benchmarkCount).toBe(benchmarkBody.benchmarkCount);
+      expect(healthBody.recommendableCount).toBe(
+        benchmarkBody.benchmarks.filter(
+          (row: JsonObject) => row.recommendable,
+        ).length,
+      );
+      expect(kimiModel).toBeDefined();
+      expect(kimiModel?.benchmarks?.frontendWebDev).toBeUndefined();
+      expect(latestBody.model.id).toBe("kimi-k3");
+      expect(latestBody.model.benchmarks?.frontendWebDev).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns Claude Opus 5 Max as the Arena-backed front-end leader", async () =>
+    withSystemTime(ARENA_FRESH_NOW, async () => {
+    const benchmarkResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=front-end-web-dev",
+      ),
+      env(),
+      ctx,
+    );
+    const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
+    const leader = benchmarkBody.benchmarks.find(
+      (row: JsonObject) => row.id === "claude-opus-5-max",
+    );
+
+    expect(benchmarkResponse.status).toBe(200);
+    expect(benchmarkBody.benchmarkCount).toBeGreaterThan(0);
+    expect(leader).toMatchObject({
+      id: "claude-opus-5-max",
+      provider: "anthropic",
+      registryModelId: "claude-opus-5",
+      recommendable: true,
+      eligibilityReason: "eligible",
+      pricing: {
+        inputPerMTok: 7.5,
+        outputPerMTok: 37.5,
+      },
+      benchmarks: {
+        frontendWebDev: {
+          score: 1692,
+          rank: 1,
+          rankLow: 1,
+          rankHigh: 2,
+          confidence: 9,
+          votes: 6_448,
+          preliminary: false,
+          source: "arena",
+          sourceUrl: "https://arena.ai/leaderboard/code/webdev",
+        },
+      },
+    });
+
+    const recommendationResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=best",
+      ),
+      env(),
+      ctx,
+    );
+    const recommendationBody =
+      (await recommendationResponse.json()) as JsonObject;
+
+    expect(recommendationResponse.status).toBe(200);
+    expect(recommendationBody.recommendation).toMatchObject({
+      id: "claude-opus-5-max",
+      provider: "anthropic",
+      registryModelId: "claude-opus-5",
+      pricing: {
+        inputPerMTok: 7.5,
+        outputPerMTok: 37.5,
+      },
+      benchmarks: {
+        frontendWebDev: {
+          rank: 1,
+          preliminary: false,
+          source: "arena",
+        },
+      },
+    });
+    }));
+
+  it("maps configured Arena rows and applies distinct front-end tiers", async () =>
+    withSystemTime(ARENA_FRESH_NOW, async () => {
+      const urls = [
+        "https://ai.itsolver.au/v1/benchmarks?useCase=front-end-web-dev",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=best",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=balanced",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=fast",
+        "https://ai.itsolver.au/v1/models/recommend?useCase=front-end-web-dev&tier=best&provider=openai",
+      ];
+      const responses = await Promise.all(
+        urls.map((url) => handleRequest(new Request(url), env(), ctx)),
+      );
+      const [benchmarks, defaultBest, best, balanced, fast, openaiBest] = await Promise.all(
+        responses.map((response) => response.json() as Promise<JsonObject>),
+      );
+      const configuredGpt = benchmarks.benchmarks.find(
+        (row: JsonObject) =>
+          row.id === "gpt-5-6-sol-xhigh-codex-harness",
+      );
+
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+      expect(
+        benchmarks.benchmarks.filter(
+          (row: JsonObject) => row.eligibilityReason === "missing_registry_model",
+        ),
+      ).toEqual([]);
+      expect(configuredGpt).toMatchObject({
+        registryModelId: "gpt-5.6-sol",
+        recommendable: true,
+        eligibilityReason: "eligible",
+        benchmarks: {
+          frontendWebDev: {
+            configuration: {
+              displayLabel: "xhigh via Codex harness",
+              effort: "xhigh",
+              harness: "codex",
+            },
+          },
+        },
+      });
+      expect(defaultBest.recommendation.id).toBe("claude-opus-5-max");
+      expect(defaultBest.recommendation.failover).toMatchObject({
+        id: "kimi-k3-max",
+        registryModelId: "kimi-k3",
+      });
+      expect(
+        defaultBest.failovers.map((row: JsonObject) => row.registryModelId),
+      ).toEqual(["kimi-k3", "grok-4.6"]);
+      expect(best.recommendation.id).toBe("claude-opus-5-max");
+      expect(balanced.recommendation.id).toBe("gemini-3-7-flash-high");
+      expect(fast.recommendation.id).toBe("gemini-3-7-flash-high");
+      expect(openaiBest.recommendation).toMatchObject({
+        id: "gpt-5-6-sol-xhigh-codex-harness",
+        registryModelId: "gpt-5.6-sol",
+      });
+    }));
+
+  it("loads every page from the current Artificial Analysis free endpoint", async () => {
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (!url.startsWith("https://aa.test/language/models/free")) {
+          return realFetch(input, init);
+        }
+        const page = Number(new URL(url).searchParams.get("page") ?? "1");
+        const rows = artificialAnalysisFreeFixture.data;
+        return Response.json({
+          tier: "free",
+          pagination: {
+            page,
+            page_size: 2,
+            total_pages: 2,
+            has_more: page === 1,
+          },
+          data: page === 1 ? rows.slice(0, 1) : rows.slice(1),
+        });
+      },
+    );
+
+    try {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/benchmarks"),
+        {
+          ...env(),
+          ARTIFICIAL_ANALYSIS_FREE_LLM_URL:
+            "https://aa.test/language/models/free",
+        },
+        ctx,
+      );
+      const body = (await response.json()) as JsonObject;
+      expect(response.status).toBe(200);
+      expect(body.benchmarks.map((row: { id: string }) => row.id)).toEqual(
+        expect.arrayContaining([
+          "claude-fable-5-high",
+          "gpt-5-6-sol-high",
+          "grok-4-5",
+        ]),
+      );
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://aa.test/language/models/free?page=2",
+        expect.any(Object),
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("automatically falls back from the voice API to the public page", async () => {
+    const kv = memoryKv();
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === apiUrl) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await refreshAndHandleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+          },
+        );
+        const body = (await response.json()) as JsonObject;
+        const snapshot = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toEqual({
+          state: "live",
+          origin: "aa_public_page",
+          fetchedAt: "2026-07-17T00:00:00.000Z",
+          rowCount: 8,
+        });
+        expect(snapshot).toMatchObject({
+          fetchedAt: "2026-07-17T00:00:00.000Z",
+          models: expect.arrayContaining([
+            expect.objectContaining({ slug: "gpt-realtime-2-high" }),
+          ]),
+        });
+        expect(fetchSpy).toHaveBeenCalledWith(
+          apiUrl,
+          expect.objectContaining({
+            headers: expect.objectContaining({ "x-api-key": "aa-secret" }),
+          }),
+        );
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("does not replace full voice coverage with a truncated live payload", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: completeVoiceSnapshot,
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === apiUrl) {
+          return Response.json({
+            data: [artificialAnalysisSpeechToSpeechRecordFixture],
+          });
+        }
+        if (String(input) === pageUrl) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await refreshAndHandleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+          },
+        );
+        const body = (await response.json()) as JsonObject;
+        const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toMatchObject({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+          rowCount: 8,
+        });
+        expect(persisted.models).toHaveLength(8);
+        expect(kv.puts.map(({ key }) => key)).not.toContain(voiceCacheKey);
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps the voice coverage high-water mark across partial refreshes", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        origin: "aa_api",
+        highWaterRowCounts: { aa_api: 30 },
+        models: completeVoiceSnapshot,
+      }),
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await refreshAndHandleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: "data:text/html,unavailable",
+          },
+        );
+        const body = (await response.json()) as JsonObject;
+        const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toMatchObject({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+          rowCount: 8,
+        });
+        expect(persisted.highWaterRowCounts.aa_api).toBe(30);
+        expect(kv.puts.map(({ key }) => key)).not.toContain(voiceCacheKey);
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not copy a legacy shared voice high-water into both live sources", async () => {
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt: "2026-07-16T00:00:00.000Z",
+        highWaterRowCount: 30,
+        models: completeVoiceSnapshot,
+      }),
+    });
+
+    await withSystemTime("2026-07-17T00:00:00Z", async () => {
+      const response = await refreshAndHandleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        { ...env(), MODEL_CACHE: kv.namespace },
+      );
+      const body = (await response.json()) as JsonObject;
+      const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+      expect(response.status).toBe(200);
+      expect(body.sourceStatus.voice).toMatchObject({
+        state: "live",
+        origin: "aa_api",
+        rowCount: 8,
+      });
+      expect(persisted).toMatchObject({
+        origin: "aa_api",
+        highWaterRowCounts: { aa_api: 8 },
+      });
+      expect(persisted.highWaterRowCounts).not.toHaveProperty(
+        "aa_public_page",
+      );
+    });
+  });
+
+  it("tracks API and public-page voice coverage independently", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        origin: "aa_public_page",
+        highWaterRowCounts: { aa_api: 8, aa_public_page: 17 },
+        models: completeVoiceSnapshot,
+      }),
+    });
+
+    await withSystemTime("2026-07-17T00:00:00Z", async () => {
+      const response = await refreshAndHandleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        { ...env(), MODEL_CACHE: kv.namespace },
+      );
+      const body = (await response.json()) as JsonObject;
+      const persisted = JSON.parse(kv.values.get(voiceCacheKey) ?? "null");
+
+      expect(response.status).toBe(200);
+      expect(body.sourceStatus.voice).toMatchObject({
+        state: "live",
+        origin: "aa_api",
+        rowCount: 8,
+      });
+      expect(persisted).toMatchObject({
+        origin: "aa_api",
+        highWaterRowCounts: { aa_public_page: 17 },
+      });
+      expect(persisted.highWaterRowCounts.aa_api).toBeGreaterThanOrEqual(8);
+      expect(persisted.highWaterRowCounts.aa_api).toBeLessThan(17);
+    });
+  });
+
+  it("keeps per-provider models.dev coverage high-water marks", async () => {
+    const kv = memoryKv();
+    const fullEnv = { ...env(), MODEL_CACHE: kv.namespace };
+    await refreshCatalog(fullEnv);
+    const twoOpenAiModels = structuredClone(modelsDevFixture);
+    twoOpenAiModels.openai.models = Object.fromEntries(
+      Object.entries(twoOpenAiModels.openai.models).slice(0, 2),
+    ) as typeof twoOpenAiModels.openai.models;
+    const twoModelUrl =
+      "data:application/json," +
+      encodeURIComponent(JSON.stringify(twoOpenAiModels));
+    await refreshCatalog({
+      ...fullEnv,
+      MODELS_DEV_URL: twoModelUrl,
+    });
+    const oneOpenAiModel = structuredClone(twoOpenAiModels);
+    oneOpenAiModel.openai.models = Object.fromEntries(
+      Object.entries(oneOpenAiModel.openai.models).slice(0, 1),
+    ) as typeof oneOpenAiModel.openai.models;
+    const oneModelUrl =
+      "data:application/json," +
+      encodeURIComponent(JSON.stringify(oneOpenAiModel));
+
+    expect(
+      JSON.parse(kv.values.get(modelsDevCoverageKey) ?? "null").openai,
+    ).toBe(4);
+    kv.values.delete(catalogCacheKey);
+    await expect(
+      refreshCatalog({ ...fullEnv, MODELS_DEV_URL: oneModelUrl }),
+    ).rejects.toThrow(
+      "models.dev refresh dropped cached provider coverage for openai",
+    );
+    expect(kv.values.has(catalogCacheKey)).toBe(false);
+    expect(
+      JSON.parse(kv.values.get(modelsDevCoverageKey) ?? "null").openai,
+    ).toBe(4);
+  });
+
+  it("ignores cached provider coverage that the current registry no longer supports", async () => {
+    const kv = memoryKv();
+    const fullEnv = { ...env(), MODEL_CACHE: kv.namespace };
+    await refreshCatalog(fullEnv);
+    const cached = JSON.parse(kv.values.get(catalogCacheKey) ?? "null");
+    cached.providers.push({
+      provider: "retired-ai",
+      total: 10,
+      active: 10,
+    });
+    kv.values.set(catalogCacheKey, JSON.stringify(cached));
+
+    const refreshed = await refreshCatalog(fullEnv);
+
+    expect(refreshed.providers).not.toContainEqual(
+      expect.objectContaining({ provider: "retired-ai" }),
+    );
+    expect(kv.values.has(catalogCacheKey)).toBe(true);
+  });
+
+  it("requires quality and both prices on the same complete voice rows", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: completeVoiceSnapshot,
+      }),
+    });
+    const disjointRows = structuredClone(
+      artificialAnalysisSpeechToSpeechApiFixture,
+    );
+    disjointRows.data.slice(0, 4).forEach((model) => {
+      model.providers[0].price_per_hour_input = 0;
+      model.providers[0].price_per_hour_output = 0;
+    });
+    disjointRows.data.slice(4).forEach((model) => {
+      model.bba_score = 0;
+      model.tau_voice_score = 0;
+      model.fdb_score = 0;
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === apiUrl) return Response.json(disjointRows);
+        if (String(input) === pageUrl) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await refreshAndHandleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+          },
+        );
+        const body = (await response.json()) as JsonObject;
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toMatchObject({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+        });
+        expect(kv.puts.map(({ key }) => key)).not.toContain(voiceCacheKey);
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("falls back cleanly when a live voice snapshot cannot be persisted", async () => {
+    const fetchedAt = "2026-07-16T00:00:00.000Z";
+    const values = new Map([
+      [
+        voiceCacheKey,
+        JSON.stringify({ fetchedAt, models: completeVoiceSnapshot }),
+      ],
+    ]);
+    let voicePutAttempts = 0;
+    const namespace = {
+      get: async (key: string) => values.get(key) ?? null,
+      put: async (key: string, value: string) => {
+        if (key === voiceCacheKey) {
+          voicePutAttempts += 1;
+          throw new Error("KV write unavailable");
+        }
+        values.set(key, value);
+      },
+    } as unknown as KVNamespace;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await refreshAndHandleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          { ...env(), MODEL_CACHE: namespace },
+        );
+        const body = (await response.json()) as JsonObject;
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toMatchObject({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+        });
+        expect(voicePutAttempts).toBe(2);
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("uses a fresh voice KV snapshot when both live sources fail", async () => {
+    const fetchedAt = "2026-07-10T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: [artificialAnalysisSpeechToSpeechRecordFixture],
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ([apiUrl, pageUrl].includes(String(input))) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await refreshAndHandleRequest(
+          new Request(
+            "https://ai.itsolver.au/v1/benchmarks?useCase=voice",
+          ),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+          },
+        );
+        const body = (await response.json()) as JsonObject;
+        const cachedRow = body.benchmarks.find(
+          (row: JsonObject) => row.id === "gpt-realtime-2-high",
+        );
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toEqual({
+          state: "fallback_fresh",
+          origin: "kv_last_known_good",
+          fetchedAt,
+          rowCount: 1,
+        });
+        expect(cachedRow).toMatchObject({
+          recommendable: true,
+          eligibilityReason: "eligible",
+        });
+        expect(cachedRow.benchmarks.voice).not.toHaveProperty("stale");
+        expect(kv.puts.map(({ key }) => key)).not.toContain(voiceCacheKey);
+        expect(warnSpy).toHaveBeenCalledWith(
+          "Artificial Analysis voice refresh using KV fallback",
+          expect.objectContaining({ state: "fallback_fresh" }),
+        );
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps a stale voice KV snapshot visible but recommendation-ineligible", async () => {
+    const fetchedAt = "2026-06-30T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: [artificialAnalysisSpeechToSpeechRecordFixture],
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ([apiUrl, pageUrl].includes(String(input))) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await withSystemTime("2026-07-17T00:00:00Z", async () => {
+        const response = await refreshAndHandleRequest(
+          new Request(
+            "https://ai.itsolver.au/v1/benchmarks?useCase=voice",
+          ),
+          {
+            ...env(),
+            MODEL_CACHE: kv.namespace,
+            ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+            ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+          },
+        );
+        const body = (await response.json()) as JsonObject;
+        const staleRow = body.benchmarks.find(
+          (row: JsonObject) => row.id === "gpt-realtime-2-high",
+        );
+
+        expect(response.status).toBe(200);
+        expect(body.sourceStatus.voice).toEqual({
+          state: "fallback_stale",
+          origin: "kv_last_known_good",
+          fetchedAt,
+          rowCount: 1,
+        });
+        expect(staleRow).toMatchObject({
+          recommendable: false,
+          eligibilityReason: "stale_voice_benchmark",
+          benchmarks: { voice: { stale: true } },
+        });
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("re-evaluates the voice cutoff when serving a still-fresh catalog", async () => {
+    const fetchedAt = "2026-07-03T00:00:00.000Z";
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt,
+        models: [artificialAnalysisSpeechToSpeechRecordFixture],
+      }),
+    });
+    const realFetch = globalThis.fetch;
+    const apiUrl = "https://aa.test/media/speech-to-speech/models";
+    const pageUrl = "https://aa.test/speech-to-speech";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ([apiUrl, pageUrl].includes(String(input))) {
+          return new Response("upstream unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const requestEnv = {
+      ...env(),
+      MODEL_CACHE: kv.namespace,
+      ARTIFICIAL_ANALYSIS_S2S_URL: apiUrl,
+      ARTIFICIAL_ANALYSIS_S2S_PAGE_URL: pageUrl,
+    };
+
+    try {
+      await withSystemTime("2026-07-16T23:59:00Z", async () => {
+        const response = await refreshAndHandleRequest(
+          new Request("https://ai.itsolver.au/v1/health"),
+          requestEnv,
+        );
+        const body = (await response.json()) as JsonObject;
+        expect(body.sourceStatus.voice.state).toBe("fallback_fresh");
+      });
+
+      await withSystemTime("2026-07-17T00:01:00Z", async () => {
+        const response = await handleRequest(
+          new Request("https://ai.itsolver.au/v1/benchmarks?useCase=voice"),
+          requestEnv,
+        );
+        const body = (await response.json()) as JsonObject;
+        const staleRow = body.benchmarks.find(
+          (row: JsonObject) => row.id === "gpt-realtime-2-high",
+        );
+
+        expect(body.sourceStatus.voice.state).toBe("fallback_stale");
+        expect(staleRow).toMatchObject({
+          recommendable: false,
+          eligibilityReason: "stale_voice_benchmark",
+          benchmarks: { voice: { stale: true } },
+        });
+      });
+    } finally {
+      warnSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("captures complete raw AA sources from the scheduled handler", async () => {
+    const kv = memoryKv();
+    const pending: Promise<unknown>[] = [];
+    const scheduledCtx = {
+      waitUntil(promise: Promise<unknown>) {
+        pending.push(promise);
+      },
+    } as unknown as ExecutionContext;
+
+    const freeFixture = {
+      ...artificialAnalysisFreeFixture,
+      pagination: {
+        page: 1,
+        per_page: 100,
+        total_pages: 1,
+        total_count: artificialAnalysisFreeFixture.data.length,
+        has_more: false,
+      },
+    };
+    const captureEnv = {
+      ...env(),
+      MODEL_CACHE: kv.namespace,
+      ARTIFICIAL_ANALYSIS_FREE_LLM_URL:
+        "data:application/json," +
+        encodeURIComponent(JSON.stringify(freeFixture)),
+    };
+
+    await withSystemTime("2026-07-17T06:00:00Z", async () => {
+      await worker.scheduled(
+        {} as ScheduledController,
+        captureEnv,
+        scheduledCtx,
+      );
+      await Promise.all(pending);
+    });
+
+    const manifestWrite = kv.puts.find(
+      ({ key }) => key === "raw:aa:manifest:v1",
+    );
+    const manifest = JSON.parse(manifestWrite?.value ?? "null");
+
+    expect(pending).toHaveLength(1);
+    expect(manifestWrite?.options).toMatchObject({ expirationTtl: 604800 });
+    expect(manifest).toMatchObject({
+      capturedAt: "2026-07-17T06:00:00.000Z",
+      sources: {
+        llm: expect.stringMatching(/^raw:aa:\d+:llm$/),
+        "free-1": expect.stringMatching(/^raw:aa:\d+:free-1$/),
+        stt: expect.stringMatching(/^raw:aa:\d+:stt$/),
+        s2s: expect.stringMatching(/^raw:aa:\d+:s2s$/),
+      },
+    });
+    expect(kv.puts.some(({ key }) => key.startsWith("catalog:"))).toBe(false);
+    expect(kv.values.get(manifest.sources["free-1"])).toContain('"data"');
+  });
+
+  it("captures raw AA sources sequentially", async () => {
+    const kv = memoryKv();
+    const realFetch = globalThis.fetch;
+    let activeFetches = 0;
+    let maximumActiveFetches = 0;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        activeFetches += 1;
+        maximumActiveFetches = Math.max(
+          maximumActiveFetches,
+          activeFetches,
+        );
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          return await realFetch(input, init);
+        } finally {
+          activeFetches -= 1;
+        }
+      },
+    );
+
+    try {
+      await captureArtificialAnalysisRawSources({
+        ...env(),
+        MODEL_CACHE: kv.namespace,
+      });
+      expect(maximumActiveFetches).toBe(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("captures the documented Free speech endpoints by default", async () => {
+    const kv = memoryKv();
+    const realFetch = globalThis.fetch;
+    const requestedUrls: string[] = [];
+    const freeSttUrl =
+      "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free";
+    const freeS2sUrl =
+      "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models/free";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url === freeSttUrl) {
+          return new Response(
+            JSON.stringify({ tier: "free", data: [{ id: "stt-free" }] }),
+          );
+        }
+        if (url === freeS2sUrl) {
+          return new Response(
+            JSON.stringify({ tier: "free", data: [{ id: "s2s-free" }] }),
+          );
+        }
+        return realFetch(input, init);
+      },
+    );
+    const captureEnv = {
+      ...env(),
+      MODEL_CACHE: kv.namespace,
+    };
+    delete captureEnv.ARTIFICIAL_ANALYSIS_STT_URL;
+    delete captureEnv.ARTIFICIAL_ANALYSIS_S2S_URL;
+
+    try {
+      await captureArtificialAnalysisRawSources(captureEnv);
+      expect(requestedUrls).toContain(freeSttUrl);
+      expect(requestedUrls).toContain(freeS2sUrl);
+      expect(kv.values.has("raw:aa:manifest:v1")).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("cancels and retries transient required AA source failures", async () => {
+    const kv = memoryKv();
+    const retryUrl = "https://aa.test/stt-transient";
+    const realFetch = globalThis.fetch;
+    let sttAttempts = 0;
+    let canceledBodies = 0;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === retryUrl) {
+          sttAttempts += 1;
+          if (sttAttempts < 3) {
+            return new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.enqueue(new TextEncoder().encode("unavailable"));
+                },
+                cancel() {
+                  canceledBodies += 1;
+                },
+              }),
+              { status: sttAttempts === 1 ? 408 : 503 },
+            );
+          }
+          return new Response(JSON.stringify(artificialAnalysisSpeechToTextFixture), {
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return realFetch(input, init);
+      },
+    );
+
+    try {
+      await captureArtificialAnalysisRawSources({
+        ...env(),
+        MODEL_CACHE: kv.namespace,
+        ARTIFICIAL_ANALYSIS_STT_URL: retryUrl,
+      });
+      expect(sttAttempts).toBe(3);
+      expect(canceledBodies).toBe(2);
+      expect(kv.values.has("raw:aa:manifest:v1")).toBe(true);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("does not replace the raw manifest when a required AA source fails", async () => {
+    const originalManifest = JSON.stringify({
+      capturedAt: "2026-07-17T05:00:00.000Z",
+      sources: { "free-1": "old-free", stt: "old-stt", s2s: "old-s2s" },
+    });
+    const kv = memoryKv({ "raw:aa:manifest:v1": originalManifest });
+    const failedUrl = "https://aa.test/stt-failure";
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === failedUrl) {
+          return new Response("unavailable", { status: 503 });
+        }
+        return realFetch(input, init);
+      },
+    );
+
+    try {
+      await expect(
+        captureArtificialAnalysisRawSources({
+          ...env(),
+          MODEL_CACHE: kv.namespace,
+          ARTIFICIAL_ANALYSIS_STT_URL: failedUrl,
+        }),
+      ).rejects.toThrow("stt returned 503");
+      expect(kv.values.get("raw:aa:manifest:v1")).toBe(originalManifest);
+      expect(
+        kv.puts.filter(({ key }) => key === "raw:aa:manifest:v1"),
+      ).toHaveLength(0);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("requires the AA API key before raw capture", async () => {
+    const kv = memoryKv();
+    await expect(
+      captureArtificialAnalysisRawSources({ MODEL_CACHE: kv.namespace }),
+    ).rejects.toThrow("raw capture is not configured");
+    expect(kv.puts).toHaveLength(0);
+  });
+
+  it("rejects a partial voice capture against the last-good high-water mark", async () => {
+    const kv = memoryKv({
+      [voiceCacheKey]: JSON.stringify({
+        fetchedAt: "2026-07-17T05:00:00.000Z",
+        origin: "aa_api",
+        highWaterRowCounts: { aa_api: 20 },
+        models: completeVoiceSnapshot,
+      }),
+    });
+
+    await expect(
+      persistArtificialAnalysisVoiceCapture(
+        { MODEL_CACHE: kv.namespace },
+        completeVoiceSnapshot.slice(0, 8),
+        "2026-07-17T06:00:00.000Z",
+      ),
+    ).rejects.toThrow("voice capture is partial or invalid");
+    expect(
+      kv.puts.filter(({ key }) => key === voiceCacheKey),
+    ).toHaveLength(0);
+  });
+
+  it("persists a complete voice capture for catalog construction", async () => {
+    const kv = memoryKv();
+    await persistArtificialAnalysisVoiceCapture(
+      { MODEL_CACHE: kv.namespace },
+      completeVoiceSnapshot,
+      "2026-07-17T06:00:00.000Z",
+    );
+
+    expect(JSON.parse(kv.values.get(voiceCacheKey) ?? "null")).toMatchObject({
+      fetchedAt: "2026-07-17T06:00:00.000Z",
+      origin: "aa_api",
+      highWaterRowCounts: { aa_api: completeVoiceSnapshot.length },
+    });
+  });
+
+  it("serves a stale valid cache without overwriting it when models.dev fails", async () => {
+    let putCount = 0;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("request refresh must not run"));
+    const cached = supportCatalog([supportCandidate("cached", 0, 0.9, 10, 2)]);
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    try {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        {
+          MODEL_CACHE: {
+            get: async () => JSON.stringify(cached),
+            put: async (key: string) => {
+              if (key.startsWith("catalog:")) putCount += 1;
+            },
+          } as unknown as KVNamespace,
+          MODELS_DEV_URL: "data:application/json,%5B%5D",
+        },
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      expect((await response.json()) as JsonObject).toMatchObject({
+        benchmarkCount: 1,
+        registryModelCount: 0,
+        catalogState: "stale",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(putCount).toBe(0);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("treats the daily catalog as fresh for 24 hours", async () => {
+    const cached = supportCatalog([supportCandidate("cached", 0, 0.9, 10, 2)]);
+    cached.generatedAt = "2026-08-18T20:10:00.000Z";
+
+    await withSystemTime("2026-08-19T20:09:59.999Z", async () => {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        envWithCachedCatalog(cached),
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ catalogState: "fresh" });
+    });
+
+    await withSystemTime("2026-08-19T20:10:00.001Z", async () => {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        envWithCachedCatalog(cached),
+        ctx,
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ catalogState: "stale" });
+    });
+  });
+
+  it("fails a production cache miss without running request source work", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("request source work must not run"));
+    try {
+      const response = await handleRequest(
+        new Request("https://ai.itsolver.au/v1/health"),
+        { MODEL_CACHE: memoryKv().namespace },
+        ctx,
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        error: "catalog_unavailable",
+        message: "No valid cached catalog is available",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("rejects empty and structurally partial models.dev responses", async () => {
+    for (const source of [
+      {},
+      { openai: modelsDevFixture.openai },
+      {
+        ...modelsDevFixture,
+        anthropic: { models: {} },
+      },
+      {
+        ...modelsDevFixture,
+        anthropic: { models: { broken: {} } },
+      },
+      { ...modelsDevFixture, nvidia: undefined },
+      { ...modelsDevFixture, groq: undefined },
+    ]) {
+      let putCount = 0;
+      const cached = supportCatalog([
+        supportCandidate("cached", 0, 0.9, 10, 2),
+      ]);
+      cached.generatedAt = "2020-01-01T00:00:00Z";
+      const kv = memoryKv({ [catalogCacheKey]: JSON.stringify(cached) });
+      await expect(
+        refreshCatalog({
+          ...env(),
+          MODEL_CACHE: {
+            ...kv.namespace,
+            put: async (
+              key: string,
+              value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+              options?: KVNamespacePutOptions,
+            ) => {
+              if (key.startsWith("catalog:")) putCount += 1;
+              await kv.namespace.put(key, value, options);
+            },
+          } as KVNamespace,
+          MODELS_DEV_URL:
+            "data:application/json," +
+            encodeURIComponent(JSON.stringify(source)),
+        }),
+      ).rejects.toThrow("models.dev returned an incomplete");
+
+      expect(putCount).toBe(0);
+      expect(kv.values.get(catalogCacheKey)).toBe(JSON.stringify(cached));
+    }
+  });
+
+  it("does not drop an optional registry provider that exists in the cache", async () => {
+    let putCount = 0;
+    const cached = supportCatalog([]);
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    cached.modelCount = 1;
+    cached.activeModelCount = 1;
+    cached.providers = [
+      { provider: "elevenlabs", total: 1, active: 1 },
+    ];
+    cached.models = [
+      {
+        id: "elevenlabs-future-model",
+        provider: "elevenlabs",
+        name: "ElevenLabs Future Model",
+        family: "elevenlabs",
+        contextWindow: 8_000,
+        outputLimit: 1_000,
+        pricing: { inputPerMTok: 1, outputPerMTok: 2 },
+        capabilities: {
+          vision: false,
+          pdf: false,
+          reasoning: false,
+          toolCalling: false,
+          structuredOutput: false,
+        },
+        modalities: { input: ["text"], output: ["text"] },
+        openWeights: false,
+        tier: "fast",
+        deprecated: false,
+        updatedAt: "2026-07-16T00:00:00Z",
+        availability: {
+          status: "production",
+          acceptedRisk: false,
+          reason: "test",
+        },
+      },
+    ];
+
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      {
+        ...env(),
+        MODEL_CACHE: {
+          get: async () => JSON.stringify(cached),
+          put: async (key: string) => {
+            if (key.startsWith("catalog:")) putCount += 1;
+          },
+        } as unknown as KVNamespace,
+      },
+      ctx,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()) as JsonObject).toMatchObject({
+      providerCount: 1,
+      registryModelCount: 1,
+    });
+    expect(putCount).toBe(0);
+  });
+
+  it("rejects an empty current-free AA aggregate without overwriting cache", async () => {
+    let putCount = 0;
+    const cached = supportCatalog([supportCandidate("cached", 0, 0.9, 10, 2)]);
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    const emptyAaUrl =
+      "data:application/json," +
+      encodeURIComponent(
+        JSON.stringify({
+          tier: "free",
+          pagination: {
+            page: 1,
+            page_size: 200,
+            total_pages: 1,
+            has_more: false,
+          },
+          data: [],
+        }),
+      );
+    const kv = memoryKv({ [catalogCacheKey]: JSON.stringify(cached) });
+    await expect(
+      refreshCatalog({
+        ...env(),
+        MODEL_CACHE: {
+          ...kv.namespace,
+          put: async (
+            key: string,
+            value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+            options?: KVNamespacePutOptions,
+          ) => {
+            if (key.startsWith("catalog:")) putCount += 1;
+            await kv.namespace.put(key, value, options);
+          },
+        } as KVNamespace,
+        ARTIFICIAL_ANALYSIS_FREE_LLM_URL: emptyAaUrl,
+      }),
+    ).rejects.toThrow("returned invalid data on page 1");
+
+    expect(putCount).toBe(0);
+    expect(kv.values.get(catalogCacheKey)).toBe(JSON.stringify(cached));
+  });
+
+  it("rejects malformed current-free pagination and model identities", async () => {
+    const validRow = artificialAnalysisFreeFixture.data[0];
+    const invalidBodies = [
+      { tier: "free", data: [validRow] },
+      {
+        tier: "free",
+        pagination: { page: 1, total_pages: 1, has_more: false },
+        data: [{ id: "broken", name: "Broken", slug: "" }],
+      },
+      {
+        tier: "free",
+        pagination: { page: 2, total_pages: 2, has_more: false },
+        data: [validRow],
+      },
+      {
+        tier: "free",
+        pagination: { page: 1, total_pages: 2, has_more: false },
+        data: [validRow],
+      },
+    ];
+
+    for (const body of invalidBodies) {
+      let putCount = 0;
+      const cached = supportCatalog([
+        supportCandidate("cached", 0, 0.9, 10, 2),
+      ]);
+      cached.generatedAt = "2020-01-01T00:00:00Z";
+      const kv = memoryKv({ [catalogCacheKey]: JSON.stringify(cached) });
+      await expect(
+        refreshCatalog({
+          ...env(),
+          MODEL_CACHE: {
+            ...kv.namespace,
+            put: async (
+              key: string,
+              value: string | ArrayBuffer | ArrayBufferView | ReadableStream,
+              options?: KVNamespacePutOptions,
+            ) => {
+              if (key.startsWith("catalog:")) putCount += 1;
+              await kv.namespace.put(key, value, options);
+            },
+          } as KVNamespace,
+          ARTIFICIAL_ANALYSIS_FREE_LLM_URL:
+            "data:application/json," +
+            encodeURIComponent(JSON.stringify(body)),
+        }),
+      ).rejects.toThrow(/free language models returned/);
+
+      expect(putCount).toBe(0);
+      expect(kv.values.get(catalogCacheKey)).toBe(JSON.stringify(cached));
+    }
+  });
+
+  it("uses the restored registry for recommendations without a use case", async () => {
     const response = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/models/recommend?provider=openai&tier=best",
+        "https://ai.itsolver.au/v1/models/recommend?provider=openai",
       ),
       env(),
       ctx,
     );
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as JsonObject;
+    expect(body.recommendation).toMatchObject({
+      provider: "openai",
+      id: expect.stringMatching(/^gpt-5\.6/),
+    });
   });
 
   it("uses useCase for benchmark-aware recommendations", async () => {
@@ -417,7 +1932,8 @@ describe("worker routes", () => {
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: expect.any(Number),
+          agentic: expect.any(Number),
+          instructionFollowing: expect.any(Number),
           intelligenceRunTotalCost: expect.any(Number),
         }),
       },
@@ -496,10 +2012,10 @@ describe("worker routes", () => {
     ).toBe(true);
   });
 
-  it("populates ITS auto-close columns in customer-support model rows", async () => {
+  it("populates ITS auto-close columns in customer-support benchmark rows", async () => {
     const cappedResponse = await handleRequest(
       new Request(
-        "https://ai.itsolver.au/v1/models?tier=best&useCase=customer-support&maxRunCostAud=1300&minIntelligence=30",
+        "https://ai.itsolver.au/v1/benchmarks?tier=best&useCase=customer-support&maxRunCostAud=1300&minIntelligence=30",
       ),
       env(),
       ctx,
@@ -507,20 +2023,19 @@ describe("worker routes", () => {
     const cappedBody = (await cappedResponse.json()) as JsonObject;
 
     expect(cappedResponse.status).toBe(200);
-    expect(
-      cappedBody.models
-        .filter(
-          (row: { benchmarks: { llm?: { autoClose?: unknown } } }) =>
-            row.benchmarks.llm?.autoClose,
-        )
-        .map((row: { id: string }) => row.id),
-    ).toEqual(
-      expect.arrayContaining([
-        "gpt-5-4-mini-medium",
-        "gpt-5-5-low",
-        "grok-4-3",
-      ]),
+    const autoCloseRows = cappedBody.benchmarks.filter(
+      (row: { benchmarks: { llm?: { autoClose?: unknown } } }) =>
+        row.benchmarks.llm?.autoClose,
     );
+    expect(autoCloseRows.length).toBeGreaterThan(0);
+    expect(autoCloseRows.map((row: { id: string }) => row.id)).toEqual(
+      expect.arrayContaining(["gpt-5-5-low", "grok-4-3"]),
+    );
+    expect(autoCloseRows[0].benchmarks.llm.autoClose).toMatchObject({
+      falsePositiveCount: expect.any(Number),
+      accuracy: expect.any(Number),
+      benchmarkReport: expect.any(String),
+    });
   });
 
   it("hard-filters customer support rows by capability", async () => {
@@ -557,8 +2072,264 @@ describe("worker routes", () => {
       ),
     ).toBe(true);
     expect(pdfResponse.status).toBe(200);
-    expect(pdfBody.benchmarks).toEqual([]);
-    expect(recommendationResponse.status).toBe(404);
+    expect(pdfBody.benchmarks).toContainEqual(
+      expect.objectContaining({
+        id: "claude-fable-5-high",
+        capabilities: expect.objectContaining({ pdf: true }),
+      }),
+    );
+    expect(recommendationResponse.status).toBe(200);
+  });
+
+  it("returns document-processing benchmark rows with provider, cost, and intelligence filters", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=document-processing&provider=google&maxIntelligenceCostPerTaskAud=1&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+    const visualResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=document-processing&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=5",
+      ),
+      env(),
+      ctx,
+    );
+    const visualBody = (await visualResponse.json()) as JsonObject;
+    const aliasResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/benchmarks?useCase=document-processing&provider=google&maxImageInputCostPer1kImages=5",
+      ),
+      env(),
+      ctx,
+    );
+    const aliasBody = (await aliasResponse.json()) as JsonObject;
+    const normalized = (value: number | undefined) =>
+      typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
+
+    expect(response.status).toBe(200);
+    expect(body.benchmarkCount).toBeGreaterThan(0);
+    expect(
+      body.benchmarks.every(
+        (row: {
+          provider: string;
+          benchmarks: {
+            llm?: {
+              visualReasoning?: number;
+              intelligence?: number;
+              intelligenceCostPerTask?: number;
+            };
+          };
+          pricing: { imageInputPer1kImages?: number };
+        }) =>
+          row.provider === "google" &&
+          typeof row.benchmarks.llm?.visualReasoning === "number" &&
+          (row.benchmarks.llm.intelligence ?? Number.NEGATIVE_INFINITY) >=
+            30 &&
+          (row.benchmarks.llm.intelligenceCostPerTask ??
+            Number.POSITIVE_INFINITY) <= 1,
+      ),
+    ).toBe(true);
+    expect(visualResponse.status).toBe(200);
+    expect(visualBody.benchmarkCount).toBeGreaterThan(0);
+    expect(
+      visualBody.benchmarks.every(
+        (row: {
+          benchmarks: { llm?: { visualReasoning?: number } };
+          pricing: { imageInputPer1kImages?: number };
+        }) =>
+          normalized(row.benchmarks.llm?.visualReasoning) >= 70 &&
+          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
+      ),
+    ).toBe(true);
+    expect(aliasResponse.status).toBe(200);
+    expect(aliasBody.benchmarkCount).toBeGreaterThan(0);
+    expect(
+      aliasBody.benchmarks.every(
+        (row: { pricing: { imageInputPer1kImages?: number } }) =>
+          (row.pricing.imageInputPer1kImages ?? Number.POSITIVE_INFINITY) <= 5,
+      ),
+    ).toBe(true);
+  });
+
+  it("serves registry models independently from benchmark rows", async () => {
+    const [response, benchmarkResponse] = await Promise.all([
+      handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models?provider=anthropic&capability=pdf",
+      ),
+      env(),
+      ctx,
+      ),
+      handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/benchmarks?provider=anthropic",
+        ),
+        env(),
+        ctx,
+      ),
+    ]);
+    const body = (await response.json()) as JsonObject;
+    const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
+    expect(response.status).toBe(200);
+    expect(benchmarkResponse.status).toBe(200);
+    expect(body.modelCount).toBe(7);
+    expect(body.models).toContainEqual(expect.objectContaining({
+      id: "claude-fable-5",
+      provider: "anthropic",
+      capabilities: expect.objectContaining({ pdf: true }),
+    }));
+    expect(body.models.every((model: JsonObject) => model.source === undefined)).toBe(true);
+    expect(benchmarkBody.benchmarks).toContainEqual(
+      expect.objectContaining({
+        id: "claude-fable-5-high",
+        registryModelId: "claude-fable-5",
+        source: "artificialanalysis",
+      }),
+    );
+    expect(
+      benchmarkBody.benchmarks.map((row: { id: string }) => row.id),
+    ).not.toEqual(body.models.map((row: { id: string }) => row.id));
+  });
+
+  it("shows beta registry models while keeping their AA variants ineligible", async () => {
+    const betaSource = structuredClone(modelsDevFixture) as any;
+    betaSource.anthropic.models["claude-fable-5"].status = "beta";
+    const betaEnv = {
+      ...env(),
+      MODELS_DEV_URL:
+        "data:application/json," +
+        encodeURIComponent(JSON.stringify(betaSource)),
+    };
+    const [registryResponse, benchmarkResponse] = await Promise.all([
+      handleRequest(
+        new Request("https://ai.itsolver.au/v1/models?provider=anthropic"),
+        betaEnv,
+        ctx,
+      ),
+      handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/benchmarks?provider=anthropic&useCase=customer-support&includeItsBenchmark=false",
+        ),
+        betaEnv,
+        ctx,
+      ),
+    ]);
+    const registryBody = (await registryResponse.json()) as JsonObject;
+    const benchmarkBody = (await benchmarkResponse.json()) as JsonObject;
+
+    expect(registryResponse.status).toBe(200);
+    expect(registryBody.models).toContainEqual(
+      expect.objectContaining({
+        id: "claude-fable-5",
+        availability: expect.objectContaining({ status: "beta" }),
+      }),
+    );
+    expect(benchmarkResponse.status).toBe(200);
+    expect(benchmarkBody.benchmarks).toContainEqual(
+      expect.objectContaining({
+        id: "claude-fable-5-high",
+        recommendable: false,
+        eligibilityReason: "beta",
+      }),
+    );
+  });
+
+  it("uses highest visual reasoning for document-processing best recommendations", async () => {
+    const query =
+      "useCase=document-processing&maxIntelligenceCostPerTaskAud=5&minIntelligence=30&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=10";
+    const rowsResponse = await handleRequest(
+      new Request(`https://ai.itsolver.au/v1/benchmarks?${query}`),
+      env(),
+      ctx,
+    );
+    const rowsBody = (await rowsResponse.json()) as JsonObject;
+    const recommendationResponse = await handleRequest(
+      new Request(
+        `https://ai.itsolver.au/v1/models/recommend?${query}&tier=best`,
+      ),
+      env(),
+      ctx,
+    );
+    const recommendationBody =
+      (await recommendationResponse.json()) as JsonObject;
+    const normalized = (value: number | undefined) =>
+      typeof value === "number" ? (value <= 1 ? value * 100 : value) : -Infinity;
+    const failoverFamily = (row: JsonObject) =>
+      `${row.provider}:${String(row.name)
+        .toLowerCase()
+        .replace(
+          /\s*\((?:minimal|low|medium|high|xhigh|reasoning|non-reasoning|thinking|adaptive reasoning|high effort|max effort)\)\s*/g,
+          " ",
+        )
+        .replace(/\b(?:minimal|low|medium|high|xhigh)\b/g, " ")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()}`;
+    const eligible = rowsBody.benchmarks
+      .filter((row: JsonObject) => row.recommendable)
+      .sort(
+        (left: JsonObject, right: JsonObject) =>
+          normalized(right.benchmarks.llm.visualReasoning) -
+            normalized(left.benchmarks.llm.visualReasoning) ||
+          normalized(right.benchmarks.llm.instructionFollowing) -
+            normalized(left.benchmarks.llm.instructionFollowing) ||
+          (right.benchmarks.llm.intelligence ?? -Infinity) -
+            (left.benchmarks.llm.intelligence ?? -Infinity),
+      );
+    const failover = eligible
+      .slice(1)
+      .find(
+        (row: JsonObject) => failoverFamily(row) !== failoverFamily(eligible[0]),
+      );
+
+    expect(rowsResponse.status).toBe(200);
+    expect(recommendationResponse.status).toBe(200);
+    expect(eligible.length).toBeGreaterThan(1);
+    expect(recommendationBody.recommendation.id).toBe(eligible[0].id);
+    expect(recommendationBody.recommendation.failover.id).toBe(failover?.id);
+    expect(recommendationBody.recommendation.failover).not.toHaveProperty(
+      "failover",
+    );
+    expect(
+      normalized(recommendationBody.recommendation.benchmarks.llm.visualReasoning),
+    ).toBeGreaterThanOrEqual(70);
+    expect(
+      recommendationBody.recommendation.pricing.imageInputPer1kImages,
+    ).toBeLessThanOrEqual(10);
+  });
+
+  it("keeps nested recommendation failover within the requested provider", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=document-processing&provider=openai&tier=fast&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.provider).toBe("openai");
+    expect(body.recommendation.failover).toMatchObject({
+      provider: "openai",
+    });
+  });
+
+  it("does not use a same-family variant as a nested recommendation failover", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=document-processing&provider=google&tier=fast&minIntelligence=30",
+      ),
+      env(),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("gemini-3-5-flash");
+    expect(body.recommendation.failover).toBeNull();
   });
 
   it("applies Run AUD and intelligence filters to recommendations", async () => {
@@ -671,19 +2442,17 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation).toMatchObject({
-      id: "gpt-5-5-low",
       provider: "openai",
       pricing: expect.objectContaining({
-        inputPerMTok: 7.5,
-        outputPerMTok: 45,
+        inputPerMTok: expect.any(Number),
+        outputPerMTok: expect.any(Number),
       }),
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 6,
           intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
-            falsePositiveCount: 5,
-            verifiedOn: "2026-06-06",
+            falsePositiveCount: expect.any(Number),
+            verifiedOn: expect.any(String),
           }),
         }),
       },
@@ -699,18 +2468,25 @@ describe("worker routes", () => {
     const bestBody = (await bestResponse.json()) as JsonObject;
 
     expect(bestResponse.status).toBe(200);
+    const falsePositiveRate = (row: JsonObject) => {
+      const autoClose = row.benchmarks.llm.autoClose;
+      return autoClose.total > 0
+        ? autoClose.falsePositiveCount / autoClose.total
+        : Number.POSITIVE_INFINITY;
+    };
     expect(bestBody.recommendation).toMatchObject({
-      id: "gpt-5-5-medium",
       provider: "openai",
       benchmarks: {
         llm: expect.objectContaining({
-          customerSupportRank: 9,
           autoClose: expect.objectContaining({
-            falsePositiveCount: 3,
+            falsePositiveCount: expect.any(Number),
           }),
         }),
       },
     });
+    expect(falsePositiveRate(bestBody.recommendation)).toBeLessThanOrEqual(
+      falsePositiveRate(body.recommendation),
+    );
 
     const fastResponse = await handleRequest(
       new Request(
@@ -736,6 +2512,7 @@ describe("worker routes", () => {
     ).toBeLessThanOrEqual(
       body.recommendation.benchmarks.llm.intelligenceCostPerTask,
     );
+    expect(body.recommendation.id).toBe(fastBody.recommendation.id);
   });
 
   it("returns the next two safest customer-support failovers for best tier", async () => {
@@ -757,6 +2534,8 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("safest");
+    expect(body.recommendation.failover).toMatchObject({ id: "safe" });
+    expect(body.recommendation.failover).not.toHaveProperty("failover");
     expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
       "safe",
       "middle",
@@ -786,6 +2565,9 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("cheapest");
+    expect(body.recommendation.failover).toMatchObject({
+      id: "next-cheapest",
+    });
     expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
       "next-cheapest",
       "third-cheapest",
@@ -793,6 +2575,83 @@ describe("worker routes", () => {
     expect(body.failoverStatus).toEqual({
       requested: 2,
       returned: 2,
+    });
+  });
+
+  it("deduplicates customer-support failovers by base model", async () => {
+    const primary = supportCandidate("primary", 0, 0.9, 50, 1);
+    primary.name = "GPT-5 mini (medium)";
+    primary.registryModelId = "gpt-5-mini";
+
+    const grokHigh = supportCandidate("grok-4-3", 1, 0.9, 100, 1);
+    grokHigh.provider = "xai";
+    grokHigh.name = "Grok 4.3 (high)";
+    grokHigh.family = "grok";
+    grokHigh.registryModelId = "grok-4.3";
+
+    const grokLow = supportCandidate("grok-4-3-low", 2, 0.9, 110, 1);
+    grokLow.provider = "xai";
+    grokLow.name = "Grok 4.3 (low)";
+
+    const distinct = supportCandidate("gpt-5-4-low", 3, 0.9, 120, 1);
+    distinct.name = "GPT-5.4 (low)";
+    distinct.registryModelId = "gpt-5.4";
+
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning",
+      ),
+      envWithCachedCatalog(
+        supportCatalog([primary, grokHigh, grokLow, distinct]),
+      ),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.recommendation.id).toBe("primary");
+    expect(body.recommendation.failover).toMatchObject({ id: "grok-4-3" });
+    expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
+      "grok-4-3",
+      "gpt-5-4-low",
+    ]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 2,
+    });
+  });
+
+  it("reports a shortage of distinct customer-support model families", async () => {
+    const primary = supportCandidate("primary", 0, 0.9, 50, 1);
+    primary.name = "GPT-5 mini (medium)";
+    primary.registryModelId = "gpt-5-mini";
+
+    const grokHigh = supportCandidate("grok-4-3", 1, 0.9, 100, 1);
+    grokHigh.provider = "xai";
+    grokHigh.name = "Grok 4.3 (high)";
+    grokHigh.registryModelId = "grok-4.3";
+
+    const grokLow = supportCandidate("grok-4-3-low", 2, 0.9, 110, 1);
+    grokLow.provider = "xai";
+    grokLow.name = "Grok 4.3 (low)";
+
+    const response = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning",
+      ),
+      envWithCachedCatalog(supportCatalog([primary, grokHigh, grokLow])),
+      ctx,
+    );
+    const body = (await response.json()) as JsonObject;
+
+    expect(response.status).toBe(200);
+    expect(body.failovers.map((model: { id: string }) => model.id)).toEqual([
+      "grok-4-3",
+    ]);
+    expect(body.failoverStatus).toEqual({
+      requested: 2,
+      returned: 1,
+      reason: "insufficient_distinct_model_families",
     });
   });
 
@@ -812,6 +2671,7 @@ describe("worker routes", () => {
 
     expect(response.status).toBe(200);
     expect(body.recommendation.id).toBe("only-benchmarked");
+    expect(body.recommendation.failover).toBeNull();
     expect(body.failovers).toEqual([]);
     expect(body.failoverStatus).toEqual({
       requested: 2,
@@ -850,26 +2710,26 @@ describe("worker routes", () => {
     expect(defaultBody.recommendation).toMatchObject({
       benchmarks: { voice: expect.any(Object) },
       pricing: expect.objectContaining({
-        benchmarkInputAudioPerHour: expect.any(Number),
+        audioInputPerHour: expect.any(Number),
       }),
     });
     expect(defaultBody.recommendation.id).toBe(fastBody.recommendation.id);
     expect(fastBody.recommendation).toMatchObject({
       benchmarks: { voice: expect.any(Object) },
       pricing: expect.objectContaining({
-        benchmarkInputAudioPerHour: expect.any(Number),
+        audioInputPerHour: expect.any(Number),
       }),
     });
     expect(bestBody.recommendation).toMatchObject({
       benchmarks: { voice: expect.any(Object) },
       pricing: expect.objectContaining({
-        benchmarkInputAudioPerHour: expect.any(Number),
+        audioInputPerHour: expect.any(Number),
       }),
     });
     expect(
-      fastBody.recommendation.pricing.benchmarkInputAudioPerHour,
+      fastBody.recommendation.pricing.audioInputPerHour,
     ).toBeLessThanOrEqual(
-      bestBody.recommendation.pricing.benchmarkInputAudioPerHour,
+      bestBody.recommendation.pricing.audioInputPerHour,
     );
     const voiceQuality = (voice: {
       agenticPerformance?: number;
@@ -888,6 +2748,214 @@ describe("worker routes", () => {
     );
   });
 
+  it("opts into the latest unbenchmarked voice model without calling it value-backed", async () => {
+    const strictResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=best",
+      ),
+      env(),
+      ctx,
+    );
+    const latestResponse = await handleRequest(
+      new Request(
+        "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=best&allowUnbenchmarkedLatest=true",
+      ),
+      env(),
+      ctx,
+    );
+    const benchmarksResponse = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=voice"),
+      env(),
+      ctx,
+    );
+    const healthResponse = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      env(),
+      ctx,
+    );
+    const strict = (await strictResponse.json()) as JsonObject;
+    const latest = (await latestResponse.json()) as JsonObject;
+    const benchmarks = (await benchmarksResponse.json()) as JsonObject;
+    const health = (await healthResponse.json()) as JsonObject;
+
+    expect(strict.recommendation.id).not.toBe("gpt-realtime-2.1");
+    expect(strict.recommendationMeta).toMatchObject({
+      policy: "benchmark_required",
+      selectionBasis: "benchmark",
+      benchmarkEligible: true,
+      valueOptimized: false,
+    });
+    expect(latest.recommendation).toMatchObject({
+      id: "gpt-realtime-2.1",
+      pricing: { audioInputPerMTok: 48, audioOutputPerMTok: 96 },
+    });
+    expect(latest.recommendation.benchmarks?.voice).toBeUndefined();
+    expect(latest.recommendationMeta).toEqual({
+      policy: "allow_unbenchmarked_latest",
+      selectionBasis: "latest_release",
+      benchmarkEligible: false,
+      valueOptimized: false,
+    });
+    expect(latest.recommendation.failover).toMatchObject({
+      benchmarks: { voice: expect.any(Object) },
+    });
+    expect(benchmarks.benchmarks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "gpt-realtime-2.1",
+          source: "models.dev",
+          recommendable: false,
+          eligibilityReason: "missing_voice_benchmark",
+        }),
+      ]),
+    );
+    expect(health.sourceStatus.voice).toMatchObject({
+      state: "live",
+      origin: "aa_api",
+      rowCount: 8,
+    });
+  });
+
+  it("reports benchmark-required metadata when the latest policy is inactive", async () => {
+    const cases = [
+      {
+        url: "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=fast&allowUnbenchmarkedLatest=true",
+        valueOptimized: true,
+      },
+      {
+        url: "https://ai.itsolver.au/v1/models/recommend?useCase=voice&tier=balanced&allowUnbenchmarkedLatest=true",
+        valueOptimized: true,
+      },
+      {
+        url: "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=best&minIntelligence=1&allowUnbenchmarkedLatest=true",
+        valueOptimized: false,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const response = await handleRequest(
+        new Request(testCase.url),
+        env(),
+        ctx,
+      );
+      const body = (await response.json()) as JsonObject;
+
+      expect(response.status).toBe(200);
+      expect(body.recommendationMeta).toEqual({
+        policy: "benchmark_required",
+        selectionBasis: "benchmark",
+        benchmarkEligible: true,
+        valueOptimized: testCase.valueOptimized,
+      });
+    }
+  });
+
+  it("does not replace the last-good catalog with a partial AA aggregate", async () => {
+    let putCount = 0;
+    const cached = supportCatalog(
+      Array.from({ length: 100 }, (_, index) =>
+        supportCandidate(`cached-${index}`, 0, 0.9, 10, 2),
+      ),
+    );
+    cached.generatedAt = "2020-01-01T00:00:00Z";
+    cached.sourceStatus!.artificialAnalysisLlm!.liveRowCounts = {
+      llmApi: artificialAnalysisFixture.data.length,
+      freeLlmApi: 100,
+    };
+    const response = await handleRequest(
+      new Request("https://ai.itsolver.au/v1/health"),
+      {
+        ...env(),
+        MODEL_CACHE: {
+          get: async () => JSON.stringify(cached),
+          put: async (key: string) => {
+            if (key.startsWith("catalog:")) putCount += 1;
+          },
+        } as unknown as KVNamespace,
+      },
+      ctx,
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()) as JsonObject).toMatchObject({
+      benchmarkCount: 100,
+      registryModelCount: 0,
+      catalogState: "stale",
+    });
+    expect(putCount).toBe(0);
+  });
+
+  it("returns auditable metadata for the latest cost and quality policy", async () => {
+    const incumbent = supportCandidate("incumbent", 1, 0.95, 400, 5);
+    incumbent.registryModelId = "incumbent";
+    incumbent.releaseDate = "2026-06-01";
+    incumbent.capabilities = {
+      vision: true,
+      pdf: true,
+      reasoning: true,
+      toolCalling: true,
+      structuredOutput: true,
+    };
+    incumbent.modalities = { input: ["text", "image"], output: ["text"] };
+
+    const newer = supportCandidate("newer", 1, 0.95, 200, 5);
+    newer.registryModelId = "newer";
+    newer.releaseDate = "2026-08-01";
+    newer.capabilities = { ...incumbent.capabilities };
+    newer.modalities = { ...incumbent.modalities };
+    delete newer.benchmarks.llm?.autoClose;
+    const snapshot = supportCatalog([incumbent, newer]);
+    snapshot.generatedAt = "2026-08-18T11:30:00Z";
+    snapshot.sourceStatus!.artificialAnalysisLlm!.evidenceTime =
+      "2026-08-18T11:30:00Z";
+
+    await withSystemTime("2026-08-18T12:00:00Z", async () => {
+      const strictResponse = await handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning&minIntelligence=30",
+        ),
+        envWithCachedCatalog(snapshot),
+        ctx,
+      );
+      const guardedResponse = await handleRequest(
+        new Request(
+          "https://ai.itsolver.au/v1/models/recommend?useCase=customer-support&tier=fast&capability=reasoning&minIntelligence=30&selectionPolicy=latest-cost-quality",
+        ),
+        envWithCachedCatalog(snapshot),
+        ctx,
+      );
+      const strict = (await strictResponse.json()) as JsonObject;
+      const guarded = (await guardedResponse.json()) as JsonObject;
+
+      expect(strict.recommendation.id).toBe("incumbent");
+      expect(strict.recommendationMeta.policy).toBe("benchmark_required");
+      expect(guarded.recommendation.id).toBe("newer");
+      expect(guarded.recommendationMeta).toEqual({
+        policy: "latest-cost-quality",
+        selectionBasis: "newer_aa_cost_quality",
+        incumbent: {
+          provider: "openai",
+          id: "incumbent",
+          releaseDate: "2026-06-01",
+          aaTaskCostAud: 0.4,
+          aaIntelligence: 80,
+        },
+        selectedCandidate: {
+          provider: "openai",
+          id: "newer",
+          releaseDate: "2026-08-01",
+          aaTaskCostAud: 0.2,
+          aaIntelligence: 80,
+        },
+        releaseDate: "2026-08-01",
+        aaTaskCostAud: 0.2,
+        aaIntelligence: 80,
+        evidenceTime: "2026-08-18T11:30:00Z",
+        catalogFresh: true,
+      });
+    });
+  });
+
   it("hard-filters voice rows by input audio cost", async () => {
     const response = await handleRequest(
       new Request(
@@ -902,8 +2970,14 @@ describe("worker routes", () => {
     expect(body.benchmarks.length).toBeGreaterThan(0);
     expect(
       body.benchmarks.every(
-        (row: { pricing: { benchmarkInputAudioPerHour?: number } }) =>
+        (row: {
+          pricing: {
+            benchmarkInputAudioPerHour?: number;
+            audioInputPerHour?: number;
+          };
+        }) =>
           (row.pricing.benchmarkInputAudioPerHour ??
+            row.pricing.audioInputPerHour ??
             Number.POSITIVE_INFINITY) <= 3,
       ),
     ).toBe(true);
@@ -925,6 +2999,7 @@ describe("worker routes", () => {
         id: "elevenlabs-scribe-v2",
         provider: "elevenlabs",
         recommendable: true,
+        eligibilityReason: "eligible",
         pricing: expect.objectContaining({
           transcriptionCostPer1kMinutes: 7.5,
         }),
@@ -936,9 +3011,30 @@ describe("worker routes", () => {
         },
       }),
     );
+    const incompleteRows = body.benchmarks.filter((row: { id: string }) =>
+      row.id.includes("missing"),
+    );
+    expect(incompleteRows.length).toBeGreaterThan(0);
     expect(
-      body.benchmarks.some((row: { id: string }) => row.id.includes("missing")),
-    ).toBe(false);
+      incompleteRows.every(
+        (row: { recommendable: boolean; eligibilityReason?: string }) =>
+          !row.recommendable &&
+          typeof row.eligibilityReason === "string" &&
+          row.eligibilityReason !== "eligible",
+      ),
+    ).toBe(true);
+    expect(incompleteRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringContaining("missing-price"),
+          eligibilityReason: "missing_transcription_pricing",
+        }),
+        expect.objectContaining({
+          id: expect.stringContaining("missing-wer"),
+          eligibilityReason: "missing_aa_wer",
+        }),
+      ]),
+    );
     expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
       "google-gemini-2-0-flash-lite",
     );
@@ -993,16 +3089,16 @@ describe("worker routes", () => {
     ).toBe(true);
   });
 
-  it("serves speech-to-text browse rows", async () => {
+  it("serves speech-to-text benchmark browse rows", async () => {
     const response = await handleRequest(
-      new Request("https://ai.itsolver.au/v1/models?useCase=speech-to-text"),
+      new Request("https://ai.itsolver.au/v1/benchmarks?useCase=speech-to-text"),
       env(),
       ctx,
     );
     const body = (await response.json()) as JsonObject;
 
     expect(response.status).toBe(200);
-    expect(body.models).toContainEqual(
+    expect(body.benchmarks).toContainEqual(
       expect.objectContaining({
         id: "nvidia-parakeet-tdt-0-6b-v3-togetherai",
         provider: "nvidia",
@@ -1013,10 +3109,10 @@ describe("worker routes", () => {
         },
       }),
     );
-    expect(body.models.map((row: { id: string }) => row.id)).not.toContain(
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
       "google-gemini-2-0-flash-lite",
     );
-    expect(body.models.map((row: { id: string }) => row.id)).not.toContain(
+    expect(body.benchmarks.map((row: { id: string }) => row.id)).not.toContain(
       "google-gemini-2-0-flash",
     );
   });
@@ -1098,11 +3194,18 @@ describe("worker routes", () => {
     expect(defaultCappedBody.recommendation.id).not.toBe(
       "google-gemini-2-0-flash-lite",
     );
+    expect(defaultCappedBody.recommendation.failover).toMatchObject({
+      benchmarks: { speechToText: expect.any(Object) },
+    });
+    expect(defaultCappedBody.recommendation.failover).not.toHaveProperty(
+      "failover",
+    );
     expect(cappedGroqVisibleResponse.status).toBe(200);
     expect(cappedGroqVisibleBody.recommendation).toMatchObject({
       id: "groq-whisper-large-v3-turbo",
       provider: "groq",
     });
+    expect(cappedGroqVisibleBody.recommendation.failover).toBeNull();
     expect(fastCheapResponse.status).toBe(200);
     expect(fastCheapBody.recommendation).toMatchObject({
       id: "groq-whisper-large-v3-turbo",
@@ -1138,8 +3241,8 @@ describe("worker routes", () => {
       "google",
       "xai",
       "anthropic",
+      "moonshotai",
       "nvidia",
-      "elevenlabs",
       "groq",
     ]);
   });

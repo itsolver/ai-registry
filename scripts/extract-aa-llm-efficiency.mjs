@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,12 +50,12 @@ async function main() {
   }
 
   const html = await response.text();
-  const initialRecords = extractLlmEfficiencyRecords(html);
   const visionHtml = await fetchOptionalPage(VISION_SOURCE_URL);
-  const comparisonPages = await fetchComparisonPages(html, initialRecords);
+  const sourcePages = [html, visionHtml].filter(Boolean);
+  const initialRecords = extractLlmEfficiencyRecordsFromPages(sourcePages);
+  const comparisonPages = await fetchComparisonPages(sourcePages, initialRecords);
   const records = extractLlmEfficiencyRecordsFromPages([
-    html,
-    ...(visionHtml ? [visionHtml] : []),
+    ...sourcePages,
     ...comparisonPages,
   ]).sort((left, right) => left.slug.localeCompare(right.slug));
 
@@ -84,20 +82,25 @@ async function fetchOptionalPage(url) {
       },
     });
     if (!response.ok) {
-      console.warn(`Skipping ${url}: Artificial Analysis returned ${response.status}`);
-      return undefined;
+      console.warn(
+        `Skipping ${url}: Artificial Analysis returned ${response.status}`,
+      );
+      return "";
     }
     return await response.text();
   } catch (error) {
     console.warn(
       `Skipping ${url}: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return undefined;
+    return "";
   }
 }
 
-async function fetchComparisonPages(sourceHtml, initialRecords) {
-  const allModels = extractNextFlightModelRecords(sourceHtml);
+async function fetchComparisonPages(sourceHtmlPages, initialRecords) {
+  const pagesToSearch = Array.isArray(sourceHtmlPages)
+    ? sourceHtmlPages
+    : [sourceHtmlPages];
+  const allModels = pagesToSearch.flatMap(extractNextFlightModelRecords);
   const existingTaskSlugs = new Set(
     initialRecords
       .filter((record) => record.intelligenceCostPerTask !== undefined)
@@ -180,15 +183,31 @@ export function extractLlmEfficiencyRecordsFromPages(htmlPages) {
     }
   }
   const allModels = [...allModelsBySlug.values()];
-  const frontierModels = allModels.filter(
+  const explicitlyFrontierModels = allModels.filter(
     (record) => record.frontier_model === true,
   );
-  if (!frontierModels.length) {
-    throw new Error("No Artificial Analysis frontier model records found in Next Flight data");
+  const seedModels = explicitlyFrontierModels.length
+    ? explicitlyFrontierModels
+    : allModels.filter(hasNextFlightBenchmarkSignal);
+  if (!seedModels.length) {
+    throw new Error("No Artificial Analysis model records found in Next Flight data");
   }
 
   const datasets = mergeJsonLdDatasets(htmlPages.map(extractJsonLdDatasets));
-  return mergeDatasets(datasets, frontierModels, allModels);
+  return mergeDatasets(datasets, seedModels, allModels);
+}
+
+function hasNextFlightBenchmarkSignal(model) {
+  return [
+    model.intelligence_index,
+    model.agentic_index,
+    model.ifbench,
+    model.tau2,
+    model.mmmu_pro,
+    model.price_1m_input_tokens,
+    model.price_1m_output_tokens,
+    model.price_per_1k_1mp_images,
+  ].some((value) => numberOrUndefined(value) !== undefined);
 }
 
 export function extractJsonLdDatasets(html) {
@@ -383,10 +402,10 @@ function mergeDatasets(datasets, frontierModels, allModels = frontierModels) {
         record.agenticIndex !== undefined ||
         record.ifbench !== undefined ||
         record.tau2 !== undefined ||
+        record.visualReasoning !== undefined ||
         record.intelligenceRunTotalCost !== undefined ||
         record.intelligenceCostPerTask !== undefined ||
-        record.intelligenceRunOutputTokens !== undefined ||
-        record.visualReasoning !== undefined,
+        record.intelligenceRunOutputTokens !== undefined,
     );
 }
 
@@ -401,6 +420,15 @@ function nextFlightValues(model) {
   return {
     provider: stringOrUndefined(model.model_creators?.slug),
     contextWindowTokens: numberOrUndefined(model.context_window_tokens),
+    visualReasoning: numberOrUndefined(model.mmmu_pro),
+    visualOutputSpeed: numberOrUndefined(model.timescaleData?.median_output_speed),
+    visualLatency: positiveNumberOrUndefined(
+      numberOrUndefined(model.time_to_first_answer_token_metrics?.total_time) ??
+        numberOrUndefined(model.timescaleData?.median_time_to_first_chunk),
+    ),
+    imageInputPrice: numberOrUndefined(model.price_per_1k_1mp_images),
+    imageInput: booleanOrUndefined(model.input_modality_image),
+    reasoning: booleanOrUndefined(model.reasoning_model),
     intelligenceIndex: numberOrUndefined(model.intelligence_index),
     agenticIndex: numberOrUndefined(model.agentic_index),
     ifbench: numberOrUndefined(model.ifbench),
@@ -411,7 +439,6 @@ function nextFlightValues(model) {
     sciCode: numberOrUndefined(model.scicode),
     codingIndex: numberOrUndefined(model.coding_index),
     lcr: numberOrUndefined(model.lcr),
-    visualReasoning: numberOrUndefined(model.mmmu_pro),
     hle: numberOrUndefined(model.hle),
     gpqa: numberOrUndefined(model.gpqa),
     critpt: numberOrUndefined(model.critpt),
@@ -428,10 +455,7 @@ function nextFlightValues(model) {
     ),
     inputPrice: numberOrUndefined(model.price_1m_input_tokens),
     outputPrice: numberOrUndefined(model.price_1m_output_tokens),
-    imageInputPrice: numberOrUndefined(model.price_per_1k_1mp_images),
     cacheHitPrice: numberOrUndefined(model.cache_hit_price),
-    imageInput: booleanOrUndefined(model.input_modality_image),
-    reasoning: booleanOrUndefined(model.reasoning_model),
     intelligenceRunAnswerCost: numberOrUndefined(model.intelligence_index_cost?.answer_cost),
     intelligenceRunReasoningCost: numberOrUndefined(
       model.intelligence_index_cost?.reasoning_cost,
@@ -449,10 +473,6 @@ function nextFlightValues(model) {
       model.intelligence_index_token_counts?.output_tokens,
     ),
   };
-}
-
-function booleanOrUndefined(value) {
-  return typeof value === "boolean" ? value : undefined;
 }
 
 function upsertModelBacked(bySlug, allModelsBySlug, item, values) {
@@ -580,6 +600,14 @@ function stringOrUndefined(value) {
 
 function numberOrUndefined(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function positiveNumberOrUndefined(value) {
+  return value === undefined || value <= 0 ? undefined : value;
+}
+
+function booleanOrUndefined(value) {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function optionalNumber(key, value) {

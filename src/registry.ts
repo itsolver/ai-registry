@@ -7,12 +7,20 @@ import { AA_CUSTOMER_SUPPORT_RECOMMENDATIONS } from "./generated/aa-customer-sup
 import { AA_LLM_EFFICIENCY_MODELS } from "./generated/aa-llm-efficiency";
 import { AA_LLM_PRICING_MODELS } from "./generated/aa-llm-pricing";
 import { AI_AUTOCLOSE_BENCHMARKS } from "./generated/ai-autoclose-benchmarks";
+import {
+  ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+  ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+  ARENA_FRONTEND_WEBDEV_MODELS,
+  ARENA_FRONTEND_WEBDEV_SOURCE_URL,
+  ARENA_FRONTEND_WEBDEV_VOTE_CUTOFF_AT,
+} from "./generated/arena-frontend-webdev";
 
 export const SUPPORTED_PROVIDERS = [
   "openai",
   "google",
   "xai",
   "anthropic",
+  "moonshotai",
   "nvidia",
   "elevenlabs",
   "groq",
@@ -30,6 +38,7 @@ export const TIERS = ["fast", "balanced", "best"] as const;
 export const USE_CASES = [
   "customer-support",
   "document-processing",
+  "front-end-web-dev",
   "voice",
   "speech-to-text",
 ] as const;
@@ -39,6 +48,7 @@ const RECOMMENDABLE_PROVIDER_FAMILY_PREFIXES = {
   google: ["gemini"],
   xai: ["grok"],
   anthropic: ["claude"],
+  moonshotai: ["kimi"],
   nvidia: ["nvidia", "parakeet", "canary"],
   elevenlabs: ["elevenlabs", "scribe"],
   groq: ["groq", "whisper"],
@@ -49,6 +59,7 @@ const PROVIDER_DISPLAY_NAMES = {
   google: "Google",
   xai: "xAI",
   anthropic: "Anthropic",
+  moonshotai: "Moonshot AI",
   nvidia: "NVIDIA",
   elevenlabs: "ElevenLabs",
   groq: "Groq",
@@ -67,7 +78,11 @@ const NON_WORK_MODEL_PATTERNS = [
   "video",
 ] as const;
 
+const REDUCED_CAPABILITY_MODEL_PATTERN =
+  /(^|[-_\s])(fast|flash|haiku|instant|lite|micro|mini|nano|small)($|[-_\s])/;
+
 const NEAR_RETIREMENT_DAYS = 90;
+const VOICE_FALLBACK_MAX_AGE_DAYS = 14;
 const MODEL_RETIREMENT_DATES = {
   "gemini-2-0-flash": "2026-06-01",
   "gemini-2-0-flash-lite": "2026-06-01",
@@ -85,6 +100,8 @@ export interface ModelPricing {
   cacheWritePerMTok?: number;
   audioInputPerHour?: number;
   audioOutputPerHour?: number;
+  audioInputPerMTok?: number;
+  audioOutputPerMTok?: number;
   benchmarkInputAudioPerHour?: number;
   benchmarkCostPerTask?: number;
   transcriptionCostPer1kMinutes?: number;
@@ -92,6 +109,7 @@ export interface ModelPricing {
 }
 
 export interface VoiceBenchmarks {
+  qualityIndex?: number;
   speechReasoning?: number;
   agenticPerformance?: number;
   telecomAgenticPerformance?: number;
@@ -101,6 +119,18 @@ export interface VoiceBenchmarks {
   timeToFirstAudioSeconds?: number;
   source: "artificialanalysis";
   extractedAt: string;
+  stale?: boolean;
+}
+
+export interface VoiceSourceStatus {
+  state: "live" | "fallback_fresh" | "fallback_stale" | "unavailable";
+  origin:
+    | "aa_api"
+    | "aa_public_page"
+    | "kv_last_known_good"
+    | "bundled_snapshot";
+  fetchedAt?: string;
+  rowCount: number;
 }
 
 export interface SpeechToTextBenchmarks {
@@ -115,11 +145,32 @@ export interface SpeechToTextBenchmarks {
   extractedAt: string;
 }
 
+export interface FrontendWebDevBenchmarks {
+  score: number;
+  rank: number;
+  rankLow: number;
+  rankHigh: number;
+  confidence: number;
+  votes: number;
+  preliminary: boolean;
+  source: "arena";
+  sourceUrl: string;
+  extractedAt: string;
+  voteCutoffAt: string;
+  configuration?: {
+    displayLabel: string;
+    reasoningMode?: "thinking";
+    effort?: "high" | "xhigh";
+    harness?: "codex";
+  };
+}
+
 export type ModelAvailabilityStatus =
   | "production"
   | "deprecated"
   | "retired"
   | "preview"
+  | "beta"
   | "experimental"
   | "latest-alias"
   | "near-retirement"
@@ -193,10 +244,12 @@ export interface RegistryModel {
   tier: Tier;
   deprecated: boolean;
   updatedAt: string;
+  availability?: ModelAvailabilityMetadata;
   benchmarks?: {
     voice?: VoiceBenchmarks;
     llm?: BenchmarkSignals;
     speechToText?: SpeechToTextBenchmarks;
+    frontendWebDev?: FrontendWebDevBenchmarks;
   };
 }
 
@@ -215,21 +268,77 @@ export interface Catalog {
   activeModelCount: number;
   providers: ProviderSummary[];
   models: RegistryModel[];
+  sourceStatus?: {
+    artificialAnalysisLlm?: ArtificialAnalysisLlmSourceStatus;
+    voice?: VoiceSourceStatus;
+  };
 }
+
+export interface ArtificialAnalysisLlmSourceStatus {
+  state: "live" | "bundled";
+  evidenceTime: string | null;
+  liveRowCount: number;
+  liveRowCounts?: {
+    llmApi: number;
+    freeLlmApi: number;
+  };
+  liveCandidateIds: string[];
+}
+
+export interface ModelsDevProvider {
+  models?: Record<string, ModelsDevModel>;
+}
+
+export interface ModelsDevModel {
+  id?: unknown;
+  name?: unknown;
+  family?: unknown;
+  attachment?: unknown;
+  reasoning?: unknown;
+  tool_call?: unknown;
+  structured_output?: unknown;
+  knowledge?: unknown;
+  release_date?: unknown;
+  last_updated?: unknown;
+  modalities?: {
+    input?: unknown;
+    output?: unknown;
+  };
+  open_weights?: unknown;
+  limit?: {
+    context?: unknown;
+    input?: unknown;
+    output?: unknown;
+  };
+  cost?: {
+    input?: unknown;
+    output?: unknown;
+    cache_read?: unknown;
+    cache_write?: unknown;
+    input_audio?: unknown;
+    output_audio?: unknown;
+  };
+  status?: unknown;
+}
+
+export type ModelsDevDocument = Record<string, ModelsDevProvider>;
 
 export interface BenchmarkCandidate {
   id: string;
   provider: ProviderId;
   name: string;
-  source: "artificialanalysis";
+  source: "artificialanalysis" | "models.dev" | "arena";
   benchmarks: {
     voice?: VoiceBenchmarks;
     llm?: BenchmarkSignals;
     speechToText?: SpeechToTextBenchmarks;
+    frontendWebDev?: FrontendWebDevBenchmarks;
   };
   pricing: ModelPricing;
   registryModelId?: string;
+  registryMappingTargetId?: string;
   recommendable: boolean;
+  eligibilityReason?: string;
   availability?: ModelAvailabilityMetadata;
   family: string | null;
   contextWindow: number | null;
@@ -266,6 +375,8 @@ export interface ModelFilters {
   minIntelligenceCostPerTaskUsd?: number;
   maxIntelligenceCostPerTaskUsd?: number;
   minIntelligence?: number;
+  minVisualReasoning?: number;
+  maxImageInputCostPer1kImagesAud?: number;
   maxAudioInputCostPerHour?: number;
   maxAudioOutputCostPerHour?: number;
   maxTranscriptionCostPer1kMinutes?: number;
@@ -274,6 +385,20 @@ export interface ModelFilters {
   maxContextWindow?: number;
   includeItsBenchmark?: boolean;
   allowPreview?: boolean;
+  allowUnbenchmarkedLatest?: boolean;
+  selectionPolicy?: "latest-cost-quality";
+}
+
+export interface LatestCostQualitySelection {
+  incumbent?: BenchmarkCandidate;
+  selected?: BenchmarkCandidate;
+  selectionBasis:
+    | "newer_aa_cost_quality"
+    | "benchmark_incumbent"
+    | "stale_catalog_incumbent"
+    | "missing_incumbent";
+  catalogFresh: boolean;
+  evidenceTime: string | null;
 }
 
 export type RecommendedModel = RegistryModel | BenchmarkCandidate;
@@ -290,6 +415,10 @@ export interface ArtificialAnalysisModel {
   median_output_tokens_per_second?: unknown;
   median_time_to_first_token_seconds?: unknown;
   median_time_to_first_answer_token?: unknown;
+  release_date?: unknown;
+  reasoning_model?: unknown;
+  performance?: unknown;
+  artificial_analysis_intelligence_index_cost?: unknown;
   pricing?: unknown;
   prices?: unknown;
   price?: unknown;
@@ -302,6 +431,7 @@ export interface ArtificialAnalysisModel {
   price_1m_output_tokens?: unknown;
   input_cost_per_million_tokens?: unknown;
   output_cost_per_million_tokens?: unknown;
+  price_per_1k_1mp_images?: unknown;
 }
 
 export interface ArtificialAnalysisSpeechToTextModel {
@@ -348,7 +478,7 @@ export interface BenchmarkSignals {
   customerSupportRank?: number;
 }
 
-interface ArtificialAnalysisSpeechToSpeechModel {
+export interface ArtificialAnalysisSpeechToSpeechModel {
   id: string;
   name: string;
   shortName: string;
@@ -356,6 +486,7 @@ interface ArtificialAnalysisSpeechToSpeechModel {
   provider: string;
   providerName: string;
   modelSlug: string;
+  s2sQualityIndex?: number;
   bbaScore?: number;
   tauVoiceAggScore?: number;
   tauVoiceTelecomScore?: number;
@@ -394,12 +525,12 @@ interface ArtificialAnalysisLlmEfficiencyModel {
   omniscienceIndex?: number;
   outputSpeed?: number;
   latency?: number;
-  cacheHitPrice?: number;
-  inputPrice?: number;
-  outputPrice?: number;
   imageInputPrice?: number;
   imageInput?: boolean;
   reasoning?: boolean;
+  cacheHitPrice?: number;
+  inputPrice?: number;
+  outputPrice?: number;
   intelligenceRunAnswerCost?: number;
   intelligenceRunReasoningCost?: number;
   intelligenceRunInputCost?: number;
@@ -533,6 +664,10 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
     params.get("maxIntelligenceCostPerTaskUsd"),
   );
   const minIntelligence = asFiniteNumber(params.get("minIntelligence"));
+  const minVisualReasoning = asFiniteNumber(params.get("minVisualReasoning"));
+  const maxImageInputCostPer1kImagesAud =
+    asFiniteNumber(params.get("maxImageInputCostPer1kImagesAud")) ??
+    asFiniteNumber(params.get("maxImageInputCostPer1kImages"));
   const maxAudioInputCostPerHour =
     asFiniteNumber(params.get("maxAudioInputCostPerHour")) ??
     asFiniteNumber(params.get("maxAudioCostPerHour"));
@@ -573,6 +708,10 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
       ? { maxIntelligenceCostPerTaskUsd }
       : {}),
     ...(minIntelligence !== undefined ? { minIntelligence } : {}),
+    ...(minVisualReasoning !== undefined ? { minVisualReasoning } : {}),
+    ...(maxImageInputCostPer1kImagesAud !== undefined
+      ? { maxImageInputCostPer1kImagesAud }
+      : {}),
     ...(maxAudioInputCostPerHour !== undefined
       ? { maxAudioInputCostPerHour }
       : {}),
@@ -590,6 +729,30 @@ export function parseFilters(params: URLSearchParams): ModelFilters {
       params.get("includeItsBenchmark") !== "false" &&
       params.get("includeITSBenchmark") !== "false",
     allowPreview: params.get("allowPreview") === "true",
+    allowUnbenchmarkedLatest:
+      params.get("allowUnbenchmarkedLatest") === "true",
+    ...(params.get("selectionPolicy") === "latest-cost-quality"
+      ? { selectionPolicy: "latest-cost-quality" as const }
+      : {}),
+  };
+}
+
+function llmSourceStatus(
+  models: ArtificialAnalysisModel[],
+  evidenceTime: string,
+): ArtificialAnalysisLlmSourceStatus {
+  const liveCandidateIds = [
+    ...new Set(
+      models
+        .map((model) => stringValue(model.slug ?? model.id, ""))
+        .filter(Boolean),
+    ),
+  ];
+  return {
+    state: liveCandidateIds.length > 0 ? "live" : "bundled",
+    evidenceTime: liveCandidateIds.length > 0 ? evidenceTime : null,
+    liveRowCount: liveCandidateIds.length,
+    liveCandidateIds,
   };
 }
 
@@ -598,8 +761,18 @@ export function normalizeArtificialAnalysisCatalog(
   exchangeRate?: ExchangeRate,
   artificialAnalysisModels: ArtificialAnalysisModel[] = [],
   artificialAnalysisSpeechToTextModels: ArtificialAnalysisSpeechToTextModel[] = [],
+  artificialAnalysisSpeechToSpeechModels: ArtificialAnalysisSpeechToSpeechModel[] = [
+    ...(AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]),
+  ],
+  voiceSourceStatus: VoiceSourceStatus = bundledVoiceSourceStatus(generatedAt),
+  artificialAnalysisLlmSourceStatus: ArtificialAnalysisLlmSourceStatus =
+    llmSourceStatus(artificialAnalysisModels, generatedAt),
 ): Catalog {
-  const voiceModels = normalizeSpeechToSpeechModels(exchangeRate);
+  const voiceModels = normalizeSpeechToSpeechModels(
+    artificialAnalysisSpeechToSpeechModels,
+    voiceSourceStatus,
+    exchangeRate,
+  );
   const speechToTextModels = [
     ...(AA_SPEECH_TO_TEXT_MODELS as readonly ArtificialAnalysisSpeechToTextModel[]),
     ...artificialAnalysisSpeechToTextModels,
@@ -632,6 +805,85 @@ export function normalizeArtificialAnalysisCatalog(
     ).length,
     providers,
     models: [],
+    sourceStatus: {
+      artificialAnalysisLlm: artificialAnalysisLlmSourceStatus,
+      voice: voiceSourceStatus,
+    },
+  };
+}
+
+export function normalizeModelsDevCatalog(
+  source: ModelsDevDocument,
+  generatedAt = new Date().toISOString(),
+  exchangeRate?: ExchangeRate,
+  artificialAnalysisModels: ArtificialAnalysisModel[] = [],
+  artificialAnalysisSpeechToTextModels: ArtificialAnalysisSpeechToTextModel[] = [],
+  artificialAnalysisSpeechToSpeechModels: ArtificialAnalysisSpeechToSpeechModel[] = [
+    ...(AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]),
+  ],
+  voiceSourceStatus: VoiceSourceStatus = bundledVoiceSourceStatus(generatedAt),
+  artificialAnalysisLlmSourceStatus: ArtificialAnalysisLlmSourceStatus =
+    llmSourceStatus(artificialAnalysisModels, generatedAt),
+): Catalog {
+  const registryModels: RegistryModel[] = [];
+
+  for (const provider of SUPPORTED_PROVIDERS) {
+    const rawProvider = source[provider];
+    if (!rawProvider?.models) continue;
+
+    for (const [modelKey, rawModel] of Object.entries(rawProvider.models)) {
+      registryModels.push(
+        normalizeModelsDevModel(
+          provider,
+          modelKey,
+          rawModel,
+          generatedAt,
+          exchangeRate,
+        ),
+      );
+    }
+  }
+
+  const tieredModels = assignRegistryTiers(registryModels);
+  const voiceModels = normalizeSpeechToSpeechModels(
+    artificialAnalysisSpeechToSpeechModels,
+    voiceSourceStatus,
+    exchangeRate,
+  );
+  const speechToTextModels = [
+    ...(AA_SPEECH_TO_TEXT_MODELS as readonly ArtificialAnalysisSpeechToTextModel[]),
+    ...artificialAnalysisSpeechToTextModels,
+  ];
+  const benchmarkCandidates = buildBenchmarkCandidates(
+    [...tieredModels, ...voiceModels],
+    artificialAnalysisModels,
+    speechToTextModels,
+    exchangeRate,
+    generatedAt,
+  );
+  const models = enrichRegistryModels(tieredModels, benchmarkCandidates);
+  const benchmarkSignals = Object.fromEntries(
+    benchmarkCandidates
+      .filter((candidate) => candidate.benchmarks.llm)
+      .map((candidate) => [
+        `${candidate.provider}:${candidate.id}`,
+        candidate.benchmarks.llm!,
+      ]),
+  );
+
+  return {
+    generatedAt,
+    ...(exchangeRate ? { exchangeRate } : {}),
+    ...(Object.keys(benchmarkSignals).length ? { benchmarkSignals } : {}),
+    ...(benchmarkCandidates.length ? { benchmarkCandidates } : {}),
+    modelCount: models.length,
+    activeModelCount: models.filter((model) => !model.deprecated).length,
+    providers: buildRegistryProviderSummaries(models),
+    models,
+    sourceStatus: {
+      artificialAnalysisLlm: artificialAnalysisLlmSourceStatus,
+      voice: voiceSourceStatus,
+    },
   };
 }
 
@@ -639,12 +891,18 @@ export function filterModels(
   models: RegistryModel[],
   filters: ModelFilters,
 ): RegistryModel[] {
-  return models.filter((model) => {
+  return models.map(withoutExpiredFrontendWebDevModelEvidence).filter((model) => {
     if (filters.unsupportedProvider) return false;
     if (model.deprecated) return false;
     if (filters.provider && model.provider !== filters.provider) return false;
     if (filters.useCase === "voice" && !isVoiceModel(model)) return false;
     if (filters.useCase === "speech-to-text" && !isSpeechToTextModel(model)) {
+      return false;
+    }
+    if (
+      filters.useCase === "document-processing" &&
+      !isDocumentProcessingModel(model)
+    ) {
       return false;
     }
     if (filters.tier && model.tier !== filters.tier) return false;
@@ -683,6 +941,21 @@ export function filterModels(
       filters.minIntelligence !== undefined &&
       (model.benchmarks?.llm?.intelligence === undefined ||
         model.benchmarks.llm.intelligence < filters.minIntelligence)
+    ) {
+      return false;
+    }
+    if (
+      filters.minVisualReasoning !== undefined &&
+      ((normalizedBenchmarkScore(model.benchmarks?.llm?.visualReasoning) ??
+        Number.NEGATIVE_INFINITY) < filters.minVisualReasoning)
+    ) {
+      return false;
+    }
+    if (
+      filters.maxImageInputCostPer1kImagesAud !== undefined &&
+      (model.pricing.imageInputPer1kImages === undefined ||
+        model.pricing.imageInputPer1kImages >
+          filters.maxImageInputCostPer1kImagesAud)
     ) {
       return false;
     }
@@ -730,6 +1003,27 @@ export function filterModels(
   });
 }
 
+function withoutExpiredFrontendWebDevModelEvidence(
+  model: RegistryModel,
+): RegistryModel {
+  const frontendWebDev = model.benchmarks?.frontendWebDev;
+  if (!frontendWebDev || frontendWebDevSnapshotIsFresh(frontendWebDev)) {
+    return model;
+  }
+
+  const benchmarks: NonNullable<RegistryModel["benchmarks"]> = {
+    ...model.benchmarks,
+  };
+  delete benchmarks.frontendWebDev;
+  if (Object.values(benchmarks).some(Boolean)) {
+    return { ...model, benchmarks };
+  }
+
+  const sanitized = { ...model };
+  delete sanitized.benchmarks;
+  return sanitized;
+}
+
 export function recommendModel(
   catalog: Catalog,
   filters: ModelFilters,
@@ -742,7 +1036,40 @@ export function rankedRecommendedModels(
   filters: ModelFilters,
 ): RecommendedModel[] {
   if (filters.useCase) {
-    return rankedBenchmarkRecommendations(catalog, filters);
+    if (
+      filters.useCase === "customer-support" &&
+      filters.selectionPolicy === "latest-cost-quality"
+    ) {
+      const selection = latestCostQualitySelection(catalog, filters);
+      const benchmarked = rankedBenchmarkRecommendations(catalog, {
+        ...filters,
+        selectionPolicy: undefined,
+        allowUnbenchmarkedLatest: false,
+        includeItsBenchmark: true,
+      });
+      if (
+        selection.selected &&
+        selection.selected.id !== selection.incumbent?.id
+      ) {
+        return [
+          selection.selected,
+          ...benchmarked.filter(
+            (candidate) =>
+              candidate.id !== selection.selected?.id ||
+              candidate.provider !== selection.selected?.provider,
+          ),
+        ];
+      }
+      return benchmarked;
+    }
+    const benchmarked = rankedBenchmarkRecommendations(catalog, filters);
+    const latest = latestUnbenchmarkedRecommendation(catalog, filters);
+    return latest
+      ? [
+          latest,
+          ...benchmarked.filter((candidate) => candidate.id !== latest.id),
+        ]
+      : benchmarked;
   }
 
   const tier = recommendationTier(filters);
@@ -755,21 +1082,260 @@ export function rankedRecommendedModels(
   );
 }
 
+const LATEST_COST_QUALITY_MAX_CATALOG_AGE_MS = 24 * 60 * 60 * 1000;
+
+export function latestCostQualitySelection(
+  catalog: Catalog,
+  filters: ModelFilters,
+  now = Date.now(),
+): LatestCostQualitySelection {
+  const incumbentFilters: ModelFilters = {
+    ...filters,
+    selectionPolicy: undefined,
+    allowUnbenchmarkedLatest: false,
+    includeItsBenchmark: true,
+  };
+  const incumbent = rankedBenchmarkRecommendations(
+    catalog,
+    incumbentFilters,
+  )[0];
+  const generatedAt = Date.parse(catalog.generatedAt);
+  const evidenceTime =
+    catalog.sourceStatus?.artificialAnalysisLlm?.evidenceTime ?? null;
+  const evidenceTimestamp = evidenceTime ? Date.parse(evidenceTime) : NaN;
+  const catalogAge = now - generatedAt;
+  const evidenceAge = now - evidenceTimestamp;
+  const catalogFresh =
+    Number.isFinite(generatedAt) &&
+    catalogAge >= 0 &&
+    catalogAge <= LATEST_COST_QUALITY_MAX_CATALOG_AGE_MS &&
+    catalog.sourceStatus?.artificialAnalysisLlm?.state === "live" &&
+    Number.isFinite(evidenceTimestamp) &&
+    evidenceAge >= 0 &&
+    evidenceAge <= LATEST_COST_QUALITY_MAX_CATALOG_AGE_MS;
+
+  if (!incumbent) {
+    return {
+      selectionBasis: "missing_incumbent",
+      catalogFresh,
+      evidenceTime,
+    };
+  }
+  if (!catalogFresh) {
+    return {
+      incumbent,
+      selected: incumbent,
+      selectionBasis: "stale_catalog_incumbent",
+      catalogFresh,
+      evidenceTime,
+    };
+  }
+
+  const incumbentSignals = incumbent.benchmarks.llm;
+  const incumbentCost = incumbentSignals?.intelligenceCostPerTask;
+  const incumbentIntelligence = incumbentSignals?.intelligence;
+  const incumbentRelease = candidateDateValue(incumbent.releaseDate);
+  const liveCandidateIds = new Set(
+    catalog.sourceStatus?.artificialAnalysisLlm?.liveCandidateIds ?? [],
+  );
+  if (
+    !liveCandidateIds.has(incumbent.id) ||
+    !isNumber(incumbentCost) ||
+    !isNumber(incumbentIntelligence) ||
+    incumbentRelease <= 0
+  ) {
+    return {
+      incumbent,
+      selected: incumbent,
+      selectionBasis: "benchmark_incumbent",
+      catalogFresh,
+      evidenceTime,
+    };
+  }
+
+  const candidateFilters: ModelFilters = {
+    ...filters,
+    selectionPolicy: undefined,
+    allowUnbenchmarkedLatest: false,
+    includeItsBenchmark: false,
+  };
+  const tier = recommendationTier(filters);
+  const candidates = benchmarkCandidates(catalog, candidateFilters)
+    .filter((candidate) => liveCandidateIds.has(candidate.id))
+    .filter((candidate) =>
+      isBenchmarkCandidateRecommendedForFilters(candidate, candidateFilters),
+    )
+    .filter((candidate) =>
+      isLatestCostQualityCandidate(
+        candidate,
+        incumbent,
+        incumbentCost,
+        incumbentIntelligence,
+        incumbentRelease,
+      ),
+    )
+    .sort((left, right) =>
+      compareLatestCostQualityCandidates(left, right, tier),
+    );
+  const selected = candidates[0] ?? incumbent;
+
+  return {
+    incumbent,
+    selected,
+    selectionBasis:
+      selected === incumbent
+        ? "benchmark_incumbent"
+        : "newer_aa_cost_quality",
+    catalogFresh,
+    evidenceTime,
+  };
+}
+
+function isLatestCostQualityCandidate(
+  candidate: BenchmarkCandidate,
+  incumbent: BenchmarkCandidate,
+  incumbentCost: number,
+  incumbentIntelligence: number,
+  incumbentRelease: number,
+): boolean {
+  const signals = candidate.benchmarks.llm;
+  const searchable = `${candidate.id} ${candidate.name}`.toLowerCase();
+  const candidateRelease = candidateDateValue(candidate.releaseDate);
+  if (
+    candidate.source !== "artificialanalysis" ||
+    !candidate.registryModelId ||
+    candidate.deprecated === true ||
+    candidate.openWeights === true ||
+    /(^|[-_\s])latest($|[-_\s])/.test(searchable) ||
+    candidateRelease <= incumbentRelease ||
+    !isNumber(signals?.intelligenceCostPerTask) ||
+    signals.intelligenceCostPerTask > incumbentCost ||
+    !isNumber(signals.intelligence) ||
+    signals.intelligence < incumbentIntelligence
+  ) {
+    return false;
+  }
+
+  return !hasComparableSafetyRegression(candidate, incumbent);
+}
+
+function hasComparableSafetyRegression(
+  candidate: BenchmarkCandidate,
+  incumbent: BenchmarkCandidate,
+): boolean {
+  const candidateSafety = candidate.benchmarks.llm?.autoClose;
+  const incumbentSafety = incumbent.benchmarks.llm?.autoClose;
+  if (
+    !candidateSafety ||
+    !incumbentSafety ||
+    candidateSafety.benchmarkCodeSha !== incumbentSafety.benchmarkCodeSha
+  ) {
+    return false;
+  }
+  return (
+    autoCloseFalsePositiveRate(candidateSafety) >
+    autoCloseFalsePositiveRate(incumbentSafety)
+  );
+}
+
+function compareLatestCostQualityCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+  tier: Tier,
+): number {
+  const releaseOrder =
+    candidateDateValue(right.releaseDate) - candidateDateValue(left.releaseDate);
+  if (releaseOrder) return releaseOrder;
+
+  if (tier === "best") {
+    return (
+      compareOptionalDesc(
+        left.benchmarks.llm?.intelligence,
+        right.benchmarks.llm?.intelligence,
+      ) ||
+      compareOptionalAsc(
+        left.benchmarks.llm?.intelligenceCostPerTask,
+        right.benchmarks.llm?.intelligenceCostPerTask,
+      ) ||
+      left.id.localeCompare(right.id)
+    );
+  }
+
+  return (
+    compareOptionalAsc(
+      left.benchmarks.llm?.intelligenceCostPerTask,
+      right.benchmarks.llm?.intelligenceCostPerTask,
+    ) ||
+    compareOptionalDesc(
+      left.benchmarks.llm?.intelligence,
+      right.benchmarks.llm?.intelligence,
+    ) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
 export function recommendModelFailovers(
   catalog: Catalog,
   filters: ModelFilters,
   limit = 2,
-): BenchmarkCandidate[] {
-  if (filters.useCase !== "customer-support" || limit <= 0) return [];
+): RecommendedModel[] {
+  if (limit <= 0) return [];
+
+  if (filters.useCase === "front-end-web-dev") {
+    const recommendations = rankedRecommendedModels(catalog, filters);
+    const recommendation = recommendations[0];
+    const seenFamilies = new Set<string>();
+    if (recommendation) {
+      seenFamilies.add(recommendationFamilyKey(recommendation));
+    }
+
+    return recommendations
+      .slice(1)
+      .filter((candidate) => {
+        const family = recommendationFamilyKey(candidate);
+        if (!family || seenFamilies.has(family)) return false;
+        seenFamilies.add(family);
+        return true;
+      })
+      .slice(0, limit);
+  }
+
+  if (filters.useCase !== "customer-support") return [];
 
   const recommendation = recommendModel(catalog, filters);
+  const seenFamilies = new Set<string>();
+  if (recommendation) {
+    seenFamilies.add(recommendationFamilyKey(recommendation));
+  }
+
   return rankedBenchmarkRecommendations(catalog, {
     ...filters,
     includeItsBenchmark: true,
   })
     .filter((candidate) => candidate.id !== recommendation?.id)
     .filter((candidate) => Boolean(candidate.benchmarks.llm?.autoClose))
+    .filter((candidate) => {
+      const family = recommendationFamilyKey(candidate);
+      if (!family || seenFamilies.has(family)) return false;
+      seenFamilies.add(family);
+      return true;
+    })
     .slice(0, limit);
+}
+
+export function recommendationFamilyKey(model: RecommendedModel): string {
+  const isRegistryModel = !("source" in model);
+  const registryModelId =
+    "registryModelId" in model ? model.registryModelId : undefined;
+  const canonicalIdentity = registryModelId || (isRegistryModel ? model.id : "");
+  if (canonicalIdentity) {
+    return `${model.provider}:${normalizeMatchKey(canonicalIdentity)}`;
+  }
+
+  const identity = model.name || model.id || model.family || "";
+  const baseIdentity =
+    modelJoinKeys(identity).at(-1) ?? normalizeMatchKey(identity);
+  return `${model.provider}:${baseIdentity}`;
 }
 
 export function benchmarkCandidates(
@@ -778,8 +1344,13 @@ export function benchmarkCandidates(
 ): BenchmarkCandidate[] {
   const effectiveFilters = filtersWithUsdRunCost(catalog, filters);
   const useCase = effectiveFilters.useCase;
+  const currentCandidates = (catalog.benchmarkCandidates ?? [])
+    .map(withoutExpiredFrontendWebDevEvidence)
+    .filter(
+      (candidate): candidate is BenchmarkCandidate => candidate !== undefined,
+    );
 
-  return (catalog.benchmarkCandidates ?? []).filter((candidate) => {
+  return currentCandidates.filter((candidate) => {
     if (effectiveFilters.unsupportedProvider) return false;
     if (isDeprecatedBenchmarkCandidate(candidate)) return false;
     if (
@@ -794,7 +1365,17 @@ export function benchmarkCandidates(
     ) {
       return false;
     }
-    if (useCase && !candidate.benchmarks[benchmarkKeyForUseCase(useCase)]) {
+    if (
+      useCase &&
+      !candidate.benchmarks[benchmarkKeyForUseCase(useCase)] &&
+      !(useCase === "voice" && isUnbenchmarkedVoiceCandidate(candidate))
+    ) {
+      return false;
+    }
+    if (
+      useCase === "front-end-web-dev" &&
+      !frontendWebDevSnapshotIsFresh(candidate.benchmarks.frontendWebDev)
+    ) {
       return false;
     }
     if (
@@ -803,17 +1384,408 @@ export function benchmarkCandidates(
     ) {
       return false;
     }
+    if (
+      useCase === "document-processing" &&
+      !hasDocumentProcessingBenchmarkSignals(candidate.benchmarks.llm)
+    ) {
+      return false;
+    }
     return passesCostFilters(candidate, effectiveFilters);
   });
+}
+
+function latestUnbenchmarkedRecommendation(
+  catalog: Catalog,
+  filters: ModelFilters,
+): RegistryModel | undefined {
+  if (
+    !filters.allowUnbenchmarkedLatest ||
+    !filters.useCase ||
+    recommendationTier(filters) !== "best" ||
+    hasBenchmarkOnlyConstraint(filters)
+  ) {
+    return undefined;
+  }
+
+  const registryFilters: ModelFilters = {
+    ...filters,
+    useCase: undefined,
+    tier: undefined,
+  };
+  const latest = filterModels(catalog.models, registryFilters)
+    .filter((model) => latestUseCaseCandidate(model, filters.useCase!, filters))
+    .sort((left, right) =>
+      compareLatestCapabilityFirst(left, right, filters.useCase!),
+    )[0];
+  if (!latest || hasValidUseCaseBenchmark(catalog, latest, filters)) {
+    return undefined;
+  }
+  return latest;
+}
+
+function hasBenchmarkOnlyConstraint(filters: ModelFilters): boolean {
+  return [
+    filters.minRunCostAud,
+    filters.maxRunCostAud,
+    filters.minRunCostUsd,
+    filters.maxRunCostUsd,
+    filters.minIntelligenceCostPerTaskAud,
+    filters.maxIntelligenceCostPerTaskAud,
+    filters.minIntelligenceCostPerTaskUsd,
+    filters.maxIntelligenceCostPerTaskUsd,
+    filters.minIntelligence,
+    filters.minVisualReasoning,
+    filters.maxAaWer,
+  ].some((value) => value !== undefined);
+}
+
+function latestUseCaseCandidate(
+  model: RegistryModel,
+  useCase: UseCase,
+  filters: ModelFilters,
+): boolean {
+  const searchable = `${model.id} ${model.name} ${model.family}`.toLowerCase();
+  const productionAllowed = isProductionAvailabilityAllowed(
+    model.availability ?? heuristicAvailabilityForTextModel(model.id, model.name),
+    filters,
+  );
+  const heuristicAllowed = isProductionAvailabilityAllowed(
+    heuristicAvailabilityForTextModel(model.id, model.name),
+    filters,
+  );
+  if (
+    model.deprecated ||
+    model.openWeights ||
+    !productionAllowed ||
+    !heuristicAllowed ||
+    !providerFamilyAllowed(model) ||
+    /(^|[-_ ])latest($|[-_ ])/.test(searchable)
+  ) {
+    return false;
+  }
+
+  if (useCase === "voice") {
+    return (
+      model.modalities.input.includes("audio") &&
+      model.modalities.output.includes("audio") &&
+      hasComparableVoicePricing(model.pricing)
+    );
+  }
+  if (useCase === "speech-to-text") {
+    const namedSpeechToTextModel =
+      /(^|[-_\s])(speech[-_\s]?to[-_\s]?text|stt|transcri(?:be|ber|bing|ption)|whisper|scribe|parakeet|canary)($|[-_\s])/.test(
+        searchable,
+      );
+    const hasSpeechToTextPricing =
+      (isNumber(model.pricing.transcriptionCostPer1kMinutes) &&
+        model.pricing.transcriptionCostPer1kMinutes > 0) ||
+      ((model.pricing.audioInputPerMTok ?? model.pricing.inputPerMTok ?? 0) >
+        0 &&
+        (model.pricing.outputPerMTok ?? 0) > 0);
+    return (
+      model.modalities.input.includes("audio") &&
+      model.modalities.output.includes("text") &&
+      namedSpeechToTextModel &&
+      hasSpeechToTextPricing
+    );
+  }
+  if (useCase === "document-processing") {
+    return (
+      model.modalities.input.includes("text") &&
+      model.modalities.output.includes("text") &&
+      model.capabilities.vision &&
+      model.capabilities.reasoning &&
+      hasTokenPricing(model.pricing)
+    );
+  }
+
+  return (
+    model.modalities.input.includes("text") &&
+    model.modalities.output.includes("text") &&
+    hasTokenPricing(model.pricing) &&
+    !NON_WORK_MODEL_PATTERNS.some((pattern) => searchable.includes(pattern)) &&
+    !model.id.toLowerCase().includes("embedding") &&
+    model.outputLimit > 0
+  );
+}
+
+function hasComparableVoicePricing(pricing: ModelPricing): boolean {
+  const input =
+    pricing.audioInputPerMTok ??
+    pricing.benchmarkInputAudioPerHour ??
+    pricing.audioInputPerHour;
+  const output = pricing.audioOutputPerMTok ?? pricing.audioOutputPerHour;
+  return (
+    input !== undefined &&
+    input > 0 &&
+    output !== undefined &&
+    output > 0
+  );
+}
+
+function hasValidUseCaseBenchmark(
+  catalog: Catalog,
+  model: RegistryModel,
+  filters: ModelFilters,
+): boolean {
+  return benchmarkCandidates(catalog, filters).some(
+    (candidate) =>
+      candidate.registryModelId === model.id &&
+      candidate.provider === model.provider &&
+      isBenchmarkCandidateRecommendedForFilters(candidate, filters),
+  );
+}
+
+function compareLatestCapabilityFirst(
+  left: RegistryModel,
+  right: RegistryModel,
+  useCase: UseCase,
+): number {
+  return (
+    capabilityVariantRank(right) - capabilityVariantRank(left) ||
+    compareNewest(left, right) ||
+    right.contextWindow - left.contextWindow ||
+    compareLatestComparablePrice(left, right, useCase) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function capabilityVariantRank(model: RegistryModel): number {
+  const searchable = `${model.id} ${model.name} ${model.family}`.toLowerCase();
+  return REDUCED_CAPABILITY_MODEL_PATTERN.test(searchable) ? 0 : 1;
+}
+
+function compareLatestComparablePrice(
+  left: RegistryModel,
+  right: RegistryModel,
+  useCase: UseCase,
+): number {
+  const leftPrice = latestComparablePrice(left, useCase);
+  const rightPrice = latestComparablePrice(right, useCase);
+  if (!leftPrice || !rightPrice || leftPrice.unit !== rightPrice.unit) return 0;
+  return rightPrice.value - leftPrice.value;
+}
+
+function latestComparablePrice(
+  model: RegistryModel,
+  useCase: UseCase,
+): { unit: string; value: number } | undefined {
+  if (useCase === "voice") {
+    if (model.pricing.audioOutputPerMTok !== undefined) {
+      return { unit: "audio-token", value: model.pricing.audioOutputPerMTok };
+    }
+    if (model.pricing.audioOutputPerHour !== undefined) {
+      return { unit: "audio-hour", value: model.pricing.audioOutputPerHour };
+    }
+    return undefined;
+  }
+  if (useCase === "speech-to-text") {
+    if (model.pricing.transcriptionCostPer1kMinutes !== undefined) {
+      return {
+        unit: "transcription-minute",
+        value: model.pricing.transcriptionCostPer1kMinutes,
+      };
+    }
+    if (model.pricing.audioInputPerMTok !== undefined) {
+      return {
+        unit: "audio-token",
+        value: model.pricing.audioInputPerMTok,
+      };
+    }
+    return model.pricing.inputPerMTok === undefined
+      ? undefined
+      : { unit: "input-token", value: model.pricing.inputPerMTok };
+  }
+  return model.pricing.outputPerMTok === undefined
+    ? undefined
+    : { unit: "text-token", value: model.pricing.outputPerMTok };
+}
+
+function isUnbenchmarkedVoiceCandidate(candidate: BenchmarkCandidate): boolean {
+  return (
+    candidate.source === "models.dev" &&
+    !candidate.benchmarks.voice &&
+    candidate.modalities?.input.includes("audio") === true &&
+    candidate.modalities.output.includes("audio")
+  );
+}
+
+function withoutExpiredFrontendWebDevEvidence(
+  candidate: BenchmarkCandidate,
+): BenchmarkCandidate | undefined {
+  const frontendWebDev = candidate.benchmarks.frontendWebDev;
+  if (!frontendWebDev || frontendWebDevSnapshotIsFresh(frontendWebDev)) {
+    return candidate;
+  }
+
+  const benchmarks: BenchmarkCandidate["benchmarks"] = {
+    ...candidate.benchmarks,
+  };
+  delete benchmarks.frontendWebDev;
+  if (!Object.values(benchmarks).some(Boolean)) return undefined;
+  return { ...candidate, benchmarks };
 }
 
 export function isBenchmarkCandidateRecommendedForFilters(
   candidate: BenchmarkCandidate,
   filters: ModelFilters,
 ): boolean {
+  if (
+    filters.useCase === "front-end-web-dev" &&
+    !frontendWebDevSnapshotIsFresh(candidate.benchmarks.frontendWebDev)
+  ) {
+    return false;
+  }
   return (
     hasRecommendableBenchmarkBasics(candidate) &&
+    candidateAvailabilityAllowed(candidate, filters) &&
     isUseCaseRecommendationCandidate(candidate, filters)
+  );
+}
+
+export function benchmarkCandidateEligibilityReason(
+  candidate: BenchmarkCandidate,
+  filters: ModelFilters,
+): string {
+  if (isBenchmarkCandidateRecommendedForFilters(candidate, filters)) {
+    return "eligible";
+  }
+  if (isDeprecatedBenchmarkCandidate(candidate)) return "deprecated";
+  if (
+    filters.useCase === "front-end-web-dev" &&
+    !frontendWebDevSnapshotIsFresh(candidate.benchmarks.frontendWebDev)
+  ) {
+    return "stale_benchmark_snapshot";
+  }
+  if (!candidateAvailabilityAllowed(candidate, filters)) {
+    return candidate.availability?.status ?? "not_production";
+  }
+
+  if (filters.useCase === "front-end-web-dev") {
+    if (!candidate.registryModelId && candidate.registryMappingTargetId) {
+      return "registry_mapping_target_unavailable";
+    }
+    if (!candidate.registryModelId) return "missing_registry_model";
+    if (!isNumber(candidate.benchmarks.frontendWebDev?.score)) {
+      return "missing_arena_frontend_score";
+    }
+    if (
+      candidate.pricing.inputPerMTok === undefined ||
+      candidate.pricing.inputPerMTok <= 0
+    ) {
+      return "missing_input_pricing";
+    }
+    if (
+      candidate.pricing.outputPerMTok === undefined ||
+      candidate.pricing.outputPerMTok <= 0
+    ) {
+      return "missing_output_pricing";
+    }
+    return "insufficient_recommendation_evidence";
+  }
+
+  if (candidate.benchmarks.voice) {
+    if (candidate.benchmarks.voice.stale) return "stale_voice_benchmark";
+    if ((candidateAudioInputCost(candidate) ?? 0) <= 0) {
+      return "missing_benchmark_audio_pricing";
+    }
+    if (!hasPositiveCandidateAudioPrice(candidate.pricing)) {
+      return "missing_audio_pricing";
+    }
+  }
+
+  if (filters.useCase === "voice" && isUnbenchmarkedVoiceCandidate(candidate)) {
+    return "missing_voice_benchmark";
+  }
+
+  if (candidate.benchmarks.speechToText) {
+    if (!isNumber(candidate.benchmarks.speechToText.aaWer)) {
+      return "missing_aa_wer";
+    }
+    if (
+      candidate.pricing.transcriptionCostPer1kMinutes === undefined ||
+      candidate.pricing.transcriptionCostPer1kMinutes <= 0
+    ) {
+      return "missing_transcription_pricing";
+    }
+  }
+
+  if (candidate.benchmarks.llm) {
+    if (!hasAnyTextQualitySignal(candidate.benchmarks.llm)) {
+      return "missing_benchmark_evidence";
+    }
+    if (
+      candidate.pricing.inputPerMTok === undefined ||
+      candidate.pricing.inputPerMTok <= 0
+    ) {
+      return "missing_input_pricing";
+    }
+    if (
+      candidate.pricing.outputPerMTok === undefined ||
+      candidate.pricing.outputPerMTok <= 0
+    ) {
+      return "missing_output_pricing";
+    }
+  }
+
+  if (filters.useCase === "document-processing") {
+    if (candidate.capabilities?.vision !== true) {
+      return "missing_vision_capability";
+    }
+    if (candidate.capabilities?.reasoning !== true) {
+      return "missing_reasoning_capability";
+    }
+  }
+
+  if (filters.useCase === "customer-support") {
+    if (
+      filters.includeItsBenchmark !== false &&
+      !candidate.benchmarks.llm?.autoClose
+    ) {
+      return "missing_its_autoclose_benchmark";
+    }
+    if (filters.includeItsBenchmark === false) {
+      if (candidate.capabilities?.vision !== true) {
+        return "missing_vision_capability";
+      }
+      if (candidate.capabilities?.reasoning !== true) {
+        return "missing_reasoning_capability";
+      }
+    }
+  }
+
+  return "insufficient_recommendation_evidence";
+}
+
+function candidateAvailabilityAllowed(
+  candidate: BenchmarkCandidate,
+  filters: ModelFilters,
+): boolean {
+  if (candidate.benchmarks.frontendWebDev) {
+    return isProductionAvailabilityAllowed(
+      candidate.availability ??
+        heuristicAvailabilityForTextModel(candidate.id, candidate.name),
+      filters,
+    );
+  }
+  if (!candidate.benchmarks.llm) return true;
+  if (
+    filters.useCase === "document-processing" &&
+    candidate.availability?.status === "unknown"
+  ) {
+    return isProductionAvailabilityAllowed(
+      heuristicAvailabilityForTextModel(candidate.id, candidate.name),
+      filters,
+    );
+  }
+  return isProductionAvailabilityAllowed(
+    candidate.availability ??
+      productionAvailabilityForTextModel(
+        candidate.id,
+        candidate.name,
+        candidate.benchmarks.llm,
+      ),
+    filters,
   );
 }
 
@@ -845,6 +1817,10 @@ function rankedBenchmarkRecommendations(
 
   if (effectiveFilters.useCase === "customer-support" && tier === "balanced") {
     return rankBalancedCustomerSupportCandidates(matches, effectiveFilters);
+  }
+
+  if (effectiveFilters.useCase === "document-processing" && tier === "balanced") {
+    return rankBalancedDocumentProcessingCandidates(matches, effectiveFilters);
   }
 
   return [...matches].sort((left, right) =>
@@ -885,6 +1861,18 @@ function rankBalancedCustomerSupportCandidates(
   return moveMiddleCandidateFirst(safetyOrdered);
 }
 
+function rankBalancedDocumentProcessingCandidates(
+  matches: BenchmarkCandidate[],
+  filters: ModelFilters,
+): BenchmarkCandidate[] {
+  return [...matches].sort(
+    (left, right) =>
+      scoreBenchmarkCandidate(right, filters, "balanced") -
+        scoreBenchmarkCandidate(left, filters, "balanced") ||
+      compareDocumentProcessingAccuracyCandidates(left, right),
+  );
+}
+
 function moveMiddleCandidateFirst(
   matches: BenchmarkCandidate[],
 ): BenchmarkCandidate[] {
@@ -901,19 +1889,18 @@ function isUseCaseRecommendationCandidate(
   candidate: BenchmarkCandidate,
   filters: ModelFilters,
 ): boolean {
+  if (filters.useCase === "front-end-web-dev") {
+    return (
+      Boolean(candidate.registryModelId) &&
+      isNumber(candidate.benchmarks.frontendWebDev?.score)
+    );
+  }
+
   if (filters.useCase === "document-processing") {
     return (
       candidate.capabilities?.vision === true &&
       candidate.capabilities?.reasoning === true &&
-      isProductionAvailabilityAllowed(
-        candidate.availability ??
-          productionAvailabilityForTextModel(
-            candidate.id,
-            candidate.name,
-            candidate.benchmarks.llm,
-          ),
-        filters,
-      )
+      candidateAvailabilityAllowed(candidate, filters)
     );
   }
 
@@ -1053,10 +2040,24 @@ function passesCostFilters(
     return false;
   }
   if (
+    filters.minVisualReasoning !== undefined &&
+    ((normalizedBenchmarkScore(candidate.benchmarks.llm?.visualReasoning) ??
+      Number.NEGATIVE_INFINITY) < filters.minVisualReasoning)
+  ) {
+    return false;
+  }
+  if (
+    filters.maxImageInputCostPer1kImagesAud !== undefined &&
+    (candidate.pricing.imageInputPer1kImages === undefined ||
+      candidate.pricing.imageInputPer1kImages >
+        filters.maxImageInputCostPer1kImagesAud)
+  ) {
+    return false;
+  }
+  if (
     filters.maxAudioInputCostPerHour !== undefined &&
-    (candidate.pricing.benchmarkInputAudioPerHour === undefined ||
-      candidate.pricing.benchmarkInputAudioPerHour >
-        filters.maxAudioInputCostPerHour)
+    (candidateAudioInputCost(candidate) === undefined ||
+      candidateAudioInputCost(candidate)! > filters.maxAudioInputCostPerHour)
   ) {
     return false;
   }
@@ -1101,6 +2102,7 @@ function passesCostFilters(
 
 function recommendationTier(filters: ModelFilters): Tier {
   if (filters.tier) return filters.tier;
+  if (filters.useCase === "front-end-web-dev") return "best";
   return "fast";
 }
 
@@ -1108,9 +2110,7 @@ export function latestForProvider(
   catalog: Catalog,
   provider: ProviderId,
 ): RegistryModel | undefined {
-  return catalog.models
-    .filter((model) => model.provider === provider && !model.deprecated)
-    .sort(compareNewest)[0];
+  return filterModels(catalog.models, { provider }).sort(compareNewest)[0];
 }
 
 export function isRecommendationCandidate(
@@ -1133,6 +2133,10 @@ export function isRecommendationCandidate(
     model.pricing.inputPerMTok > 0 &&
     model.pricing.outputPerMTok !== undefined &&
     model.pricing.outputPerMTok > 0 &&
+    isProductionAvailabilityAllowed(
+      model.availability ??
+        heuristicAvailabilityForTextModel(model.id, model.name),
+    ) &&
     providerFamilyAllowed(model) &&
     !NON_WORK_MODEL_PATTERNS.some((pattern) => searchable.includes(pattern)) &&
     !id.includes("embedding") &&
@@ -1155,7 +2159,7 @@ function useCaseQualitySignals(
 
   if (useCase === "document-processing") {
     return [
-      signals.visualReasoning,
+      normalizedBenchmarkScore(signals.visualReasoning),
       signals.instructionFollowing,
       signals.intelligence,
     ];
@@ -1166,13 +2170,24 @@ function useCaseQualitySignals(
 
 function isVoiceModel(model: RegistryModel): boolean {
   return (
+    isVisibleVoiceRegistryModel(model) &&
+    model.benchmarks?.voice?.stale !== true &&
+    (audioInputCost(model) ?? 0) > 0 &&
+    hasPositiveAudioPrice(model) &&
+    providerFamilyAllowed(model)
+  );
+}
+
+function isVisibleVoiceRegistryModel(model: RegistryModel): boolean {
+  return (
     !model.deprecated &&
     !model.openWeights &&
     model.modalities.input.includes("audio") &&
     model.modalities.output.includes("audio") &&
-    model.pricing.benchmarkInputAudioPerHour !== undefined &&
-    model.pricing.benchmarkInputAudioPerHour > 0 &&
-    hasPositiveAudioPrice(model) &&
+    isProductionAvailabilityAllowed(
+      model.availability ??
+        heuristicAvailabilityForTextModel(model.id, model.name),
+    ) &&
     providerFamilyAllowed(model)
   );
 }
@@ -1189,11 +2204,24 @@ function isSpeechToTextModel(model: RegistryModel): boolean {
   );
 }
 
+function isDocumentProcessingModel(model: RegistryModel): boolean {
+  return (
+    !model.deprecated &&
+    !model.openWeights &&
+    model.modalities.input.includes("text") &&
+    model.modalities.output.includes("text") &&
+    model.capabilities.vision === true &&
+    model.capabilities.reasoning === true &&
+    providerFamilyAllowed(model)
+  );
+}
+
 function benchmarkKeyForUseCase(
   useCase: UseCase,
 ): keyof BenchmarkCandidate["benchmarks"] {
   if (useCase === "voice") return "voice";
   if (useCase === "speech-to-text") return "speechToText";
+  if (useCase === "front-end-web-dev") return "frontendWebDev";
   return "llm";
 }
 
@@ -1219,8 +2247,21 @@ function asTier(value: string | null): Tier | undefined {
 function asUseCase(value: string | null): UseCase | undefined {
   if (value === "support") return "customer-support";
   if (value === "stt") return "speech-to-text";
-  if (value === "ocr" || value === "document-ocr")
+  if (value === "speech-to-speech" || value === "speech-to-speech-voice") {
+    return "voice";
+  }
+  if (value === "ocr" || value === "document-ocr") {
     return "document-processing";
+  }
+
+  if (
+    value === "webdev" ||
+    value === "frontend-web-dev" ||
+    value === "frontend-web-development" ||
+    value === "front-end-web-development"
+  ) {
+    return "front-end-web-dev";
+  }
   if (
     value === "billing" ||
     value === "billing-routine" ||
@@ -1232,24 +2273,227 @@ function asUseCase(value: string | null): UseCase | undefined {
   return USE_CASES.find((useCase) => useCase === value);
 }
 
+function normalizeModelsDevModel(
+  provider: ProviderId,
+  modelKey: string,
+  raw: ModelsDevModel,
+  generatedAt: string,
+  exchangeRate?: ExchangeRate,
+): RegistryModel {
+  const id = stringValue(raw.id, modelKey);
+  const name = stringValue(raw.name, modelKey);
+  const inputModalities = asStringArray(raw.modalities?.input);
+  const outputModalities = asStringArray(raw.modalities?.output);
+  const inputPrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.input),
+  );
+  const outputPrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.output),
+  );
+  const cacheReadPrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.cache_read),
+  );
+  const cacheWritePrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.cache_write),
+  );
+  const audioInputPrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.input_audio),
+  );
+  const audioOutputPrice = nonNegativeNumberOrUndefined(
+    numberOrUndefined(raw.cost?.output_audio),
+  );
+  const pricing: ModelPricing = {
+    ...optionalTokenPrice("inputPerMTok", inputPrice),
+    ...optionalTokenPrice("outputPerMTok", outputPrice),
+    ...optionalTokenPrice("cacheReadPerMTok", cacheReadPrice),
+    ...(cacheWritePrice !== undefined
+      ? { cacheWritePerMTok: cacheWritePrice }
+      : {}),
+    ...(audioInputPrice !== undefined
+      ? { audioInputPerMTok: audioInputPrice }
+      : {}),
+    ...(audioOutputPrice !== undefined
+      ? { audioOutputPerMTok: audioOutputPrice }
+      : {}),
+  };
+  const deprecated = ["deprecated", "retired"].includes(
+    stringValue(raw.status, "").toLowerCase(),
+  );
+
+  return {
+    id,
+    provider,
+    name,
+    family: stringValue(raw.family, "unknown"),
+    contextWindow:
+      numberOrUndefined(raw.limit?.context ?? raw.limit?.input) ?? 0,
+    outputLimit: numberOrUndefined(raw.limit?.output) ?? 0,
+    pricing: exchangeRate ? convertPricing(pricing, exchangeRate) : pricing,
+    capabilities: {
+      vision: inputModalities.includes("image"),
+      pdf: Boolean(raw.attachment) || inputModalities.includes("pdf"),
+      reasoning: Boolean(raw.reasoning),
+      toolCalling: Boolean(raw.tool_call),
+      structuredOutput: Boolean(raw.structured_output),
+    },
+    modalities: {
+      input: inputModalities,
+      output: outputModalities,
+    },
+    ...optionalString("releaseDate", raw.release_date),
+    ...optionalString("knowledgeCutoff", raw.knowledge),
+    openWeights: Boolean(raw.open_weights),
+    tier: "fast",
+    deprecated,
+    updatedAt: dateToIso(raw.last_updated) ?? generatedAt,
+    availability: modelsDevAvailability(raw.status, id, name),
+  };
+}
+
+function modelsDevAvailability(
+  status: unknown,
+  id: string,
+  name: string,
+): ModelAvailabilityMetadata {
+  const normalized = stringValue(status, "").toLowerCase();
+  const knownStatuses: ModelAvailabilityStatus[] = [
+    "production",
+    "deprecated",
+    "retired",
+    "preview",
+    "beta",
+    "experimental",
+  ];
+  if (knownStatuses.includes(normalized as ModelAvailabilityStatus)) {
+    const mapped = normalized as ModelAvailabilityStatus;
+    return {
+      status: mapped,
+      acceptedRisk: false,
+      reason: `models.dev reports this model as ${mapped}.`,
+      sourceUrl: "https://models.dev/api.json",
+    };
+  }
+
+  return {
+    ...heuristicAvailabilityForTextModel(id, name),
+    sourceUrl: "https://models.dev/api.json",
+  };
+}
+
+function assignRegistryTiers(models: RegistryModel[]): RegistryModel[] {
+  const tiers = new Map<string, Tier>();
+
+  for (const provider of SUPPORTED_PROVIDERS) {
+    const candidates = models
+      .filter((model) => model.provider === provider)
+      .filter((model) => isRecommendationCandidate(model))
+      .sort(compareCheapest);
+    const firstBreak = Math.ceil(candidates.length / 3);
+    const secondBreak = Math.ceil((candidates.length * 2) / 3);
+
+    candidates.forEach((model, index) => {
+      tiers.set(
+        modelKey(model),
+        index < firstBreak
+          ? "fast"
+          : index < secondBreak
+            ? "balanced"
+            : "best",
+      );
+    });
+  }
+
+  return models.map((model) => ({
+    ...model,
+    tier: tiers.get(modelKey(model)) ?? fallbackRegistryTier(model),
+  }));
+}
+
+function fallbackRegistryTier(model: RegistryModel): Tier {
+  const input = model.pricing.inputPerMTok;
+  if (input !== undefined && input <= 1) return "fast";
+  if (input !== undefined && input <= 5) return "balanced";
+  return "best";
+}
+
+function buildRegistryProviderSummaries(
+  models: RegistryModel[],
+): ProviderSummary[] {
+  return SUPPORTED_PROVIDERS.map((provider) => {
+    const providerModels = models.filter((model) => model.provider === provider);
+    return {
+      provider,
+      total: providerModels.length,
+      active: providerModels.filter((model) => !model.deprecated).length,
+    };
+  }).filter((summary) => summary.total > 0);
+}
+
+function enrichRegistryModels(
+  models: RegistryModel[],
+  candidates: BenchmarkCandidate[],
+): RegistryModel[] {
+  return models.map((model) => {
+    const joined = candidates.filter(
+      (candidate) =>
+        candidate.provider === model.provider &&
+        candidate.registryModelId === model.id &&
+        (candidate.benchmarks.llm || candidate.benchmarks.frontendWebDev),
+    );
+    const unconfigured = joined.filter(
+      (candidate) => !candidate.benchmarks.frontendWebDev?.configuration,
+    );
+    const exact = unconfigured.find(
+      (candidate) =>
+        normalizeMatchKey(candidate.id) === normalizeMatchKey(model.id),
+    );
+    if (!joined.length) return model;
+
+    const llm =
+      exact?.benchmarks.llm ??
+      unconfigured.find((candidate) => candidate.benchmarks.llm)?.benchmarks
+        .llm;
+    const frontendWebDev =
+      exact?.benchmarks.frontendWebDev ??
+      unconfigured.find((candidate) => candidate.benchmarks.frontendWebDev)
+        ?.benchmarks.frontendWebDev;
+
+    return {
+      ...model,
+      ...(exact && hasTokenPricing(exact.pricing)
+        ? { pricing: exact.pricing }
+        : {}),
+      benchmarks: {
+        ...model.benchmarks,
+        ...(llm ? { llm } : {}),
+        ...(frontendWebDev ? { frontendWebDev } : {}),
+      },
+    };
+  });
+}
+
 function normalizeSpeechToSpeechModels(
+  models: readonly ArtificialAnalysisSpeechToSpeechModel[],
+  sourceStatus: VoiceSourceStatus,
   exchangeRate?: ExchangeRate,
 ): RegistryModel[] {
-  return (
-    AA_SPEECH_TO_SPEECH_MODELS as readonly ArtificialAnalysisSpeechToSpeechModel[]
-  )
-    .map((model) => normalizeSpeechToSpeechModel(model, exchangeRate))
+  return models
+    .map((model) =>
+      normalizeSpeechToSpeechModel(model, sourceStatus, exchangeRate),
+    )
     .filter((model): model is RegistryModel => model !== undefined);
 }
 
 function normalizeSpeechToSpeechModel(
   model: ArtificialAnalysisSpeechToSpeechModel,
+  sourceStatus: VoiceSourceStatus,
   exchangeRate?: ExchangeRate,
 ): RegistryModel | undefined {
   const provider = asProvider(model.provider);
   if (!provider) return undefined;
 
   const pricing: ModelPricing = {
+    ...optionalNumberPrice("audioInputPerHour", model.pricePerHourInput),
     ...optionalNumberPrice("audioOutputPerHour", model.pricePerHourOutput),
     ...optionalNumberPrice(
       "benchmarkInputAudioPerHour",
@@ -1280,9 +2524,10 @@ function normalizeSpeechToSpeechModel(
     openWeights: false,
     tier: "fast",
     deprecated: false,
-    updatedAt: AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+    updatedAt: sourceStatus.fetchedAt ?? AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
     benchmarks: {
       voice: {
+        ...optionalBenchmark("qualityIndex", model.s2sQualityIndex),
         ...optionalBenchmark("speechReasoning", model.bbaScore),
         ...optionalBenchmark("agenticPerformance", model.tauVoiceAggScore),
         ...optionalBenchmark(
@@ -1303,7 +2548,9 @@ function normalizeSpeechToSpeechModel(
           model.timeToFirstAudioSeconds,
         ),
         source: "artificialanalysis",
-        extractedAt: AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+        extractedAt:
+          sourceStatus.fetchedAt ?? AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+        ...(sourceStatus.state === "fallback_stale" ? { stale: true } : {}),
       },
     },
   };
@@ -1347,30 +2594,35 @@ function buildBenchmarkCandidates(
 
     const aaKeys = artificialAnalysisKeys(aaModel);
     const registryModel = findRegistryModel(models, provider, aaKeys);
-    const signals = {
-      ...benchmarkSignalsFromArtificialAnalysis(aaModel),
-      ...efficiencySignalsForKeys(aaKeys, exchangeRate),
-      ...autoCloseSignalsForKeys(aaKeys, exchangeRate),
-    };
+    const id = stringValue(aaModel.slug ?? aaModel.id, "");
+    if (!id) continue;
+    const existing = candidates.get(id);
+    const signals = mergeBenchmarkSignals(
+      efficiencySignalsForKeys(aaKeys, exchangeRate),
+      existing?.benchmarks.llm,
+      benchmarkSignalsFromArtificialAnalysis(aaModel, exchangeRate),
+      autoCloseSignalsForKeys(aaModel, aaKeys, exchangeRate),
+    );
     if (!hasAnyTextQualitySignal(signals)) continue;
 
     const aaPricing = pricingFromArtificialAnalysis(aaModel, exchangeRate);
     const generatedPricing = pricingForKeys(aaKeys, exchangeRate);
-    const pricing = hasTokenPricing(aaPricing)
-      ? aaPricing
-      : hasTokenPricing(generatedPricing)
-        ? generatedPricing
-        : (registryModel?.pricing ?? {});
-    const id = registryModel?.id ?? stringValue(aaModel.slug ?? aaModel.id, "");
-    if (!id) continue;
+    const pricing = mergePricing(
+      registryModel?.pricing,
+      efficiencyPricingForKeys(aaKeys, exchangeRate),
+      generatedPricing,
+      existing?.pricing,
+      aaPricing,
+    );
 
     const candidate = benchmarkCandidateFromRegistry({
       id,
       provider,
-      name: registryModel?.name ?? stringValue(aaModel.name, id),
+      name: stringValue(aaModel.name, existing?.name ?? registryModel?.name ?? id),
       benchmarks: { llm: signals },
       pricing,
       registryModel,
+      releaseDate: stringValue(aaModel.release_date, "") || undefined,
     });
     candidates.set(candidate.id, candidate);
   }
@@ -1379,15 +2631,17 @@ function buildBenchmarkCandidates(
     const provider = providerFromArtificialAnalysisEfficiency(efficiencyModel);
     if (!provider) continue;
 
+    const efficiencyKeys = artificialAnalysisEfficiencyKeys(efficiencyModel);
+    const registryModel = findRegistryModel(models, provider, efficiencyKeys);
     const existing = candidates.get(efficiencyModel.slug);
-    const signals = {
-      ...(existing?.benchmarks.llm ?? {}),
-      ...benchmarkSignalsFromArtificialAnalysisEfficiency(
+    const signals = mergeBenchmarkSignals(
+      benchmarkSignalsFromArtificialAnalysisEfficiency(
         efficiencyModel,
         exchangeRate,
       ),
-      ...autoCloseSignalsForSlug(efficiencyModel.slug, exchangeRate),
-    };
+      existing?.benchmarks.llm,
+      autoCloseSignalsForSlug(efficiencyModel.slug, exchangeRate),
+    );
     if (!hasAnyTextQualitySignal(signals)) continue;
     const generatedPricing = pricingFromArtificialAnalysisPricing(
       pricingModelForSlug(efficiencyModel.slug),
@@ -1397,11 +2651,12 @@ function buildBenchmarkCandidates(
       efficiencyModel,
       exchangeRate,
     );
-    const pricing = hasTokenPricing(existing?.pricing ?? {})
-      ? existing!.pricing
-      : hasTokenPricing(generatedPricing)
-        ? generatedPricing
-        : frontierPricing;
+    const pricing = mergePricing(
+      registryModel?.pricing,
+      frontierPricing,
+      generatedPricing,
+      existing?.pricing,
+    );
 
     const candidate = benchmarkCandidateFromRegistry({
       id: existing?.id ?? efficiencyModel.slug,
@@ -1409,8 +2664,15 @@ function buildBenchmarkCandidates(
       name: existing?.name ?? efficiencyModel.label,
       benchmarks: { llm: signals },
       pricing,
+      registryModel,
       contextWindow:
-        existing?.contextWindow ?? efficiencyModel.contextWindowTokens,
+        existing?.contextWindow ??
+        registryModel?.contextWindow ??
+        efficiencyModel.contextWindowTokens,
+      capabilities: capabilitiesFromLlmEfficiency(
+        efficiencyModel,
+        existing?.capabilities,
+      ),
     });
     candidates.set(candidate.id, candidate);
   }
@@ -1419,6 +2681,15 @@ function buildBenchmarkCandidates(
     const provider = recommendationModel.provider;
     if (!SUPPORTED_PROVIDERS.includes(provider)) continue;
 
+    const registryModel = findRegistryModel(
+      models,
+      provider,
+      new Set(
+        [recommendationModel.slug, recommendationModel.label].flatMap(
+          modelJoinKeys,
+        ),
+      ),
+    );
     const existing = candidates.get(recommendationModel.slug);
     const signals = mergeBenchmarkSignals(
       benchmarkSignalsFromCustomerSupportRecommendation(
@@ -1432,9 +2703,11 @@ function buildBenchmarkCandidates(
       recommendationModel,
       exchangeRate,
     );
-    const pricing = hasTokenPricing(existing?.pricing ?? {})
-      ? existing!.pricing
-      : generatedPricing;
+    const pricing = mergePricing(
+      registryModel?.pricing,
+      generatedPricing,
+      existing?.pricing,
+    );
 
     const candidate = benchmarkCandidateFromRegistry({
       id: existing?.id ?? recommendationModel.slug,
@@ -1442,6 +2715,7 @@ function buildBenchmarkCandidates(
       name: existing?.name ?? recommendationModel.label,
       benchmarks: { llm: signals },
       pricing,
+      registryModel,
       capabilities:
         capabilitiesFromCustomerSupportRecommendation(recommendationModel),
       contextWindow:
@@ -1454,6 +2728,11 @@ function buildBenchmarkCandidates(
     if (autoCloseModel.provider !== "google") continue;
 
     const existing = candidates.get(autoCloseModel.id);
+    const registryModel = findRegistryModel(
+      models,
+      autoCloseModel.provider,
+      autoCloseBenchmarkKeys(autoCloseModel),
+    );
     const signals = {
       ...standaloneGeminiFlashSignals(autoCloseModel, exchangeRate),
       ...(existing?.benchmarks.llm ?? {}),
@@ -1468,24 +2747,35 @@ function buildBenchmarkCandidates(
       provider: autoCloseModel.provider,
       name: existing?.name ?? autoCloseModel.displayName,
       benchmarks: { llm: signals },
-      pricing: hasTokenPricing(existing?.pricing ?? {})
-        ? existing!.pricing
-        : geminiAutoClosePricing(autoCloseModel, exchangeRate),
-      contextWindow: existing?.contextWindow ?? 1_000_000,
+      pricing: mergePricing(
+        registryModel?.pricing,
+        geminiAutoClosePricing(autoCloseModel, exchangeRate),
+        existing?.pricing,
+      ),
+      registryModel,
+      contextWindow:
+        existing?.contextWindow ?? registryModel?.contextWindow ?? 1_000_000,
       deprecated: autoCloseModel.deprecated,
-      capabilities: {
-        vision: true,
-        reasoning: true,
-        pdf: false,
-        toolCalling: false,
-        structuredOutput: false,
-      },
+      capabilities: { vision: true, reasoning: true },
     });
     candidates.set(candidate.id, candidate);
   }
 
   for (const model of models) {
-    if (!model.benchmarks?.voice) continue;
+    if (!model.benchmarks?.voice) {
+      if (!isVisibleVoiceRegistryModel(model)) continue;
+      const candidate = benchmarkCandidateFromRegistry({
+        id: model.id,
+        provider: model.provider,
+        name: model.name,
+        source: "models.dev",
+        benchmarks: {},
+        pricing: model.pricing,
+        registryModel: model,
+      });
+      candidates.set(candidate.id, candidate);
+      continue;
+    }
     const candidate = benchmarkCandidateFromRegistry({
       id: model.id,
       provider: model.provider,
@@ -1505,6 +2795,73 @@ function buildBenchmarkCandidates(
     )) {
       candidates.set(candidate.id, candidate);
     }
+  }
+
+  const arenaModels = staticBenchmarkSnapshotIsFresh(
+    ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+    generatedAt,
+    ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+  )
+    ? ARENA_FRONTEND_WEBDEV_MODELS
+    : [];
+
+  for (const arenaModel of arenaModels) {
+    const registryModel = findRegistryModelById(
+      models,
+      arenaModel.provider,
+      arenaModel.registryModelId,
+    );
+    const existing = candidates.get(arenaModel.id);
+    const mergeExisting =
+      registryModel && existing?.registryModelId === registryModel.id
+        ? existing
+        : undefined;
+    const candidateId =
+      existing && !mergeExisting
+        ? `arena-frontend-${arenaModel.id}`
+        : arenaModel.id;
+    const arenaPricing: ModelPricing = {
+      inputPerMTok: arenaModel.inputPriceUsd,
+      outputPerMTok: arenaModel.outputPriceUsd,
+    };
+    const candidate = benchmarkCandidateFromRegistry({
+      id: candidateId,
+      provider: arenaModel.provider,
+      name: mergeExisting?.name ?? registryModel?.name ?? arenaModel.label,
+      source: mergeExisting?.source ?? "arena",
+      benchmarks: {
+        ...mergeExisting?.benchmarks,
+        frontendWebDev: {
+          score: arenaModel.score,
+          rank: arenaModel.rank,
+          rankLow: arenaModel.rankLow,
+          rankHigh: arenaModel.rankHigh,
+          confidence: arenaModel.confidence,
+          votes: arenaModel.votes,
+          preliminary: arenaModel.preliminary,
+          source: "arena",
+          sourceUrl: ARENA_FRONTEND_WEBDEV_SOURCE_URL,
+          extractedAt: ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+          voteCutoffAt: ARENA_FRONTEND_WEBDEV_VOTE_CUTOFF_AT,
+          ...(arenaModel.configuration
+            ? { configuration: arenaModel.configuration }
+            : {}),
+        },
+      },
+      pricing: mergePricing(
+        exchangeRate ? convertPricing(arenaPricing, exchangeRate) : arenaPricing,
+        registryModel?.pricing,
+        mergeExisting?.pricing,
+      ),
+      registryModel,
+      registryMappingTargetId: arenaModel.registryModelId,
+      contextWindow:
+        mergeExisting?.contextWindow ??
+        registryModel?.contextWindow ??
+        arenaModel.contextWindow ??
+        null,
+    });
+    candidates.set(candidate.id, candidate);
   }
 
   return [...candidates.values()];
@@ -1607,22 +2964,33 @@ function benchmarkCandidateFromRegistry(input: {
   id: string;
   provider: ProviderId;
   name: string;
+  source?: BenchmarkCandidate["source"];
   benchmarks: BenchmarkCandidate["benchmarks"];
   pricing: ModelPricing;
   registryModel?: RegistryModel;
+  registryMappingTargetId?: string;
   contextWindow?: number | null;
-  capabilities?: Record<Capability, boolean> | null;
+  capabilities?: Partial<Record<Capability, boolean>> | null;
   deprecated?: boolean | null;
+  releaseDate?: string;
 }): BenchmarkCandidate {
   const model = input.registryModel;
   const deprecated = model?.deprecated ?? input.deprecated ?? null;
+  const capabilities = mergeBenchmarkCapabilities(
+    model?.capabilities ??
+      inferredTextCapabilities(input.id, input.name, input.benchmarks.llm),
+    input.capabilities,
+  );
   const availability = input.benchmarks.llm
-    ? productionAvailabilityForTextModel(
-        input.id,
-        input.name,
-        input.benchmarks.llm,
+    ? mergeBenchmarkAvailability(
+        model?.availability,
+        productionAvailabilityForTextModel(
+          input.id,
+          input.name,
+          input.benchmarks.llm,
+        ),
       )
-    : undefined;
+    : model?.availability;
   const recommendable = isBenchmarkCandidateRecommendable(
     input.provider,
     input.id,
@@ -1631,28 +2999,30 @@ function benchmarkCandidateFromRegistry(input: {
     input.pricing,
     model,
     deprecated,
+    availability,
   );
 
   return {
     id: input.id,
     provider: input.provider,
     name: input.name,
-    source: "artificialanalysis",
+    source: input.source ?? "artificialanalysis",
     benchmarks: input.benchmarks,
     pricing: input.pricing,
     ...(model ? { registryModelId: model.id } : {}),
+    ...(!model && input.registryMappingTargetId
+      ? { registryMappingTargetId: input.registryMappingTargetId }
+      : {}),
     recommendable,
     ...(availability ? { availability } : {}),
     family: model?.family ?? null,
     contextWindow: model?.contextWindow ?? input.contextWindow ?? null,
     outputLimit: model?.outputLimit ?? null,
-    capabilities:
-      model?.capabilities ??
-      input.capabilities ??
-      inferredTextCapabilities(input.id, input.name, input.benchmarks.llm) ??
-      null,
+    capabilities,
     modalities: model?.modalities ?? null,
-    ...(model?.releaseDate ? { releaseDate: model.releaseDate } : {}),
+    ...(model?.releaseDate || input.releaseDate
+      ? { releaseDate: model?.releaseDate ?? input.releaseDate }
+      : {}),
     ...(model?.knowledgeCutoff
       ? { knowledgeCutoff: model.knowledgeCutoff }
       : {}),
@@ -1663,16 +3033,42 @@ function benchmarkCandidateFromRegistry(input: {
   };
 }
 
+function mergeBenchmarkCapabilities(
+  base: Record<Capability, boolean> | null | undefined,
+  benchmark: Partial<Record<Capability, boolean>> | null | undefined,
+): Record<Capability, boolean> | null {
+  if (!benchmark) return base ?? null;
+
+  return {
+    vision: benchmark.vision ?? base?.vision ?? false,
+    pdf: benchmark.pdf ?? base?.pdf ?? false,
+    reasoning: benchmark.reasoning ?? base?.reasoning ?? false,
+    toolCalling: benchmark.toolCalling ?? base?.toolCalling ?? false,
+    structuredOutput:
+      benchmark.structuredOutput ?? base?.structuredOutput ?? false,
+  };
+}
+
 function capabilitiesFromCustomerSupportRecommendation(
   model: ArtificialAnalysisCustomerSupportRecommendation,
-): Record<Capability, boolean> {
+): Partial<Record<Capability, boolean>> {
   return {
     vision: model.imageInput,
     reasoning: model.reasoning,
-    pdf: false,
-    toolCalling: false,
-    structuredOutput: false,
   };
+}
+
+function capabilitiesFromLlmEfficiency(
+  model: ArtificialAnalysisLlmEfficiencyModel,
+  existing?: Record<Capability, boolean> | null,
+): Partial<Record<Capability, boolean>> | null {
+  const capabilities: Partial<Record<Capability, boolean>> = {
+    ...(existing ?? {}),
+  };
+  if (model.imageInput !== undefined) capabilities.vision = model.imageInput;
+  if (model.reasoning !== undefined) capabilities.reasoning = model.reasoning;
+
+  return Object.keys(capabilities).length ? capabilities : null;
 }
 
 function inferredTextCapabilities(
@@ -1712,14 +3108,15 @@ function isBenchmarkCandidateRecommendable(
   pricing: ModelPricing,
   registryModel?: RegistryModel,
   deprecated?: boolean | null,
+  availability?: ModelAvailabilityMetadata,
 ): boolean {
   if (!SUPPORTED_PROVIDERS.includes(provider)) return false;
   if (registryModel?.deprecated || deprecated === true) return false;
 
   if (benchmarks.voice) {
     return (
-      pricing.benchmarkInputAudioPerHour !== undefined &&
-      pricing.benchmarkInputAudioPerHour > 0 &&
+      benchmarks.voice.stale !== true &&
+      (audioInputPrice(pricing) ?? 0) > 0 &&
       hasPositiveCandidateAudioPrice(pricing)
     );
   }
@@ -1732,10 +3129,23 @@ function isBenchmarkCandidateRecommendable(
     );
   }
 
+  if (benchmarks.frontendWebDev) {
+    return (
+      Boolean(registryModel) &&
+      isNumber(benchmarks.frontendWebDev.score) &&
+      frontendWebDevSnapshotIsFresh(benchmarks.frontendWebDev) &&
+      hasTokenPricing(pricing) &&
+      isProductionAvailabilityAllowed(
+        availability ?? heuristicAvailabilityForTextModel(id, name),
+      )
+    );
+  }
+
   return (
     hasRecommendableTextBenchmarkBasics(benchmarks, pricing) &&
     isProductionAvailabilityAllowed(
-      productionAvailabilityForTextModel(id, name, benchmarks.llm),
+      availability ??
+        productionAvailabilityForTextModel(id, name, benchmarks.llm),
     )
   );
 }
@@ -1745,8 +3155,8 @@ function hasRecommendableBenchmarkBasics(
 ): boolean {
   if (candidate.benchmarks.voice) {
     return (
-      candidate.pricing.benchmarkInputAudioPerHour !== undefined &&
-      candidate.pricing.benchmarkInputAudioPerHour > 0 &&
+      candidate.benchmarks.voice.stale !== true &&
+      (candidateAudioInputCost(candidate) ?? 0) > 0 &&
       hasPositiveCandidateAudioPrice(candidate.pricing)
     );
   }
@@ -1756,6 +3166,13 @@ function hasRecommendableBenchmarkBasics(
       isNumber(candidate.benchmarks.speechToText.aaWer) &&
       candidate.pricing.transcriptionCostPer1kMinutes !== undefined &&
       candidate.pricing.transcriptionCostPer1kMinutes > 0
+    );
+  }
+
+  if (candidate.benchmarks.frontendWebDev) {
+    return (
+      isNumber(candidate.benchmarks.frontendWebDev.score) &&
+      hasTokenPricing(candidate.pricing)
     );
   }
 
@@ -1797,6 +3214,22 @@ function productionAvailabilityForTextModel(
   }
 
   return benchmarkAvailability ?? heuristicAvailability;
+}
+
+function mergeBenchmarkAvailability(
+  registryAvailability: ModelAvailabilityMetadata | undefined,
+  benchmarkAvailability: ModelAvailabilityMetadata,
+): ModelAvailabilityMetadata {
+  if (
+    registryAvailability &&
+    !isProductionAvailabilityAllowed(registryAvailability)
+  ) {
+    return registryAvailability;
+  }
+  if (!isProductionAvailabilityAllowed(benchmarkAvailability)) {
+    return benchmarkAvailability;
+  }
+  return registryAvailability ?? benchmarkAvailability;
 }
 
 function isProductionAvailabilityAllowed(
@@ -1844,6 +3277,13 @@ function heuristicAvailabilityForTextModel(
       acceptedRisk: false,
       reason:
         "Preview-only models are excluded from default production recommendations.",
+    };
+  }
+  if (/\bbeta\b/.test(searchable)) {
+    return {
+      status: "beta",
+      acceptedRisk: false,
+      reason: "Beta models are excluded from default production recommendations.",
     };
   }
   if (searchable.includes("experimental") || /\bexp\b/.test(searchable)) {
@@ -1914,6 +3354,7 @@ function hasAnyTextQualitySignal(signals: BenchmarkSignals): boolean {
     signals.terminalBench,
     signals.tauTelecom,
     signals.professional,
+    signals.visualReasoning,
   ].some(isNumber);
 }
 
@@ -1929,32 +3370,100 @@ function hasCustomerSupportBenchmarkSignals(
   );
 }
 
+function hasDocumentProcessingBenchmarkSignals(
+  signals: BenchmarkSignals | undefined,
+): boolean {
+  return isNumber(signals?.visualReasoning);
+}
+
 function findRegistryModel(
   models: RegistryModel[],
   provider: ProviderId,
   aaKeys: Set<string>,
 ): RegistryModel | undefined {
-  return models.find(
-    (candidate) =>
-      candidate.provider === provider &&
-      modelKeys(candidate).some((key) => aaKeys.has(key)),
-  );
+  let best: RegistryModel | undefined;
+  let bestExactScore = 0;
+  let bestAliasScore = 0;
+
+  for (const candidate of models) {
+    if (candidate.provider !== provider) continue;
+    const exactScore = Math.max(
+      0,
+      ...[candidate.id, candidate.name]
+        .map(normalizeMatchKey)
+        .filter((key) => aaKeys.has(key))
+        .map((key) => key.length),
+    );
+    const aliasScore = Math.max(
+      0,
+      ...modelKeys(candidate)
+        .filter((key) => aaKeys.has(key))
+        .map((key) => key.length),
+    );
+    if (
+      exactScore > bestExactScore ||
+      (exactScore === bestExactScore && aliasScore > bestAliasScore)
+    ) {
+      best = candidate;
+      bestExactScore = exactScore;
+      bestAliasScore = aliasScore;
+    }
+  }
+  return best;
 }
 
 function efficiencySignalsForKeys(
   aaKeys: Set<string>,
   exchangeRate?: ExchangeRate,
 ): BenchmarkSignals {
-  const match = (
-    AA_LLM_EFFICIENCY_MODELS as readonly ArtificialAnalysisLlmEfficiencyModel[]
-  ).find((efficiencyModel) => {
-    const efficiencyKeys = artificialAnalysisEfficiencyKeys(efficiencyModel);
-    return [...efficiencyKeys].some((key) => aaKeys.has(key));
-  });
+  const match = efficiencyModelForKeys(aaKeys);
 
   return match
     ? benchmarkSignalsFromArtificialAnalysisEfficiency(match, exchangeRate)
     : {};
+}
+
+function efficiencyPricingForKeys(
+  aaKeys: Set<string>,
+  exchangeRate?: ExchangeRate,
+): ModelPricing {
+  const match = efficiencyModelForKeys(aaKeys);
+
+  return match
+    ? pricingFromArtificialAnalysisEfficiency(match, exchangeRate)
+    : {};
+}
+
+function efficiencyModelForKeys(
+  aaKeys: Set<string>,
+): ArtificialAnalysisLlmEfficiencyModel | undefined {
+  const models =
+    AA_LLM_EFFICIENCY_MODELS as readonly ArtificialAnalysisLlmEfficiencyModel[];
+  let best: ArtificialAnalysisLlmEfficiencyModel | undefined;
+  let bestExactScore = 0;
+
+  for (const model of models) {
+    const exactScore = Math.max(
+      0,
+      ...efficiencyIdentityValues(model)
+        .map(normalizeMatchKey)
+        .filter((key) => aaKeys.has(key))
+        .map((key) => key.length),
+    );
+    if (exactScore > bestExactScore) {
+      best = model;
+      bestExactScore = exactScore;
+    }
+  }
+
+  return (
+    best ??
+    models.find((model) =>
+      [...artificialAnalysisEfficiencyKeys(model)].some((key) =>
+        aaKeys.has(key),
+      ),
+    )
+  );
 }
 
 function pricingForKeys(
@@ -1972,17 +3481,31 @@ function pricingForKeys(
 }
 
 function autoCloseSignalsForKeys(
+  aaModel: ArtificialAnalysisModel,
   aaKeys: Set<string>,
   exchangeRate?: ExchangeRate,
 ): Pick<BenchmarkSignals, "autoClose"> | Record<string, never> {
-  const match = (
-    AI_AUTOCLOSE_BENCHMARKS as readonly AiAutoCloseBenchmarkModel[]
-  ).find((benchmarkModel) => {
+  const models =
+    AI_AUTOCLOSE_BENCHMARKS as readonly AiAutoCloseBenchmarkModel[];
+  const identities = artificialAnalysisIdentityValues(aaModel);
+  const exactAaKeys = new Set(identities.map(normalizeMatchKey));
+  const exactMatch = models.find((benchmarkModel) =>
+    autoCloseConfigurationIdentityValues(benchmarkModel)
+      .map(normalizeMatchKey)
+      .some((key) => exactAaKeys.has(key)),
+  );
+  if (exactMatch) {
+    return autoCloseSignalsFromBenchmark(exactMatch, exchangeRate);
+  }
+
+  if (identities.some(hasEffortVariantSuffix)) return {};
+
+  const aliasMatch = models.find((benchmarkModel) => {
     const benchmarkKeys = autoCloseBenchmarkKeys(benchmarkModel);
     return [...benchmarkKeys].some((key) => aaKeys.has(key));
   });
 
-  return autoCloseSignalsFromBenchmark(match, exchangeRate);
+  return autoCloseSignalsFromBenchmark(aliasMatch, exchangeRate);
 }
 
 function autoCloseSignalsForSlug(
@@ -2009,6 +3532,7 @@ function pricingFromArtificialAnalysis(
   exchangeRate?: ExchangeRate,
 ): ModelPricing {
   const input = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "price_1m_input_tokens"],
     ["pricing", "input"],
     ["pricing", "inputPerMTok"],
     ["prices", "input"],
@@ -2020,6 +3544,7 @@ function pricingFromArtificialAnalysis(
     ["input_cost_per_million_tokens"],
   ]);
   const output = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "price_1m_output_tokens"],
     ["pricing", "output"],
     ["pricing", "outputPerMTok"],
     ["prices", "output"],
@@ -2030,9 +3555,30 @@ function pricingFromArtificialAnalysis(
     ["price_1m_output_tokens"],
     ["output_cost_per_million_tokens"],
   ]);
+  const cacheRead = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "price_1m_cache_hit_tokens"],
+    ["pricing", "cache_read"],
+    ["pricing", "cacheReadPerMTok"],
+  ]);
+  const cacheWrite = firstNestedNumber(model as Record<string, unknown>, [
+    ["pricing", "price_1m_cache_write_tokens"],
+    ["pricing", "cache_write"],
+    ["pricing", "cacheWritePerMTok"],
+  ]);
   const pricing: ModelPricing = {
     ...optionalTokenPrice("inputPerMTok", input),
     ...optionalTokenPrice("outputPerMTok", output),
+    ...optionalTokenPrice("cacheReadPerMTok", cacheRead),
+    ...optionalTokenPrice("cacheWritePerMTok", cacheWrite),
+    ...optionalNumberPrice(
+      "imageInputPer1kImages",
+      positiveNumberOrUndefined(
+        firstNestedNumber(model as Record<string, unknown>, [
+          ["pricing", "price_per_1k_1mp_images"],
+          ["price_per_1k_1mp_images"],
+        ]),
+      ),
+    ),
   };
 
   return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
@@ -2061,9 +3607,65 @@ function pricingFromArtificialAnalysisEfficiency(
     ...optionalTokenPrice("inputPerMTok", model.inputPrice),
     ...optionalTokenPrice("outputPerMTok", model.outputPrice),
     ...optionalTokenPrice("cacheReadPerMTok", model.cacheHitPrice),
+    ...optionalNumberPrice("imageInputPer1kImages", model.imageInputPrice),
   };
 
   return exchangeRate ? convertPricing(pricing, exchangeRate) : pricing;
+}
+
+function mergePricing(
+  ...layers: Array<ModelPricing | undefined>
+): ModelPricing {
+  const merged: ModelPricing = {};
+  for (const layer of layers) {
+    if (!layer) continue;
+    for (const [key, value] of Object.entries(layer)) {
+      if (value !== undefined) {
+        merged[key as keyof ModelPricing] = value;
+      }
+    }
+  }
+  return merged;
+}
+
+function findRegistryModelById(
+  models: RegistryModel[],
+  provider: ProviderId,
+  registryModelId: string,
+): RegistryModel | undefined {
+  const target = normalizeMatchKey(registryModelId);
+  return models.find(
+    (model) =>
+      model.provider === provider && normalizeMatchKey(model.id) === target,
+  );
+}
+
+function staticBenchmarkSnapshotIsFresh(
+  checkedAt: string,
+  generatedAt: string,
+  maxAgeDays: number,
+): boolean {
+  const checkedAtMs = Date.parse(checkedAt);
+  const generatedAtMs = Date.parse(generatedAt);
+  if (!Number.isFinite(checkedAtMs) || !Number.isFinite(generatedAtMs)) {
+    return false;
+  }
+  const ageMs = generatedAtMs - checkedAtMs;
+  return ageMs >= 0 && ageMs <= maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
+function frontendWebDevSnapshotIsFresh(
+  benchmarks: FrontendWebDevBenchmarks | undefined,
+  nowMs = Date.now(),
+): boolean {
+  const checkedAtMs = Date.parse(benchmarks?.extractedAt ?? "");
+  const ageMs = nowMs - checkedAtMs;
+  return (
+    Number.isFinite(checkedAtMs) &&
+    Number.isFinite(nowMs) &&
+    ageMs >= 0 &&
+    ageMs <= ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
+  );
 }
 
 function pricingFromCustomerSupportRecommendation(
@@ -2108,6 +3710,14 @@ function providerFromArtificialAnalysis(
   if (slug.includes("xai") || name.includes("xai")) return "xai";
   if (slug.includes("anthropic") || name.includes("anthropic"))
     return "anthropic";
+  if (
+    slug.includes("kimi") ||
+    slug.includes("moonshot") ||
+    name.includes("kimi") ||
+    name.includes("moonshot")
+  ) {
+    return "moonshotai";
+  }
   return undefined;
 }
 
@@ -2119,6 +3729,7 @@ function providerFromArtificialAnalysisEfficiency(
   if (provider === "google") return "google";
   if (provider === "xai") return "xai";
   if (provider === "anthropic") return "anthropic";
+  if (provider === "kimi" || provider === "moonshotai") return "moonshotai";
 
   const searchable = `${model.slug} ${model.label}`.toLowerCase();
   if (searchable.includes("gpt") || searchable.includes("openai"))
@@ -2128,6 +3739,9 @@ function providerFromArtificialAnalysisEfficiency(
   if (searchable.includes("grok") || searchable.includes("xai")) return "xai";
   if (searchable.includes("claude") || searchable.includes("anthropic")) {
     return "anthropic";
+  }
+  if (searchable.includes("kimi") || searchable.includes("moonshot")) {
+    return "moonshotai";
   }
   return undefined;
 }
@@ -2177,14 +3791,24 @@ function speechToTextProviderRows(
 
 function benchmarkSignalsFromArtificialAnalysis(
   model: ArtificialAnalysisModel,
+  exchangeRate?: ExchangeRate,
 ): BenchmarkSignals {
   const evaluations = model.evaluations ?? {};
+  const source = model as Record<string, unknown>;
+  const rate = exchangeRate?.rate ?? 1;
   return {
     ...optionalSignal(
       "intelligence",
       firstScore(evaluations, [
         "artificial_analysis_intelligence_index",
         "intelligence_index",
+      ]),
+    ),
+    ...optionalSignal(
+      "agentic",
+      firstScore(evaluations, [
+        "artificial_analysis_agentic_index",
+        "agentic_index",
       ]),
     ),
     ...optionalSignal(
@@ -2237,16 +3861,71 @@ function benchmarkSignalsFromArtificialAnalysis(
     ...optionalSignal(
       "speed",
       positiveNumberOrUndefined(
-        numberOrUndefined(model.median_output_tokens_per_second),
+        firstNestedNumber(source, [
+          ["performance", "median_output_tokens_per_second"],
+          ["median_output_tokens_per_second"],
+        ]),
       ),
     ),
     ...optionalSignal(
       "latency",
       positiveNumberOrUndefined(
-        numberOrUndefined(
-          model.median_time_to_first_token_seconds ??
-            model.median_time_to_first_answer_token,
-        ),
+        firstNestedNumber(source, [
+          ["performance", "median_time_to_first_token_seconds"],
+          ["performance", "median_time_to_first_answer_token_seconds"],
+          ["performance", "median_time_to_first_answer_token"],
+          ["median_time_to_first_token_seconds"],
+          ["median_time_to_first_answer_token"],
+        ]),
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceRunAnswerCost",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          ["artificial_analysis_intelligence_index_cost", "answer_cost"],
+        ]),
+        rate,
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceRunReasoningCost",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          ["artificial_analysis_intelligence_index_cost", "reasoning_cost"],
+        ]),
+        rate,
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceRunInputCost",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          ["artificial_analysis_intelligence_index_cost", "input_cost"],
+        ]),
+        rate,
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceRunTotalCost",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          ["artificial_analysis_intelligence_index_cost", "total_cost"],
+        ]),
+        rate,
+      ),
+    ),
+    ...optionalSignal(
+      "intelligenceCostPerTask",
+      audValueOrUndefined(
+        firstNestedNumber(source, [
+          [
+            "artificial_analysis_intelligence_index_cost",
+            "cost_per_task",
+            "total_cost",
+          ],
+        ]),
+        rate,
       ),
     ),
   };
@@ -2275,11 +3954,17 @@ function benchmarkSignalsFromArtificialAnalysisEfficiency(
   if (model.critpt !== undefined) signals.critpt = model.critpt;
   if (model.omniscienceIndex !== undefined)
     signals.omniscience = model.omniscienceIndex;
+  if (model.visualReasoning !== undefined)
+    signals.visualReasoning = model.visualReasoning;
 
   const speed = positiveNumberOrUndefined(model.outputSpeed);
   if (speed !== undefined) signals.speed = speed;
   const latency = positiveNumberOrUndefined(model.latency);
   if (latency !== undefined) signals.latency = latency;
+  const visualSpeed = positiveNumberOrUndefined(model.visualOutputSpeed);
+  if (visualSpeed !== undefined) signals.visualOutputSpeed = visualSpeed;
+  const visualLatency = positiveNumberOrUndefined(model.visualLatency);
+  if (visualLatency !== undefined) signals.visualLatency = visualLatency;
 
   const answerCost = audValueOrUndefined(model.intelligenceRunAnswerCost, rate);
   if (answerCost !== undefined) signals.intelligenceRunAnswerCost = answerCost;
@@ -2451,6 +4136,10 @@ function normalizeBenchmarkScore(value: unknown): number | undefined {
   return score;
 }
 
+function normalizedBenchmarkScore(value: number | undefined): number | undefined {
+  return normalizeBenchmarkScore(value);
+}
+
 function optionalSignal<K extends keyof BenchmarkSignals>(
   key: K,
   value: number | undefined,
@@ -2480,9 +4169,15 @@ function minDefined(
 
 function artificialAnalysisKeys(model: ArtificialAnalysisModel): Set<string> {
   return new Set(
-    [model.id, model.name, model.slug]
-      .filter((value): value is string => typeof value === "string")
-      .map(normalizeMatchKey),
+    artificialAnalysisIdentityValues(model).flatMap(modelJoinKeys),
+  );
+}
+
+function artificialAnalysisIdentityValues(
+  model: ArtificialAnalysisModel,
+): string[] {
+  return [model.id, model.name, model.slug].filter(
+    (value): value is string => typeof value === "string",
   );
 }
 
@@ -2490,14 +4185,18 @@ function artificialAnalysisEfficiencyKeys(
   model: ArtificialAnalysisLlmEfficiencyModel,
 ): Set<string> {
   return new Set(
-    [
-      model.slug,
-      model.label,
-      model.detailsUrl.split("/").filter(Boolean).at(-1),
-    ]
-      .filter((value): value is string => typeof value === "string")
-      .map(normalizeMatchKey),
+    efficiencyIdentityValues(model).flatMap(modelJoinKeys),
   );
+}
+
+function efficiencyIdentityValues(
+  model: ArtificialAnalysisLlmEfficiencyModel,
+): string[] {
+  return [
+    model.slug,
+    model.label,
+    model.detailsUrl.split("/").filter(Boolean).at(-1),
+  ].filter((value): value is string => typeof value === "string");
 }
 
 function artificialAnalysisPricingKeys(
@@ -2510,20 +4209,55 @@ function artificialAnalysisPricingKeys(
       model.detailsUrl.split("/").filter(Boolean).at(-1),
     ]
       .filter((value): value is string => typeof value === "string")
-      .map(normalizeMatchKey),
+      .flatMap(modelJoinKeys),
   );
 }
 
 function autoCloseBenchmarkKeys(model: AiAutoCloseBenchmarkModel): Set<string> {
   return new Set(
-    [model.id, model.modelKey, model.apiModel, model.displayName]
-      .filter((value): value is string => typeof value === "string")
-      .map(normalizeMatchKey),
+    [
+      ...autoCloseConfigurationIdentityValues(model),
+      model.apiModel,
+    ].flatMap(modelJoinKeys),
   );
 }
 
+function autoCloseConfigurationIdentityValues(
+  model: AiAutoCloseBenchmarkModel,
+): string[] {
+  return [model.id, model.modelKey, model.displayName];
+}
+
 function modelKeys(model: RegistryModel): string[] {
-  return [model.id, model.name].map(normalizeMatchKey);
+  return [model.id, model.name].flatMap(modelJoinKeys);
+}
+
+function modelJoinKeys(value: string): string[] {
+  const variants = [slugFrom(value)];
+
+  while (true) {
+    const current = variants.at(-1)!;
+    const stripped = stripEffortVariantSuffix(current);
+    if (stripped === current) break;
+    variants.push(stripped);
+  }
+
+  return [...new Set(variants.map(normalizeMatchKey))];
+}
+
+function stripEffortVariantSuffix(value: string): string {
+  return value
+    .replace(/-(?:minimal|low|medium|high|xhigh|max)-effort$/, "")
+    .replace(/-effort-(?:minimal|low|medium|high|xhigh|max)$/, "")
+    .replace(
+      /-(?:adaptive-reasoning|non-reasoning|reasoning|thinking|adaptive|minimal|low|medium|high|xhigh|max)$/,
+      "",
+    );
+}
+
+function hasEffortVariantSuffix(value: string): boolean {
+  const slug = slugFrom(value);
+  return stripEffortVariantSuffix(slug) !== slug;
 }
 
 function normalizeMatchKey(value: string): string {
@@ -2610,6 +4344,17 @@ function compareBenchmarkCandidates(
     );
   }
 
+  if (filters.useCase === "document-processing") {
+    if (tier === "fast") {
+      return compareDocumentProcessingFastCandidates(left, right);
+    }
+    return compareDocumentProcessingAccuracyCandidates(left, right);
+  }
+
+  if (filters.useCase === "front-end-web-dev") {
+    return compareFrontendWebDevCandidates(left, right, tier);
+  }
+
   if (filters.useCase === "speech-to-text") {
     return compareSpeechToTextBenchmarkCandidates(left, right, tier);
   }
@@ -2622,6 +4367,65 @@ function compareBenchmarkCandidates(
     scoreBenchmarkCandidate(right, filters, tier) -
       scoreBenchmarkCandidate(left, filters, tier) ||
     compareBenchmarkCandidateForTier(left, right, tier)
+  );
+}
+
+function compareFrontendWebDevCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+  tier: Tier,
+): number {
+  if (tier === "balanced" || tier === "fast") {
+    const maxPreferredRank = tier === "balanced" ? 10 : 20;
+    const leftPreferred =
+      isNumber(left.benchmarks.frontendWebDev?.rank) &&
+      left.benchmarks.frontendWebDev.rank <= maxPreferredRank;
+    const rightPreferred =
+      isNumber(right.benchmarks.frontendWebDev?.rank) &&
+      right.benchmarks.frontendWebDev.rank <= maxPreferredRank;
+
+    return (
+      Number(!leftPreferred) - Number(!rightPreferred) ||
+      compareOptionalAsc(
+        left.pricing.outputPerMTok,
+        right.pricing.outputPerMTok,
+      ) ||
+      compareOptionalAsc(
+        left.pricing.inputPerMTok,
+        right.pricing.inputPerMTok,
+      ) ||
+      compareOptionalDesc(
+        left.benchmarks.frontendWebDev?.score,
+        right.benchmarks.frontendWebDev?.score,
+      ) ||
+      compareOptionalAsc(
+        left.benchmarks.frontendWebDev?.rank,
+        right.benchmarks.frontendWebDev?.rank,
+      ) ||
+      compareOptionalDesc(
+        left.benchmarks.frontendWebDev?.votes,
+        right.benchmarks.frontendWebDev?.votes,
+      ) ||
+      left.id.localeCompare(right.id)
+    );
+  }
+
+  const scoreOrder = compareOptionalDesc(
+    left.benchmarks.frontendWebDev?.score,
+    right.benchmarks.frontendWebDev?.score,
+  );
+  const rankOrder = compareOptionalAsc(
+    left.benchmarks.frontendWebDev?.rank,
+    right.benchmarks.frontendWebDev?.rank,
+  );
+  return (
+    scoreOrder ||
+    rankOrder ||
+    compareOptionalDesc(
+      left.benchmarks.frontendWebDev?.votes,
+      right.benchmarks.frontendWebDev?.votes,
+    ) ||
+    left.id.localeCompare(right.id)
   );
 }
 
@@ -2682,8 +4486,8 @@ function compareVoiceBenchmarkCandidates(
   if (tier === "fast") {
     return (
       compareOptionalAsc(
-        left.pricing.benchmarkInputAudioPerHour,
-        right.pricing.benchmarkInputAudioPerHour,
+        candidateAudioInputCost(left),
+        candidateAudioInputCost(right),
       ) ||
       compareOptionalAsc(
         candidateAudioOutputCost(left),
@@ -2700,6 +4504,64 @@ function compareVoiceBenchmarkCandidates(
   return compareVoiceQualityOrder(left, right);
 }
 
+function compareDocumentProcessingAccuracyCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+): number {
+  return (
+    compareOptionalDesc(
+      normalizedBenchmarkScore(left.benchmarks.llm?.visualReasoning),
+      normalizedBenchmarkScore(right.benchmarks.llm?.visualReasoning),
+    ) ||
+    compareOptionalDesc(
+      normalizedBenchmarkScore(left.benchmarks.llm?.instructionFollowing),
+      normalizedBenchmarkScore(right.benchmarks.llm?.instructionFollowing),
+    ) ||
+    compareOptionalDesc(
+      left.benchmarks.llm?.intelligence,
+      right.benchmarks.llm?.intelligence,
+    ) ||
+    compareOptionalDesc(
+      normalizedBenchmarkScore(left.benchmarks.llm?.lcr),
+      normalizedBenchmarkScore(right.benchmarks.llm?.lcr),
+    ) ||
+    compareOptionalAsc(
+      left.pricing.imageInputPer1kImages,
+      right.pricing.imageInputPer1kImages,
+    ) ||
+    compareOptionalAsc(
+      left.pricing.outputPerMTok,
+      right.pricing.outputPerMTok,
+    ) ||
+    compareBenchmarkCandidateForTier(left, right, "best")
+  );
+}
+
+function compareDocumentProcessingFastCandidates(
+  left: BenchmarkCandidate,
+  right: BenchmarkCandidate,
+): number {
+  return (
+    compareOptionalAsc(
+      left.pricing.imageInputPer1kImages,
+      right.pricing.imageInputPer1kImages,
+    ) ||
+    compareOptionalAsc(
+      left.pricing.inputPerMTok,
+      right.pricing.inputPerMTok,
+    ) ||
+    compareOptionalAsc(
+      left.pricing.outputPerMTok,
+      right.pricing.outputPerMTok,
+    ) ||
+    compareOptionalAsc(
+      left.benchmarks.llm?.visualLatency ?? left.benchmarks.llm?.latency,
+      right.benchmarks.llm?.visualLatency ?? right.benchmarks.llm?.latency,
+    ) ||
+    compareDocumentProcessingAccuracyCandidates(left, right)
+  );
+}
+
 function compareVoiceQualityOrder(
   left: BenchmarkCandidate,
   right: BenchmarkCandidate,
@@ -2708,6 +4570,7 @@ function compareVoiceQualityOrder(
   const rightVoice = right.benchmarks.voice;
 
   return (
+    compareOptionalDesc(leftVoice?.qualityIndex, rightVoice?.qualityIndex) ||
     compareOptionalDesc(
       leftVoice?.agenticPerformance,
       rightVoice?.agenticPerformance,
@@ -2729,8 +4592,8 @@ function compareVoiceQualityOrder(
       rightVoice?.timeToFirstAudioSeconds,
     ) ||
     compareOptionalAsc(
-      left.pricing.benchmarkInputAudioPerHour,
-      right.pricing.benchmarkInputAudioPerHour,
+      candidateAudioInputCost(left),
+      candidateAudioInputCost(right),
     ) ||
     compareOptionalAsc(
       candidateAudioOutputCost(left),
@@ -2970,7 +4833,7 @@ function scoreBenchmarkCandidate(
   const signals = candidate.benchmarks.llm;
   const quality = benchmarkCandidateQualityScore(candidate, useCase);
   const latency = benchmarkCandidateLatencyScore(candidate, useCase);
-  const speed = speedScore(signals);
+  const speed = speedScore(signals, useCase);
   const context = Math.min((candidate.contextWindow ?? 0) / 1_000_000, 1) * 100;
   const cost = benchmarkCandidateCostScore(candidate, useCase, tier);
   const weights = scoringWeights(useCase, tier);
@@ -3030,6 +4893,18 @@ function benchmarkCandidateQualityScore(
     );
   }
 
+  if (useCase === "document-processing") {
+    return weightedAverage(
+      [
+        [normalizedBenchmarkScore(signals?.visualReasoning), 0.7],
+        [normalizedBenchmarkScore(signals?.instructionFollowing), 0.15],
+        [signals?.intelligence, 0.1],
+        [normalizedBenchmarkScore(signals?.lcr), 0.05],
+      ],
+      60,
+    );
+  }
+
   return weightedAverage(
     [
       [signals?.instructionFollowing, 0.3],
@@ -3057,7 +4932,11 @@ function benchmarkCandidateLatencyScore(
     });
   }
 
-  const latency = candidate.benchmarks.llm?.latency;
+  const latency =
+    useCase === "document-processing"
+      ? (candidate.benchmarks.llm?.visualLatency ??
+        candidate.benchmarks.llm?.latency)
+      : candidate.benchmarks.llm?.latency;
   if (latency === undefined) return 50;
   return 100 - Math.min(latency / 20, 1) * 100;
 }
@@ -3104,7 +4983,7 @@ function scoreRecommendation(
     model.benchmarks?.llm ?? catalog.benchmarkSignals?.[modelKey(model)];
   const quality = qualityScore(model, signals, useCase);
   const latency = latencyScore(signals, model, useCase);
-  const speed = speedScore(signals);
+  const speed = speedScore(signals, useCase);
   const context = contextScore(model);
   const cost = costScore(model, useCase, signals, tier);
   const weights = scoringWeights(useCase, tier);
@@ -3135,6 +5014,9 @@ function scoringWeights(
     if (useCase === "speech-to-text") {
       return { quality: 0.2, latency: 0, speed: 0.35, context: 0, cost: 0.45 };
     }
+    if (useCase === "document-processing") {
+      return { quality: 0.3, latency: 0.18, speed: 0.02, context: 0, cost: 0.5 };
+    }
     return { quality: 0.2, latency: 0.04, speed: 0.04, context: 0, cost: 0.72 };
   }
 
@@ -3145,6 +5027,9 @@ function scoringWeights(
     if (useCase === "speech-to-text") {
       return { quality: 0.85, latency: 0, speed: 0.1, context: 0, cost: 0.05 };
     }
+    if (useCase === "document-processing") {
+      return { quality: 0.9, latency: 0.05, speed: 0, context: 0, cost: 0.05 };
+    }
     return { quality: 0.9, latency: 0.02, speed: 0.02, context: 0, cost: 0.06 };
   }
 
@@ -3153,6 +5038,9 @@ function scoringWeights(
   }
   if (useCase === "speech-to-text") {
     return { quality: 0.65, latency: 0, speed: 0.1, context: 0, cost: 0.25 };
+  }
+  if (useCase === "document-processing") {
+    return { quality: 0.62, latency: 0.12, speed: 0.06, context: 0, cost: 0.2 };
   }
 
   return { quality: 0.54, latency: 0.04, speed: 0.04, context: 0, cost: 0.38 };
@@ -3191,6 +5079,18 @@ function qualityScore(
         [signals.instructionFollowing, 0.3],
         [signals.intelligence, 0.25],
         [signals.professional, 0.1],
+      ],
+      fallback,
+    );
+  }
+
+  if (useCase === "document-processing") {
+    return weightedAverage(
+      [
+        [normalizedBenchmarkScore(signals.visualReasoning), 0.7],
+        [normalizedBenchmarkScore(signals.instructionFollowing), 0.15],
+        [signals.intelligence, 0.1],
+        [normalizedBenchmarkScore(signals.lcr), 0.05],
       ],
       fallback,
     );
@@ -3237,13 +5137,24 @@ function latencyScore(
     return speedScore({ speed: model?.benchmarks?.speechToText?.speedFactor });
   }
 
-  if (signals?.latency === undefined) return 50;
-  return 100 - Math.min(signals.latency / 20, 1) * 100;
+  const latency =
+    useCase === "document-processing"
+      ? (signals?.visualLatency ?? signals?.latency)
+      : signals?.latency;
+  if (latency === undefined) return 50;
+  return 100 - Math.min(latency / 20, 1) * 100;
 }
 
-function speedScore(signals: BenchmarkSignals | undefined): number {
-  if (signals?.speed === undefined) return 50;
-  return Math.min(signals.speed / 220, 1) * 100;
+function speedScore(
+  signals: Pick<BenchmarkSignals, "speed" | "visualOutputSpeed"> | undefined,
+  useCase?: UseCase,
+): number {
+  const speed =
+    useCase === "document-processing"
+      ? (signals?.visualOutputSpeed ?? signals?.speed)
+      : signals?.speed;
+  if (speed === undefined) return 50;
+  return Math.min(speed / 220, 1) * 100;
 }
 
 function contextScore(model: RegistryModel): number {
@@ -3309,6 +5220,22 @@ function costScore(
     );
   }
 
+  if (useCase === "document-processing") {
+    const imageCost = model.pricing.imageInputPer1kImages;
+    const imageScore =
+      imageCost === undefined
+        ? undefined
+        : 100 - Math.min(Math.log1p(imageCost) / Math.log1p(10), 1) * 100;
+    return weightedAverage(
+      [
+        [imageScore, 0.45],
+        [priceScore, 0.35],
+        [runCostScore, tier === "fast" ? 0.2 : 0.1],
+      ],
+      priceScore,
+    );
+  }
+
   return priceScore;
 }
 
@@ -3361,7 +5288,10 @@ function compareOptionalDesc(
   left: number | undefined,
   right: number | undefined,
 ): number {
-  return compareOptionalAsc(right, left);
+  if (left === undefined && right === undefined) return 0;
+  if (left === undefined) return 1;
+  if (right === undefined) return -1;
+  return right - left;
 }
 
 function compareCheapest(left: RegistryModel, right: RegistryModel): number {
@@ -3373,6 +5303,7 @@ function compareCheapest(left: RegistryModel, right: RegistryModel): number {
 function cheapestPrice(model: RegistryModel): number {
   return (
     model.pricing.inputPerMTok ??
+    model.pricing.imageInputPer1kImages ??
     voiceCost(model) ??
     transcriptionCost(model) ??
     model.pricing.outputPerMTok ??
@@ -3389,7 +5320,7 @@ function voiceCost(model: RegistryModel): number | undefined {
 }
 
 function audioInputCost(model: RegistryModel): number | undefined {
-  return model.pricing.benchmarkInputAudioPerHour;
+  return audioInputPrice(model.pricing);
 }
 
 function audioOutputCost(model: RegistryModel): number | undefined {
@@ -3409,7 +5340,7 @@ function transcriptionCost(model: RegistryModel): number | undefined {
 }
 
 function candidateVoiceCost(candidate: BenchmarkCandidate): number | undefined {
-  const input = candidate.pricing.benchmarkInputAudioPerHour;
+  const input = candidateAudioInputCost(candidate);
   const output = candidateAudioOutputCost(candidate);
   if (input !== undefined && output !== undefined)
     return input * 0.6 + output * 0.4;
@@ -3419,17 +5350,27 @@ function candidateVoiceCost(candidate: BenchmarkCandidate): number | undefined {
 function candidateAudioOutputCost(
   candidate: BenchmarkCandidate,
 ): number | undefined {
-  return (
-    candidate.pricing.audioOutputPerHour ??
-    candidate.pricing.benchmarkInputAudioPerHour
-  );
+  return candidate.pricing.audioOutputPerHour;
+}
+
+function candidateAudioInputCost(
+  candidate: BenchmarkCandidate,
+): number | undefined {
+  return audioInputPrice(candidate.pricing);
+}
+
+function audioInputPrice(pricing: ModelPricing): number | undefined {
+  return pricing.benchmarkInputAudioPerHour ?? pricing.audioInputPerHour;
 }
 
 function hasPositiveCandidateAudioPrice(pricing: ModelPricing): boolean {
-  const input = pricing.benchmarkInputAudioPerHour;
-  const output = pricing.audioOutputPerHour ?? input;
+  const input = audioInputPrice(pricing);
+  const output = pricing.audioOutputPerHour;
   return (
-    (input !== undefined && input > 0) || (output !== undefined && output > 0)
+    input !== undefined &&
+    input > 0 &&
+    output !== undefined &&
+    output > 0
   );
 }
 
@@ -3442,6 +5383,7 @@ function candidateTranscriptionCost(
 function candidateCheapestPrice(candidate: BenchmarkCandidate): number {
   return (
     candidate.pricing.inputPerMTok ??
+    candidate.pricing.imageInputPer1kImages ??
     candidateVoiceCost(candidate) ??
     candidateTranscriptionCost(candidate) ??
     candidate.pricing.outputPerMTok ??
@@ -3480,6 +5422,11 @@ function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
 function slugFrom(value: string): string {
   return value
     .toLowerCase()
@@ -3500,7 +5447,11 @@ function escapeRegExp(value: string): string {
 }
 
 function optionalTokenPrice(
-  key: "inputPerMTok" | "outputPerMTok" | "cacheReadPerMTok",
+  key:
+    | "inputPerMTok"
+    | "outputPerMTok"
+    | "cacheReadPerMTok"
+    | "cacheWritePerMTok",
   value: number | undefined,
 ): Partial<ModelPricing> {
   return value === undefined ? {} : { [key]: value };
@@ -3512,7 +5463,8 @@ function optionalNumberPrice(
     | "audioOutputPerHour"
     | "benchmarkInputAudioPerHour"
     | "benchmarkCostPerTask"
-    | "transcriptionCostPer1kMinutes",
+    | "transcriptionCostPer1kMinutes"
+    | "imageInputPer1kImages",
   value: number | undefined,
 ): Partial<ModelPricing> {
   return value === undefined ? {} : { [key]: value };
@@ -3604,6 +5556,16 @@ function convertPricing(
       exchangeRate.rate,
     ),
     ...optionalAudPrice(
+      "audioInputPerMTok",
+      pricing.audioInputPerMTok,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "audioOutputPerMTok",
+      pricing.audioOutputPerMTok,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
       "benchmarkInputAudioPerHour",
       pricing.benchmarkInputAudioPerHour,
       exchangeRate.rate,
@@ -3616,6 +5578,11 @@ function convertPricing(
     ...optionalAudPrice(
       "transcriptionCostPer1kMinutes",
       pricing.transcriptionCostPer1kMinutes,
+      exchangeRate.rate,
+    ),
+    ...optionalAudPrice(
+      "imageInputPer1kImages",
+      pricing.imageInputPer1kImages,
       exchangeRate.rate,
     ),
   };
@@ -3649,8 +5616,33 @@ function optionalString<K extends "releaseDate" | "knowledgeCutoff">(
     : {};
 }
 
+function dateToIso(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+    ? `${trimmed}T00:00:00Z`
+    : trimmed;
+}
+
 function dateValue(value: string | undefined): number {
   if (!value) return 0;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+export function bundledVoiceSourceStatus(
+  generatedAt: string,
+): VoiceSourceStatus {
+  const extracted = dateValue(AA_SPEECH_TO_SPEECH_EXTRACTED_AT);
+  const generated = dateValue(generatedAt);
+  const ageDays = (generated - extracted) / (24 * 60 * 60 * 1000);
+  return {
+    state:
+      ageDays <= VOICE_FALLBACK_MAX_AGE_DAYS
+        ? "fallback_fresh"
+        : "fallback_stale",
+    origin: "bundled_snapshot",
+    fetchedAt: AA_SPEECH_TO_SPEECH_EXTRACTED_AT,
+    rowCount: AA_SPEECH_TO_SPEECH_MODELS.length,
+  };
 }

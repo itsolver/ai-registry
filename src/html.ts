@@ -4,7 +4,7 @@ export const HOME_HTML = String.raw`<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ai.itsolver.au - stop hardcoding model names</title>
-  <meta name="description" content="A public IT Solver API that recommends current AI models from OpenAI, Google, xAI, and Anthropic.">
+  <meta name="description" content="A public IT Solver API that recommends current AI models from OpenAI, Google, xAI, Anthropic, Moonshot AI, and other supported providers.">
   <style>
     :root {
       --ink: #1a1a1a;
@@ -501,8 +501,51 @@ export const HOME_HTML = String.raw`<!doctype html>
     .benchmark-panels {
       margin: 1.5rem 0 0;
     }
+    .mode-panel {
+      margin: 1.5rem 0 0;
+    }
+    .mode-panel[hidden] {
+      display: none;
+    }
     .benchmark-panel[hidden] {
       display: none;
+    }
+    .mode-role {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.08rem 0.42rem;
+      color: var(--muted);
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .mode-role.primary {
+      border-color: #8fbd83;
+      background: #e8f4e3;
+      color: #376b34;
+    }
+    .eligibility {
+      max-width: 240px;
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.35;
+      white-space: normal;
+    }
+    .eligibility.eligible { color: #376b34; }
+    .registry-capabilities {
+      max-width: 260px;
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.35;
+      white-space: normal;
+    }
+    .registry-date {
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.35;
+      white-space: normal;
     }
     .faq {
       margin: 1.2rem 0 2.2rem;
@@ -747,18 +790,28 @@ export const HOME_HTML = String.raw`<!doctype html>
           <label for="b-endpoint">I want to</label>
           <select id="b-endpoint">
             <option value="recommend">get a recommendation</option>
-            <option value="models">browse all models</option>
+            <option value="benchmarks">browse benchmark rows</option>
+            <option value="models">browse registry models</option>
           </select>
         </div>
-        <div class="b-field">
+        <div class="b-field" data-endpoint-scope="recommend benchmarks">
           <label for="b-usecase">For use case</label>
           <select id="b-usecase">
             <option value="customer-support" selected>customer support</option>
-            <option value="voice">voice</option>
+            <option value="document-processing">document processing (OCR)</option>
+            <option value="front-end-web-dev">front-end web dev</option>
+            <option value="voice">speech to speech (voice)</option>
             <option value="speech-to-text">speech to text</option>
           </select>
         </div>
-        <div class="b-field">
+        <div class="b-field check-field" id="b-allowlatest-field" hidden>
+          <label for="b-allowlatest">Evidence policy</label>
+          <label class="check-row">
+            <input type="checkbox" id="b-allowlatest">
+            <span>Allow latest full-size model without benchmark evidence (best only)</span>
+          </label>
+        </div>
+        <div class="b-field" data-endpoint-scope="recommend benchmarks">
           <label for="b-tier">Recommendation priority</label>
           <select id="b-tier">
             <option value="balanced">balanced trade-off</option>
@@ -774,12 +827,13 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="google">google</option>
             <option value="xai">xai</option>
             <option value="anthropic">anthropic</option>
+            <option value="moonshotai">moonshot ai</option>
             <option value="nvidia">nvidia</option>
             <option value="elevenlabs">elevenlabs</option>
             <option value="groq">groq</option>
           </select>
         </div>
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="customer-support">
           <label for="b-capability">Must have</label>
           <select id="b-capability">
             <option value="">any capability</option>
@@ -790,11 +844,11 @@ export const HOME_HTML = String.raw`<!doctype html>
             <option value="structuredOutput">structured output</option>
           </select>
         </div>
-        <div class="b-field check-field" data-filter-scope="text">
+        <div class="b-field check-field" data-filter-scope="customer-support">
           <label for="b-includeits">Benchmark source</label>
           <label class="check-row">
             <input type="checkbox" id="b-includeits" checked>
-            <span>Include ITS benchmark</span>
+            <span>Include ITS Eval</span>
           </label>
         </div>
         <div class="b-field" data-filter-scope="voice">
@@ -816,7 +870,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         </div>
         <div class="b-field" data-filter-scope="voice">
           <label for="b-maxaudiooutputcost">Max output audio AUD/hr</label>
-          <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="voice only">
+          <input type="number" id="b-maxaudiooutputcost" min="0" step="0.1" placeholder="speech-to-speech only">
         </div>
         <div class="b-field" data-filter-scope="speech-to-text">
           <label for="b-transcription-max-range">Max STT AUD/1k min</label>
@@ -852,8 +906,42 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="range-group" data-filter-scope="text">
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="document-processing">
+          <label for="b-visualreasoning-min-range">Min visual reasoning</label>
+          <input type="hidden" id="b-minvisualreasoning">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-visualreasoning-label">Any visual reasoning</strong>
+              <button type="button" id="b-visualreasoning-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-visualreasoning-min-range" min="0" max="100" step="1" value="0" aria-label="Minimum visual reasoning score">
+            </div>
+            <div class="price-filter-scale">
+              <span>0</span>
+              <span>100</span>
+            </div>
+          </div>
+        </div>
+        <div class="b-field" data-filter-scope="document-processing">
+          <label for="b-imagecost-max-range">Max image AUD/1k</label>
+          <input type="hidden" id="b-maximagecost">
+          <div class="price-filter-card compact-filter">
+            <div class="price-filter-top">
+              <strong id="b-imagecost-label">Any image AUD/1k</strong>
+              <button type="button" id="b-imagecost-any">Any</button>
+            </div>
+            <div class="range-stack">
+              <input type="range" id="b-imagecost-max-range" min="0" max="10" step="0.01" value="10" aria-label="Maximum image input AUD per 1000 images">
+            </div>
+            <div class="price-filter-scale">
+              <span>$0</span>
+              <span>$10+</span>
+            </div>
+          </div>
+        </div>
+        <div class="range-group" data-filter-scope="customer-support front-end-web-dev">
+        <div class="b-field" data-filter-scope="customer-support front-end-web-dev">
           <label for="b-input-min-range">Input AUD/MTok range</label>
           <input type="hidden" id="b-mincost">
           <input type="hidden" id="b-maxcost">
@@ -872,7 +960,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="customer-support front-end-web-dev">
           <label for="b-output-min-range">Output AUD/MTok range</label>
           <input type="hidden" id="b-minoutputcost">
           <input type="hidden" id="b-maxoutputcost">
@@ -891,7 +979,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="customer-support front-end-web-dev">
           <label for="b-context-min-range">Context range</label>
           <input type="hidden" id="b-minctx">
           <input type="hidden" id="b-maxctx">
@@ -911,7 +999,7 @@ export const HOME_HTML = String.raw`<!doctype html>
           </div>
         </div>
         </div>
-        <div class="b-field range-field" data-filter-scope="text">
+        <div class="b-field range-field" data-filter-scope="customer-support document-processing">
           <label for="b-run-min-range">Task AUD range</label>
           <input type="hidden" id="b-minruncost">
           <input type="hidden" id="b-maxruncost">
@@ -930,7 +1018,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             </div>
           </div>
         </div>
-        <div class="b-field" data-filter-scope="text">
+        <div class="b-field" data-filter-scope="customer-support document-processing">
           <label for="b-minintelligence">Min intelligence</label>
           <input type="number" id="b-minintelligence" min="0" max="100" step="1" value="30">
         </div>
@@ -956,7 +1044,24 @@ export const HOME_HTML = String.raw`<!doctype html>
   </aside>
   <section class="benchmark-column" aria-labelledby="benchmarkTitle">
   <h2 id="benchmarkTitle">Customer Support Benchmark</h2>
-  <div class="benchmark-panels">
+  <div class="mode-panel" data-mode-panel="recommend">
+    <div class="voice-bench">
+      <div class="voice-head">
+        <strong>Primary and distinct failovers</strong>
+        <span id="recommendationSource">waiting for recommendation...</span>
+      </div>
+      <div class="voice-table-wrap">
+        <table class="voice-table">
+          <thead><tr id="recommendationHead"><th>Role</th><th>Model</th></tr></thead>
+          <tbody id="recommendationRows">
+            <tr><td class="empty" colspan="2">checking...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="bench-note" id="frontendRecommendationCredit" hidden>Source: <a href="https://arena.ai/leaderboard/code/webdev">Arena Frontend Code leaderboard</a>. Arena's anonymous pairwise human votes provide the ranks and scores shown here.</p>
+  </div>
+  <div class="benchmark-panels mode-panel" data-mode-panel="benchmarks" hidden>
     <div class="benchmark-panel" data-benchmark-panel="customer-support" hidden>
       <div class="voice-bench">
       <div class="voice-head">
@@ -989,10 +1094,74 @@ export const HOME_HTML = String.raw`<!doctype html>
     </div>
       <p class="bench-note">Customer support rows include cached Artificial Analysis signals plus IT Solver auto-close benchmark results where available. Live recommendations sort false positives first, then accuracy, then Intelligence Index Task AUD.</p>
     </div>
+    <div class="benchmark-panel" data-benchmark-panel="document-processing" hidden>
+      <div class="voice-bench">
+        <div class="voice-head">
+          <strong>Document processing</strong>
+          <div class="voice-head-meta">
+            <span id="documentSource">loading...</span>
+          </div>
+        </div>
+        <div class="voice-table-wrap">
+          <table class="voice-table">
+            <thead>
+              <tr>
+                <th data-table="documentRows" data-sort="model">Model</th>
+                <th data-table="documentRows" data-sort="score">Document Score</th>
+                <th data-table="documentRows" data-sort="visual">Visual</th>
+                <th data-table="documentRows" data-sort="ifbench">IFBench</th>
+                <th data-table="documentRows" data-sort="intelligence">Intel</th>
+                <th data-table="documentRows" data-sort="imageCost">Image AUD/1k</th>
+                <th data-table="documentRows" data-sort="runCost">Task AUD</th>
+                <th data-table="documentRows" data-sort="latency">Latency</th>
+              </tr>
+            </thead>
+            <tbody id="documentRows">
+              <tr><td class="empty" colspan="8">loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="bench-note">Document processing rows use Artificial Analysis vision data for MMMU Pro visual reasoning, image input pricing, single-image latency, instruction following, intelligence, and Task AUD. Long-context reasoning is only a weak tie-breaker.</p>
+    </div>
+    <div class="benchmark-panel" data-benchmark-panel="front-end-web-dev" hidden>
+      <div class="voice-bench">
+        <div class="voice-head">
+          <strong>Front-end web development</strong>
+          <div class="voice-head-meta">
+            <span id="frontendSource">loading...</span>
+          </div>
+        </div>
+        <div class="voice-table-wrap">
+          <table class="voice-table">
+            <thead>
+              <tr>
+                <th data-table="frontendRows" data-sort="rank">Rank</th>
+                <th data-table="frontendRows" data-sort="model">Model</th>
+                <th data-table="frontendRows" data-sort="configuration">Configuration</th>
+                <th data-table="frontendRows" data-sort="registry">Registry model</th>
+                <th data-table="frontendRows" data-sort="score">Arena score</th>
+                <th data-table="frontendRows" data-sort="spread">Rank spread</th>
+                <th data-table="frontendRows" data-sort="votes">Votes</th>
+                <th data-table="frontendRows" data-sort="input">Input AUD/MTok</th>
+                <th data-table="frontendRows" data-sort="output">Output AUD/MTok</th>
+                <th data-table="frontendRows" data-sort="context">Context</th>
+                <th data-table="frontendRows" data-sort="status">Status</th>
+                <th data-table="frontendRows" data-sort="eligibility">Eligibility</th>
+              </tr>
+            </thead>
+            <tbody id="frontendRows">
+              <tr><td class="empty" colspan="12">loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="bench-note"><a href="https://arena.ai/leaderboard/code/webdev">Arena Frontend Code</a> uses anonymous pairwise human votes on generated front-end work. In the checked August 15, 2026 snapshot, Claude Opus 5 Max ranked first at 1692 ±9 from 6,448 votes. This table is limited to Arena rows that map to supported registry providers. The August 13, 2026 <a href="https://www.vals.ai/benchmarks/vibe-code">Vibe Code Bench v1.1</a> provides a separate functional cross-check: Claude Fable 5 ranked first, Claude Opus 5 ranked second, and Kimi K3 ranked third. These incompatible scores are not blended.</p>
+    </div>
     <div class="benchmark-panel" data-benchmark-panel="voice" hidden>
       <div class="voice-bench">
         <div class="voice-head">
-          <strong>Current voice candidates</strong>
+          <strong>Current speech-to-speech (voice) candidates</strong>
           <span id="voiceSource">loading...</span>
         </div>
         <div class="voice-table-wrap">
@@ -1000,6 +1169,7 @@ export const HOME_HTML = String.raw`<!doctype html>
             <thead>
               <tr>
                 <th data-table="voiceRows" data-sort="model">Model</th>
+                <th data-table="voiceRows" data-sort="quality">AA Index</th>
                 <th data-table="voiceRows" data-sort="agentic">τ-Voice</th>
                 <th data-table="voiceRows" data-sort="speech">Speech</th>
                 <th data-table="voiceRows" data-sort="telecom">Telecom</th>
@@ -1009,12 +1179,12 @@ export const HOME_HTML = String.raw`<!doctype html>
               </tr>
             </thead>
             <tbody id="voiceRows">
-              <tr><td class="empty" colspan="7">loading...</td></tr>
+              <tr><td class="empty" colspan="8">loading...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
-      <p class="bench-note">Speech-to-speech models are ranked from the cached Artificial Analysis extract. For voice agents, the useful quadrant is high τ-Voice / speech reasoning with low input-audio cost and low time to first audio.</p>
+      <p class="bench-note">Speech-to-speech (voice) models rank by Artificial Analysis's Speech-to-Speech Index first, with τ-Voice, speech reasoning, telecom performance, latency, and audio cost shown as supporting evidence. Current audio models without an AA benchmark remain visible as awaiting benchmark evidence.</p>
     </div>
     <div class="benchmark-panel" data-benchmark-panel="speech-to-text" hidden>
       <div class="voice-bench">
@@ -1042,6 +1212,22 @@ export const HOME_HTML = String.raw`<!doctype html>
       <p class="bench-note">Speech-to-text models are ranked from Artificial Analysis STT rows. Lower AA-WER is better; price is normalized to AUD per 1,000 minutes of audio.</p>
     </div>
   </div>
+  <div class="mode-panel" data-mode-panel="models" hidden>
+    <div class="voice-bench">
+      <div class="voice-head">
+        <strong>Canonical deployable model families</strong>
+        <span id="registrySource">waiting for registry...</span>
+      </div>
+      <div class="voice-table-wrap">
+        <table class="voice-table">
+          <thead><tr></tr></thead>
+          <tbody id="registryRows">
+            <tr><td class="empty" colspan="8">checking...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
   <p class="bench-note" id="benchmarkHint">Customer support models are ranked for conservative ticket handling, instruction following, telecom workflow signal, and Intelligence Index Task AUD.</p>
   </section>
   </div>
@@ -1050,37 +1236,39 @@ export const HOME_HTML = String.raw`<!doctype html>
     <h3 id="definitionsTitle">Definitions</h3>
     <dl>
       <dt>any tier</dt>
-      <dd>No tier filter for <code>/v1/models</code>. For use-case recommendations, the default is fast and cheap.</dd>
+      <dd>No tier filter for <code>/v1/models</code>. Front-end web dev recommendations default to highest Arena score; other use cases default to fast and cheap.</dd>
       <dt>fast</dt>
-      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. For voice, fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
+      <dd>For customer support, fast and cheap prioritizes lower Intelligence Index Task AUD, then the active benchmark-source tie-breaks. Front-end web dev prioritizes the lowest output price among eligible Arena top-20 entries, then input price and Arena score; if active filters remove the top-20 band, it falls back to the cheapest remaining eligible row. For document processing, fast and cheap prioritizes image/input/output cost and latency after usable visual reasoning. For speech to speech (voice), fast and cheap prioritizes lower input AUD/hr, output AUD/hr, then TTFA. For speech to text, fast and cheap prioritizes lower AUD/1k min.</dd>
       <dt>balanced</dt>
-      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Voice picks the middle filtered candidate after quality ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
+      <dd>Customer support picks the middle filtered candidate after false-positive risk ordering when ITS is included, or after AA support-score ordering when ITS is excluded. Front-end web dev prioritizes the lowest output price among eligible Arena top-10 entries, then input price and Arena score; if active filters remove the top-10 band, it falls back to the cheapest remaining eligible row. Document processing blends visual reasoning, image/text cost, and latency. Speech to speech (voice) picks the middle filtered candidate after AA Speech-to-Speech Index ordering. Speech to text picks the middle filtered candidate after accuracy ordering.</dd>
       <dt>best</dt>
-      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. For voice, highest quality prioritizes τ-Voice, speech reasoning, and telecom score. For speech to text, highest accuracy prioritizes lower AA-WER.</dd>
+      <dd>For customer support, lowest false-positive risk prioritizes lower ITS false-positive rate, then ITS accuracy. With ITS excluded, highest AA support fit prioritizes Artificial Analysis support rank and signals with cost and efficiency tie-breaks. Front-end web dev prioritizes score and rank from a fresh checked Arena Frontend Code snapshot. For document processing, highest accuracy prioritizes AA visual reasoning, then instruction following and intelligence. For speech to speech (voice), highest quality prioritizes the AA Speech-to-Speech Index, with τ-Voice and the other voice signals as tie-breakers. For speech to text, highest accuracy prioritizes lower AA-WER. The optional latest-model evidence policy replaces these benchmark rankings with a capability-first release heuristic only when the selected latest full-size candidate has no qualifying benchmark.</dd>
       <dt>AA Support Score</dt>
       <dd>AA-only customer-support score derived mostly from Artificial Analysis customer-support rank or AA support signals, plus cost, efficiency, and speed. It is not an ITS safety score.</dd>
       <dt>cost caps</dt>
-      <dd>Maximum prices are hard filters, not scoring hints. If every benchmark-backed candidate is over the cap, the recommendation endpoint returns no model.</dd>
+      <dd>Maximum prices are hard filters, not scoring hints. Under the default benchmark-required policy, the endpoint returns no model when every benchmark-backed candidate is over the cap.</dd>
       <dt>AUD/MTok</dt>
       <dd>Australian dollars per million text tokens. Input is prompt/context cost; output is generated-token cost.</dd>
       <dt>Task AUD</dt>
       <dd>Australian dollars per weighted average Artificial Analysis Intelligence Index task. Source benchmark cost is stored in USD and converted with the current catalog exchange rate.</dd>
-      <dt>voice AUD/hr</dt>
-      <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available.</dd>
+      <dt>Image AUD/1k</dt>
+      <dd>Australian dollars per 1,000 one-megapixel image inputs where Artificial Analysis exposes image pricing.</dd>
+      <dt>speech-to-speech (voice) AUD/hr</dt>
+      <dd>Australian dollars per hour of speech-to-speech audio. Input audio uses the Artificial Analysis benchmark cost where available, otherwise the structured API input list price.</dd>
       <dt>STT AUD/1k min</dt>
       <dd>Australian dollars per 1,000 minutes of speech-to-text audio, converted from Artificial Analysis provider pricing where available.</dd>
       <dt>benchmark table</dt>
-      <dd>The live recommendation for customer support, voice, or speech to text must appear in the matching table. No benchmark row means no use-case recommendation.</dd>
+      <dd>Benchmark-required recommendations appear in the matching use-case table. An opted-in best-tier latest release can instead appear there as a benchmark-pending registry row with an explicit capability-first warning.</dd>
       <dt>IT Solver auto-close benchmark</dt>
-      <dd><a href="/its">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
-      <dt>web development benchmark composite</dt>
-      <dd><a href="/webdev">Our web app development benchmark composite</a>. Use it to compare frontier-provider signals across frontend, backend, full-stack, browser, repository, cost, and latency dimensions.</dd>
+      <dd><a href="/its-eval">Our reopened-ticket classifier replay</a>. Customer-support recommendations require this benchmark where available and rank false positives first because auto-closing unresolved tickets is the highest-risk error.</dd>
+      <dt>web development evidence</dt>
+      <dd><a href="/webdev">Our front-end development evidence page</a>. It uses Arena as the primary preference rank, keeps Vibe Code Bench separate as a functional cross-check, and excludes unavailable or stale boards.</dd>
       <dt>false positives / accuracy</dt>
       <dd>False positives are unresolved tickets predicted as resolved. Accuracy is overall classifier correctness on the auto-close replay set.</dd>
       <dt>ITS columns</dt>
       <dd><code>ITS</code> marks IT Solver auto-close benchmark fields. <code>ITS FP</code>, <code>ITS Acc</code>, and <code>ITS Notes</code> come from our Zendesk ticket-classification replay, not Artificial Analysis.</dd>
-      <dt>IFBench / Agentic / Bench Telecom / τ-Voice / TTFA</dt>
-      <dd>IFBench measures instruction following, Agentic measures multi-step task performance, Bench Telecom is the AA τ2 telecom benchmark, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
+      <dt>AA Index / IFBench / Agentic / Bench Telecom / τ-Voice / TTFA</dt>
+      <dd>AA Index is Artificial Analysis's source-provided Speech-to-Speech Index. IFBench measures instruction following, Agentic measures multi-step task performance, Bench Telecom is the AA τ2 telecom benchmark, τ-Voice measures agentic voice performance, and TTFA is time to first audio.</dd>
       <dt>AA-WER / Speed</dt>
       <dd>AA-WER is Artificial Analysis word error rate for STT, where lower is better. Speed is input audio seconds transcribed per processing second.</dd>
     </dl>
@@ -1100,11 +1288,15 @@ export const HOME_HTML = String.raw`<!doctype html>
   </div>
   <div class="endpoint">
     <code>GET /v1/models</code>
-    <p>Artificial Analysis benchmark candidates from OpenAI, Google, xAI, and Anthropic. Filter by provider, use case, and cost caps.</p>
+    <p>Raw registry model rows. Use <code>/v1/benchmarks</code> for benchmark and benchmark-pending table rows shown on this page.</p>
+  </div>
+  <div class="endpoint">
+    <code>GET /v1/benchmarks</code>
+    <p>Benchmark rows for customer support, document processing, front-end web dev, speech to speech (voice), and speech to text, plus relevant registry rows still awaiting evidence. Filter by provider, capability, cost caps, and minimum intelligence where relevant.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/recommend</code>
-    <p>The opinionated endpoint. Apply filters and get one primary model plus benchmarked customer-support failovers when available.</p>
+    <p>The opinionated endpoint. Apply filters and get one primary model plus a nested distinct failover when one matches. The top-level failovers array remains for customer-support compatibility; <code>failoverStatus.reason</code> distinguishes missing auto-close benchmark coverage from too few distinct base-model families.</p>
   </div>
   <div class="endpoint">
     <code>GET /v1/models/providers</code>
@@ -1139,7 +1331,13 @@ export const HOME_HTML = String.raw`<!doctype html>
         "intelligenceCostPerTask": 1.2112
       }
     },
-    "recommendable": true
+    "recommendable": true,
+    "failover": {
+      "id": "grok-4-3",
+      "provider": "xai",
+      "name": "Grok 4.3 (high)",
+      "recommendable": true
+    }
   },
   "failovers": [
     {
@@ -1157,7 +1355,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 }</code></pre></div>
 
   <h2>Freshness</h2>
-  <p>The Worker refreshes Artificial Analysis data every morning at 06:00 UTC and caches the normalized result at the edge.</p>
+  <p>The Worker refreshes models.dev and Artificial Analysis data every hour and keeps a seven-day last-good catalog at the edge.</p>
 
   <h2>Cost</h2>
   <p><span class="pill">$0.00-ish</span> - runs on Cloudflare Workers. Pricing data still belongs to the providers, so production cost decisions should verify current provider pricing directly.</p>
@@ -1168,8 +1366,8 @@ export const HOME_HTML = String.raw`<!doctype html>
     <li>OpenAI, Google, xAI, Anthropic, NVIDIA, ElevenLabs, and Groq are exposed.</li>
     <li>Each model includes AUD pricing and benchmark costs converted from USD with the current cached Frankfurter exchange rate.</li>
     <li>Use-case recommendations require real token, audio, or transcription pricing before a row can be recommended.</li>
-    <li>Customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals. Voice and speech-to-text recommendations use the relevant Artificial Analysis benchmark-backed candidate sets.</li>
-    <li>For customer support, try <code>recommendation</code> first, then <code>failovers[0]</code>, then <code>failovers[1]</code> when a provider or model is overloaded.</li>
+    <li>By default, customer support recommendations use IT Solver auto-close benchmark metrics first, then Artificial Analysis cost-efficiency signals; document processing, speech-to-speech (voice), and speech-to-text use their relevant benchmark-backed candidate sets. Opted-in best-tier requests may instead use the visibly labelled latest-release heuristic while benchmark evidence is pending.</li>
+    <li>Use <code>recommendation.failover</code> as the simple next distinct model for the same filters. Top-level <code>failovers</code> remains for existing customer-support clients that expect two overload fallbacks.</li>
   </ul>
 
   <p class="footnote">Last data refresh: <span id="generatedAt">checking...</span><br>Pricing shown as: <span id="pricingContext">checking...</span></p>
@@ -1221,8 +1419,18 @@ export const HOME_HTML = String.raw`<!doctype html>
       aawermaxrange: document.getElementById('b-aawer-max-range'),
       aawerlabel: document.getElementById('b-aawer-label'),
       aawerany: document.getElementById('b-aawer-any'),
+      minvisualreasoning: document.getElementById('b-minvisualreasoning'),
+      visualreasoningminrange: document.getElementById('b-visualreasoning-min-range'),
+      visualreasoninglabel: document.getElementById('b-visualreasoning-label'),
+      visualreasoningany: document.getElementById('b-visualreasoning-any'),
+      maximagecost: document.getElementById('b-maximagecost'),
+      imagecostmaxrange: document.getElementById('b-imagecost-max-range'),
+      imagecostlabel: document.getElementById('b-imagecost-label'),
+      imagecostany: document.getElementById('b-imagecost-any'),
       minctx: document.getElementById('b-minctx'),
       maxctx: document.getElementById('b-maxctx'),
+      allowlatest: document.getElementById('b-allowlatest'),
+      allowlatestfield: document.getElementById('b-allowlatest-field'),
       contextminrange: document.getElementById('b-context-min-range'),
       contextmaxrange: document.getElementById('b-context-max-range'),
       contextlabel: document.getElementById('b-context-label'),
@@ -1295,8 +1503,14 @@ export const HOME_HTML = String.raw`<!doctype html>
     var textBenchmarkModels = null;
     var textBenchmarkModelsWithoutIts = null;
     var textBenchmarkRequest = 0;
-    var currentBrowseModels = null;
+    var modeResponses = {
+      recommend: null,
+      benchmarks: null,
+      models: null
+    };
+    var builderRequestSequence = 0;
     var voiceBenchmarkRows = null;
+    var voiceSourceStatus = null;
     var sttBenchmarkRows = null;
     var sttBenchmarkLoading = false;
 
@@ -1306,27 +1520,57 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function nonRecommendableReason(model) {
       if (model.recommendable !== false) return '';
+      if (typeof model.eligibilityReason === 'string' && model.eligibilityReason) {
+        return model.eligibilityReason.replace(/_/g, ' ');
+      }
+      if (typeof model.recommendabilityReason === 'string' && model.recommendabilityReason) {
+        return model.recommendabilityReason.replace(/_/g, ' ');
+      }
       if (model.deprecated === true) return 'deprecated';
+
+      var availability = model.availability || {};
+      if (
+        availability.status &&
+        availability.status !== 'production' &&
+        availability.acceptedRisk !== true
+      ) return availability.status;
 
       var pricing = model.pricing || {};
       if (model.benchmarks && model.benchmarks.voice) {
-        if (typeof pricing.benchmarkInputAudioPerHour !== 'number') return 'no audio pricing';
-        if (typeof pricing.audioOutputPerHour !== 'number' && typeof pricing.benchmarkCostPerTask !== 'number') return 'no audio pricing';
+        if (!(pricing.benchmarkInputAudioPerHour > 0) && !(pricing.audioInputPerHour > 0)) return 'no audio pricing';
       }
       if (model.benchmarks && model.benchmarks.speechToText) {
         if (typeof model.benchmarks.speechToText.aaWer !== 'number') return 'no STT score';
-        if (typeof pricing.transcriptionCostPer1kMinutes !== 'number') return 'no STT pricing';
+        if (!(pricing.transcriptionCostPer1kMinutes > 0)) return 'no STT pricing';
       }
       if (model.benchmarks && model.benchmarks.llm) {
-        if (typeof pricing.inputPerMTok !== 'number' || typeof pricing.outputPerMTok !== 'number') return 'no token pricing';
+        if (!(pricing.inputPerMTok > 0) || !(pricing.outputPerMTok > 0)) return 'no token pricing';
+        var signals = model.benchmarks.llm;
+        if (fields.usecase.value === 'customer-support') {
+          if (typeof signals.instructionFollowing !== 'number') return 'no instruction-following score';
+          if (![signals.agentic, signals.tauTelecom, signals.professional].some(function (value) { return typeof value === 'number'; })) return 'no support workflow signal';
+          if (includeItsBenchmark() && !signals.autoClose) return 'no ITS auto-close benchmark';
+        }
+        if (fields.usecase.value === 'document-processing' && typeof signals.visualReasoning !== 'number') {
+          return 'no visual reasoning score';
+        }
       }
 
       return 'not eligible';
     }
 
+    function renderEligibility(model) {
+      var reason = nonRecommendableReason(model);
+      return reason
+        ? '<div class="eligibility">Not eligible: ' + escapeHtml(reason) + '</div>'
+        : '<div class="eligibility eligible">Eligible</div>';
+    }
+
     function renderModelCell(model) {
       var reason = nonRecommendableReason(model);
-      var marker = reason ? '<span class="not-rec">' + escapeHtml(reason) + '</span>' : '';
+      var marker = reason && !isBrowsingBenchmarks()
+        ? '<span class="not-rec">' + escapeHtml(reason) + '</span>'
+        : '';
       return '<strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.provider) + '</div>' + marker;
     }
 
@@ -1369,7 +1613,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (!state || !tbody) return;
       if (!state.rows.length) {
         var headerCount = tbody.closest('table').querySelectorAll('thead th').length;
-        tbody.innerHTML = '<tr><td class="empty" colspan="' + (state.columns.length || headerCount || 1) + '">Benchmark data unavailable.</td></tr>';
+        var emptyLabel = tableId === 'registryRows' ? 'Registry models unavailable.' : 'Benchmark data unavailable.';
+        tbody.innerHTML = '<tr><td class="empty" colspan="' + (state.columns.length || headerCount || 1) + '">' + emptyLabel + '</td></tr>';
         return;
       }
 
@@ -1412,6 +1657,8 @@ export const HOME_HTML = String.raw`<!doctype html>
     function benchmarkTableForUseCase(useCase) {
       if (useCase === 'voice') return 'voiceRows';
       if (useCase === 'speech-to-text') return 'sttRows';
+      if (useCase === 'document-processing') return 'documentRows';
+      if (useCase === 'front-end-web-dev') return 'frontendRows';
       if (useCase === 'customer-support') return 'supportRows';
       return '';
     }
@@ -1419,15 +1666,29 @@ export const HOME_HTML = String.raw`<!doctype html>
     function benchmarkPanelForUseCase(useCase) {
       if (useCase === 'voice') return 'voice';
       if (useCase === 'speech-to-text') return 'speech-to-text';
+      if (useCase === 'document-processing') return 'document-processing';
+      if (useCase === 'front-end-web-dev') return 'front-end-web-dev';
       if (useCase === 'customer-support') return 'customer-support';
       return '';
     }
 
     function benchmarkCopy(useCase) {
+      if (useCase === 'document-processing') {
+        return {
+          title: 'Document Processing Benchmark',
+          hint: 'Document processing priorities are explicit: highest accuracy sorts by AA visual reasoning, then instruction following and intelligence; fast and cheap prioritizes image/input/output cost and latency; balanced combines visual reasoning, cost, and latency.'
+        };
+      }
+      if (useCase === 'front-end-web-dev') {
+        return {
+          title: 'Front-End Web Dev Benchmark',
+          hint: 'Front-end web development uses a fresh checked Arena snapshot: highest score for best, lowest output price in the eligible top 10 for balanced, and lowest output price in the eligible top 20 for fast. Configuration-specific Arena entries map explicitly to deployable registry models, and Codex-harness labels describe evaluation context rather than guaranteed API parameters.'
+        };
+      }
       if (useCase === 'voice') {
         return {
-          title: 'Voice Benchmark',
-          hint: 'Voice priorities are explicit: fast and cheap sorts by input AUD/hr, output AUD/hr, then TTFA; highest quality sorts by τ-Voice, speech reasoning, and telecom score; balanced highlights the middle filtered quality row.'
+          title: 'Speech-To-Speech (Voice) Benchmark',
+          hint: 'Speech-to-speech (voice) priorities are explicit: fast and cheap sorts by input AUD/hr, output AUD/hr, then TTFA; highest quality sorts by the AA Speech-to-Speech Index, with τ-Voice and the other voice signals as tie-breakers; balanced highlights the middle filtered AA Index row.'
         };
       }
       if (useCase === 'speech-to-text') {
@@ -1445,25 +1706,63 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function updateBenchmarkPanel(useCase) {
+      var mode = fields.endpoint.value;
+      document.querySelectorAll('[data-mode-panel]').forEach(function (panel) {
+        panel.hidden = panel.getAttribute('data-mode-panel') !== mode;
+      });
       var active = benchmarkPanelForUseCase(useCase);
       document.querySelectorAll('[data-benchmark-panel]').forEach(function (panel) {
         panel.hidden = panel.getAttribute('data-benchmark-panel') !== active;
       });
+      var frontendRecommendationCredit = document.getElementById('frontendRecommendationCredit');
+      if (frontendRecommendationCredit) {
+        frontendRecommendationCredit.hidden = mode !== 'recommend' || useCase !== 'front-end-web-dev';
+      }
       var copy = benchmarkCopy(useCase);
-      setText('benchmarkTitle', copy.title);
+      if (mode === 'models') {
+        setText('benchmarkTitle', 'Registry Models');
+      } else if (mode === 'recommend') {
+        setText('benchmarkTitle', copy.title.replace(/ Benchmark$/, '') + ' Recommendation');
+      } else {
+        setText('benchmarkTitle', copy.title + ' Rows');
+      }
       var hint = document.getElementById('benchmarkHint');
       if (!hint) return;
-      hint.textContent = copy.hint;
+      hint.textContent = mode === 'models'
+        ? 'Registry rows show deployable base model metadata. Registry visibility does not imply recommendation eligibility.'
+        : mode === 'recommend'
+          ? useCase === 'front-end-web-dev'
+            ? copy.hint
+            : 'The primary recommendation is followed by distinct failover model families for the same active filters.'
+          : copy.hint + ' Incomplete rows remain visible with an eligibility reason.';
+    }
+
+    function defaultTierForUseCase(useCase) {
+      return useCase === 'front-end-web-dev' ? 'best' : 'fast';
     }
 
     function updateTierOptions(useCase) {
-      var labels = useCase === 'speech-to-text'
+      var labels = useCase === 'front-end-web-dev'
+        ? {
+            '': 'highest Arena score',
+            balanced: 'best value in Arena top 10',
+            fast: 'lowest output cost in Arena top 20',
+            best: 'highest Arena score'
+          }
+        : useCase === 'speech-to-text'
         ? {
             '': 'balanced trade-off',
             balanced: 'balanced trade-off',
             fast: 'fast and cheap',
             best: 'highest accuracy'
           }
+        : useCase === 'document-processing'
+          ? {
+              '': 'balanced trade-off',
+              balanced: 'balanced trade-off',
+              fast: 'fast and cheap',
+              best: 'highest accuracy'
+            }
         : useCase === 'voice'
           ? {
               '': 'balanced trade-off',
@@ -1499,15 +1798,21 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function updateFilterVisibility(useCase) {
-      var activeScope = useCase === 'voice'
-        ? 'voice'
-        : useCase === 'speech-to-text'
-          ? 'speech-to-text'
-          : 'text';
-      document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
-        var scope = field.getAttribute('data-filter-scope');
-        field.hidden = scope !== activeScope;
+      var mode = fields.endpoint.value;
+      document.querySelectorAll('[data-endpoint-scope]').forEach(function (field) {
+        var endpoints = String(field.getAttribute('data-endpoint-scope') || '').split(/\s+/);
+        field.hidden = endpoints.indexOf(mode) === -1;
       });
+      document.querySelectorAll('[data-filter-scope]').forEach(function (field) {
+        var scopes = String(field.getAttribute('data-filter-scope') || '').split(/\s+/);
+        field.hidden = mode === 'models' || scopes.indexOf(useCase) === -1;
+      });
+    }
+
+    function updateLatestOptionVisibility() {
+      var visible = fields.endpoint.value === 'recommend' && fields.tier.value === 'best';
+      fields.allowlatestfield.hidden = !visible;
+      if (!visible) fields.allowlatest.checked = false;
     }
 
     function highlightBenchmark(modelId, useCase) {
@@ -1522,13 +1827,9 @@ export const HOME_HTML = String.raw`<!doctype html>
       });
     }
 
-    function redrawBenchmarkTables() {
-      Object.keys(benchmarkTables).forEach(drawSortableTable);
-    }
-
     function voiceCost(model) {
       var pricing = model.pricing || {};
-      return pricing.benchmarkInputAudioPerHour || Infinity;
+      return pricing.benchmarkInputAudioPerHour || pricing.audioInputPerHour || Infinity;
     }
 
     function voiceOutputCost(model) {
@@ -1538,6 +1839,7 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function voiceScore(model) {
       var voice = (model.benchmarks && model.benchmarks.voice) || {};
+      if (typeof voice.qualityIndex === 'number') return voice.qualityIndex;
       var agentic = typeof voice.agenticPerformance === 'number' ? voice.agenticPerformance : 0;
       var speech = typeof voice.speechReasoning === 'number' ? voice.speechReasoning : 0;
       var telecom = typeof voice.telecomAgenticPerformance === 'number' ? voice.telecomAgenticPerformance : 0;
@@ -1559,6 +1861,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       var leftVoice = voiceSignals(left);
       var rightVoice = voiceSignals(right);
       return (
+        compareNumberDesc(leftVoice.qualityIndex, rightVoice.qualityIndex) ||
         compareNumberDesc(leftVoice.agenticPerformance, rightVoice.agenticPerformance) ||
         compareNumberDesc(leftVoice.speechReasoning, rightVoice.speechReasoning) ||
         compareNumberDesc(leftVoice.telecomAgenticPerformance, rightVoice.telecomAgenticPerformance) ||
@@ -1582,39 +1885,67 @@ export const HOME_HTML = String.raw`<!doctype html>
     function voiceTableSort() {
       var tier = fields.tier.value || 'balanced';
       if (tier === 'fast') return { key: 'inputCost', direction: 'asc', compare: voiceFastRowCompare };
-      return { key: 'agentic', direction: 'desc', compare: voiceQualityRowCompare };
+      return { key: 'quality', direction: 'desc', compare: voiceQualityRowCompare };
     }
 
     function voiceBenchmarkModels(models) {
       return models.filter(function (model) {
-        return model.recommendable !== false && model.benchmarks && model.benchmarks.voice;
+        var hasBenchmark = Boolean(model.benchmarks && model.benchmarks.voice);
+        if (!isBrowsingBenchmarks()) return model.recommendable !== false && hasBenchmark;
+        return hasBenchmark || model.eligibilityReason === 'missing_voice_benchmark';
       });
     }
 
-    function renderVoiceBenchmarks(models) {
+    function voiceSourceLabel(status) {
+      if (!status) return 'source status unavailable';
+      var stateLabels = {
+        live: 'live',
+        fallback_fresh: 'fresh fallback',
+        fallback_stale: 'stale fallback',
+        unavailable: 'unavailable'
+      };
+      var originLabels = {
+        aa_api: 'AA API',
+        aa_public_page: 'AA public page',
+        kv_last_known_good: 'last-known-good cache',
+        bundled_snapshot: 'bundled snapshot'
+      };
+      var parts = [
+        stateLabels[status.state] || status.state || 'unknown',
+        originLabels[status.origin] || status.origin || 'unknown source'
+      ];
+      if (typeof status.rowCount === 'number') {
+        parts.push(status.rowCount.toLocaleString() + (status.rowCount === 1 ? ' row' : ' rows'));
+      }
+      if (status.fetchedAt) parts.push(formatAge(status.fetchedAt));
+      return parts.join(' · ');
+    }
+
+    function renderVoiceBenchmarks(models, sourceStatus) {
+      var status = sourceStatus || voiceSourceStatus;
+      setText('voiceSource', voiceSourceLabel(status));
       var rows = voiceBenchmarkModels(models);
       if (!rows.length) {
-        renderSortableTable('voiceRows', [], [], 'agentic');
-        setText('voiceSource', 'unavailable');
+        renderSortableTable('voiceRows', [], [], 'quality');
         return;
-      }
-
-      var source = rows[0].benchmarks && rows[0].benchmarks.voice;
-      if (source && source.extractedAt) {
-        setText('voiceSource', 'AA extract ' + formatAge(source.extractedAt));
       }
 
       var voiceSort = voiceTableSort();
 
-      renderSortableTable('voiceRows', rows, [
-        { key: 'model', value: function (model) { return model.name; }, render: renderModelCell },
-        { key: 'agentic', value: function (model) { return voiceSignals(model).agenticPerformance; }, render: function (model) { return pct(voiceSignals(model).agenticPerformance); } },
-        { key: 'speech', value: function (model) { return voiceSignals(model).speechReasoning; }, render: function (model) { return pct(voiceSignals(model).speechReasoning); } },
-        { key: 'telecom', value: function (model) { return voiceSignals(model).telecomAgenticPerformance; }, render: function (model) { return pct(voiceSignals(model).telecomAgenticPerformance); } },
-        { key: 'ttfa', value: function (model) { return -(voiceTtfa(model) || Infinity); }, render: function (model) { return seconds(voiceTtfa(model)); } },
-        { key: 'inputCost', value: voiceCost, render: function (model) { return money(voiceCost(model)); } },
-        { key: 'outputCost', value: voiceOutputCost, render: function (model) { return money(voiceOutputCost(model)); } }
-      ], voiceSort.key, voiceSort.direction, voiceSort.compare);
+      var columns = [
+        { key: 'model', label: 'Model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'quality', label: 'AA Index', value: function (model) { return voiceSignals(model).qualityIndex; }, render: function (model) { return benchmarkScore(voiceSignals(model).qualityIndex); } },
+        { key: 'agentic', label: 'τ-Voice', value: function (model) { return voiceSignals(model).agenticPerformance; }, render: function (model) { return pct(voiceSignals(model).agenticPerformance); } },
+        { key: 'speech', label: 'Speech', value: function (model) { return voiceSignals(model).speechReasoning; }, render: function (model) { return pct(voiceSignals(model).speechReasoning); } },
+        { key: 'telecom', label: 'Telecom', value: function (model) { return voiceSignals(model).telecomAgenticPerformance; }, render: function (model) { return pct(voiceSignals(model).telecomAgenticPerformance); } },
+        { key: 'ttfa', label: 'TTFA', value: function (model) { return -(voiceTtfa(model) || Infinity); }, render: function (model) { return seconds(voiceTtfa(model)); } },
+        { key: 'inputCost', label: 'Input AUD/hr', value: voiceCost, render: function (model) { return money(voiceCost(model)); } },
+        { key: 'outputCost', label: 'Output AUD/hr', value: voiceOutputCost, render: function (model) { return money(voiceOutputCost(model)); } }
+      ];
+      if (isBrowsingBenchmarks()) {
+        columns.push({ key: 'eligibility', label: 'Eligibility', value: function (model) { return model.recommendable !== false ? 1 : 0; }, render: renderEligibility });
+      }
+      renderSortableTable('voiceRows', rows, columns, voiceSort.key, voiceSort.direction, voiceSort.compare);
     }
 
     function sttSignals(model) {
@@ -1647,7 +1978,7 @@ export const HOME_HTML = String.raw`<!doctype html>
       var maxAaWer = aaWerCeiling();
       return models.filter(function (model) {
         var signals = model.benchmarks && model.benchmarks.speechToText;
-        if (model.recommendable === false || !signals) return false;
+        if (!signals || (!isBrowsingBenchmarks() && model.recommendable === false)) return false;
         if (
           maxTranscriptionCost !== undefined &&
           (typeof sttCost(model) !== 'number' || sttCost(model) > maxTranscriptionCost)
@@ -1682,9 +2013,76 @@ export const HOME_HTML = String.raw`<!doctype html>
         { key: 'speed', label: 'Speed', value: function (model) { return sttSignals(model).speedFactor; }, render: function (model) { return speedFactor(sttSignals(model).speedFactor); } },
         { key: 'cost', label: 'AUD/1k min', value: sttCost, render: function (model) { return money(sttCost(model)); } }
       );
+      if (isBrowsingBenchmarks()) {
+        columns.push({ key: 'eligibility', label: 'Eligibility', value: function (model) { return model.recommendable !== false ? 1 : 0; }, render: renderEligibility });
+      }
 
       var tier = fields.tier.value || 'balanced';
       renderSortableTable('sttRows', rows, columns, tier === 'fast' ? 'cost' : 'wer', 'asc');
+    }
+
+    function frontendWebDevSignals(model) {
+      return ((model.benchmarks || {}).frontendWebDev || {});
+    }
+
+    function frontendArenaScore(model) {
+      var value = frontendWebDevSignals(model).score;
+      return typeof value === 'number' ? value : -Infinity;
+    }
+
+    function frontendArenaScoreLabel(model) {
+      var signals = frontendWebDevSignals(model);
+      if (typeof signals.score !== 'number') return '-';
+      var confidence = typeof signals.confidence === 'number' ? ' ±' + Math.round(signals.confidence) : '';
+      return Math.round(signals.score).toLocaleString() + confidence;
+    }
+
+    function frontendRankSpread(model) {
+      var signals = frontendWebDevSignals(model);
+      if (typeof signals.rankLow !== 'number' || typeof signals.rankHigh !== 'number') return '-';
+      return signals.rankLow === signals.rankHigh
+        ? '#' + signals.rankLow
+        : '#' + signals.rankLow + '–#' + signals.rankHigh;
+    }
+
+    function frontendConfigurationLabel(model) {
+      var configuration = frontendWebDevSignals(model).configuration;
+      return configuration && configuration.displayLabel
+        ? configuration.displayLabel
+        : 'base model';
+    }
+
+    function frontendRegistryModelLabel(model) {
+      return model.registryModelId || model.registryMappingTargetId || '-';
+    }
+
+    function renderFrontendWebDevBenchmarks(models) {
+      var rows = (models || []).filter(function (model) {
+        return model.benchmarks && model.benchmarks.frontendWebDev;
+      });
+      if (!rows.length) {
+        renderSortableTable('frontendRows', [], [], 'rank', 'asc');
+        setText('frontendSource', 'unavailable');
+        return;
+      }
+
+      var source = frontendWebDevSignals(rows[0]);
+      setText('frontendSource', source.extractedAt ? 'Arena · checked ' + formatAge(source.extractedAt) : 'Arena');
+      var columns = [
+        { key: 'rank', label: 'Rank', value: function (model) { return frontendWebDevSignals(model).rank; }, render: function (model) { var rank = frontendWebDevSignals(model).rank; return typeof rank === 'number' ? '#' + rank : '-'; } },
+        { key: 'model', label: 'Model', value: function (model) { return model.name; }, render: renderModelCell },
+        { key: 'configuration', label: 'Configuration', value: frontendConfigurationLabel, render: function (model) { return escapeHtml(frontendConfigurationLabel(model)); } },
+        { key: 'registry', label: 'Registry model', value: frontendRegistryModelLabel, render: function (model) { return '<code>' + escapeHtml(frontendRegistryModelLabel(model)) + '</code>'; } },
+        { key: 'score', label: 'Arena score', value: frontendArenaScore, render: frontendArenaScoreLabel },
+        { key: 'spread', label: 'Rank spread', value: function (model) { return frontendWebDevSignals(model).rankLow; }, render: frontendRankSpread },
+        { key: 'votes', label: 'Votes', value: function (model) { return frontendWebDevSignals(model).votes; }, render: function (model) { var votes = frontendWebDevSignals(model).votes; return typeof votes === 'number' ? votes.toLocaleString() : '-'; } },
+        { key: 'input', label: 'Input AUD/MTok', value: function (model) { return (model.pricing || {}).inputPerMTok; }, render: function (model) { return money((model.pricing || {}).inputPerMTok); } },
+        { key: 'output', label: 'Output AUD/MTok', value: function (model) { return (model.pricing || {}).outputPerMTok; }, render: function (model) { return money((model.pricing || {}).outputPerMTok); } },
+        { key: 'context', label: 'Context', value: function (model) { return model.contextWindow; }, render: function (model) { return registryContext(model.contextWindow); } },
+        { key: 'status', label: 'Status', value: function (model) { return frontendWebDevSignals(model).preliminary ? 0 : 1; }, render: function (model) { return frontendWebDevSignals(model).preliminary ? 'preliminary' : 'established'; } },
+        { key: 'eligibility', label: 'Eligibility', value: function (model) { return model.recommendable !== false ? 1 : 0; }, render: renderEligibility }
+      ];
+      renderSortableTable('frontendRows', rows, columns, 'rank', 'asc');
     }
 
     function llmSignals(row) {
@@ -1722,7 +2120,12 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function compareNumberDesc(left, right) {
-      return compareNumberAsc(right, left);
+      var a = typeof left === 'number' && Number.isFinite(left) ? left : undefined;
+      var b = typeof right === 'number' && Number.isFinite(right) ? right : undefined;
+      if (a === undefined && b === undefined) return 0;
+      if (a === undefined) return 1;
+      if (b === undefined) return -1;
+      return b - a;
     }
 
     function customerSupportSafetyRowCompare(left, right) {
@@ -1756,6 +2159,49 @@ export const HOME_HTML = String.raw`<!doctype html>
         return { key: 'falsePositives', direction: 'desc', compare: customerSupportSafetyRowCompare };
       }
       return { key: 'score', direction: 'desc' };
+    }
+
+    function documentAccuracyRowCompare(left, right) {
+      return (
+        compareNumberDesc(
+          normalizedBenchmarkScore(llmSignals(left).visualReasoning),
+          normalizedBenchmarkScore(llmSignals(right).visualReasoning)
+        ) ||
+        compareNumberDesc(
+          normalizedBenchmarkScore(llmSignals(left).instructionFollowing),
+          normalizedBenchmarkScore(llmSignals(right).instructionFollowing)
+        ) ||
+        compareNumberDesc(llmSignals(left).intelligence, llmSignals(right).intelligence) ||
+        compareNumberDesc(
+          normalizedBenchmarkScore(llmSignals(left).lcr),
+          normalizedBenchmarkScore(llmSignals(right).lcr)
+        ) ||
+        compareNumberAsc(imageInputCost(left), imageInputCost(right)) ||
+        String((left.model || {}).name || '').localeCompare(String((right.model || {}).name || ''))
+      );
+    }
+
+    function documentFastRowCompare(left, right) {
+      return (
+        compareNumberAsc(imageInputCost(left), imageInputCost(right)) ||
+        compareNumberAsc((left.model || {}).pricing && (left.model || {}).pricing.inputPerMTok, (right.model || {}).pricing && (right.model || {}).pricing.inputPerMTok) ||
+        compareNumberAsc((left.model || {}).pricing && (left.model || {}).pricing.outputPerMTok, (right.model || {}).pricing && (right.model || {}).pricing.outputPerMTok) ||
+        compareNumberAsc(documentLatency(left), documentLatency(right)) ||
+        documentAccuracyRowCompare(left, right)
+      );
+    }
+
+    function documentProcessingTableSort() {
+      var tier = fields.tier.value || 'balanced';
+      if (tier === 'fast') return { key: 'imageCost', direction: 'asc', compare: documentFastRowCompare };
+      if (tier === 'best') return { key: 'visual', direction: 'desc', compare: documentAccuracyRowCompare };
+      return {
+        key: 'score',
+        direction: 'desc',
+        compare: function (left, right) {
+          return compareNumberDesc(left.score, right.score) || documentAccuracyRowCompare(left, right);
+        }
+      };
     }
 
     function falsePositiveLabel(row) {
@@ -1841,6 +2287,18 @@ export const HOME_HTML = String.raw`<!doctype html>
       updateMaxRangeFill(config, max);
     }
 
+    function syncMinRange(config) {
+      var min = Number(config.minRange.value);
+      if (!Number.isFinite(min)) min = config.min;
+      min = Math.min(config.max, Math.max(config.min, min));
+      config.minRange.value = String(min);
+      config.hiddenMin.value = min > config.min ? String(min) : '';
+      config.label.textContent = min <= config.min
+        ? config.anyLabel
+        : 'At least ' + config.format(min, false, config.max);
+      updateMinRangeFill(config, min);
+    }
+
     function updateMaxRangeFill(config, max) {
       var stack = config.maxRange.parentElement;
       if (!stack) return;
@@ -1850,9 +2308,24 @@ export const HOME_HTML = String.raw`<!doctype html>
       stack.style.setProperty('--range-end', Math.min(Math.max(end, 0), 100) + '%');
     }
 
+    function updateMinRangeFill(config, min) {
+      var stack = config.minRange.parentElement;
+      if (!stack) return;
+      var span = config.max - config.min;
+      var start = span > 0 ? ((min - config.min) / span) * 100 : 0;
+      stack.style.setProperty('--range-start', Math.min(Math.max(start, 0), 100) + '%');
+      stack.style.setProperty('--range-end', '100%');
+    }
+
     function resetMaxRange(config) {
       config.maxRange.value = String(config.max);
       syncMaxRange(config);
+      refreshBuilder();
+    }
+
+    function resetMinRange(config) {
+      config.minRange.value = String(config.min);
+      syncMinRange(config);
       refreshBuilder();
     }
 
@@ -1901,6 +2374,13 @@ export const HOME_HTML = String.raw`<!doctype html>
         maxRange: config.maxRange
       }, clientX));
       syncMaxRange(config);
+      refreshBuilder();
+    }
+
+    function moveMinRangeThumb(config, clientX) {
+      config.minRange.focus();
+      config.minRange.value = String(steppedRangeValue(config, clientX));
+      syncMinRange(config);
       refreshBuilder();
     }
 
@@ -1958,8 +2438,43 @@ export const HOME_HTML = String.raw`<!doctype html>
       });
     }
 
+    function installMinRangePointer(config) {
+      var stack = config.minRange.parentElement;
+      if (!stack) return;
+      stack.addEventListener('pointerdown', function (event) {
+        if (event.button !== undefined && event.button !== 0) return;
+        event.preventDefault();
+        stack.setPointerCapture(event.pointerId);
+        moveMinRangeThumb(config, event.clientX);
+
+        function onPointerMove(moveEvent) {
+          moveMinRangeThumb(config, moveEvent.clientX);
+        }
+
+        function onPointerUp(upEvent) {
+          stack.releasePointerCapture(upEvent.pointerId);
+          stack.removeEventListener('pointermove', onPointerMove);
+          stack.removeEventListener('pointerup', onPointerUp);
+          stack.removeEventListener('pointercancel', onPointerUp);
+        }
+
+        stack.addEventListener('pointermove', onPointerMove);
+        stack.addEventListener('pointerup', onPointerUp);
+        stack.addEventListener('pointercancel', onPointerUp);
+      });
+    }
+
     function formatRunCostCap(value, isMax, max) {
       if (isMax && value >= max) return '$' + max.toLocaleString(undefined, { maximumFractionDigits: 2 }) + '+';
+      return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function formatVisualReasoningFloor(value) {
+      return Math.round(value).toLocaleString();
+    }
+
+    function formatImageCostCap(value, isMax, max) {
+      if (isMax && value >= max) return '$' + max.toLocaleString() + '+';
       return '$' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
     }
 
@@ -1983,6 +2498,8 @@ export const HOME_HTML = String.raw`<!doctype html>
     var contextRange;
     var runCostRange;
     var audioInputCostRange;
+    var visualReasoningRange;
+    var imageCostRange;
     var transcriptionCostRange;
     var aaWerRange;
 
@@ -1992,6 +2509,8 @@ export const HOME_HTML = String.raw`<!doctype html>
       syncDualRange(contextRange);
       syncDualRange(runCostRange);
       syncMaxRange(audioInputCostRange);
+      syncMinRange(visualReasoningRange);
+      syncMaxRange(imageCostRange);
       syncMaxRange(transcriptionCostRange);
       syncMaxRange(aaWerRange);
     }
@@ -2072,6 +2591,21 @@ export const HOME_HTML = String.raw`<!doctype html>
       return typeof runCostValue === 'number' ? runCostValue : 50;
     }
 
+    function normalizedBenchmarkScore(value) {
+      if (typeof value !== 'number') return undefined;
+      return value <= 1 ? value * 100 : value;
+    }
+
+    function imageInputCost(row) {
+      var pricing = ((row.model || row || {}).pricing || {});
+      return pricing.imageInputPer1kImages;
+    }
+
+    function documentLatency(row) {
+      var signals = llmSignals(row);
+      return signals.visualLatency || signals.latency;
+    }
+
     function weightedSignal(signals, values, fallback) {
       var total = 0;
       var weight = 0;
@@ -2086,6 +2620,36 @@ export const HOME_HTML = String.raw`<!doctype html>
 
     function textUseCaseScore(model, useCase) {
       var signals = ((model.benchmarks || {}).llm || {});
+      if (useCase === 'document-processing') {
+        var visualQuality = weightedSignal({
+          visualReasoning: normalizedBenchmarkScore(signals.visualReasoning),
+          instructionFollowing: normalizedBenchmarkScore(signals.instructionFollowing),
+          intelligence: signals.intelligence,
+          lcr: normalizedBenchmarkScore(signals.lcr)
+        }, [
+          ['visualReasoning', 0.7],
+          ['instructionFollowing', 0.15],
+          ['intelligence', 0.1],
+          ['lcr', 0.05]
+        ], 60);
+        var imageCost = typeof model.pricing.imageInputPer1kImages === 'number'
+          ? Math.max(0, 100 - Math.min(Math.log1p(model.pricing.imageInputPer1kImages) / Math.log1p(10), 1) * 100)
+          : undefined;
+        var cost = weightedSignal({
+          image: imageCost,
+          text: textCostScore(model, 0.35),
+          task: textEfficiencyScore(model)
+        }, [
+          ['image', 0.45],
+          ['text', 0.35],
+          ['task', 0.1]
+        ], textCostScore(model, 0.35));
+        var latency = typeof signals.visualLatency === 'number' || typeof signals.latency === 'number'
+          ? Math.max(0, 100 - Math.min((signals.visualLatency || signals.latency) / 20, 1) * 100)
+          : 50;
+        var speed = Math.min((signals.visualOutputSpeed || signals.speed || 0) / 220, 1) * 100;
+        return visualQuality * 0.62 + latency * 0.12 + speed * 0.06 + cost * 0.2;
+      }
       if (useCase === 'customer-support' && typeof signals.customerSupportRank === 'number') {
         return 102 - signals.customerSupportRank * 2;
       }
@@ -2106,22 +2670,31 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
     function includeItsBenchmark() {
-      return fields.includeits ? fields.includeits.checked : true;
+      return fields.usecase.value === 'customer-support' && fields.includeits
+        ? fields.includeits.checked
+        : false;
     }
 
     function currentTextBenchmarkModels() {
+      if (fields.usecase.value === 'document-processing') return null;
       return includeItsBenchmark() || !textBenchmarkModelsWithoutIts
         ? textBenchmarkModels
         : textBenchmarkModelsWithoutIts;
     }
 
-    function isBrowsingModels() {
-      return fields.endpoint.value === 'models';
+    function isBrowsingBenchmarks() {
+      return fields.endpoint.value === 'benchmarks';
     }
 
     function renderCurrentUseCaseBenchmarks() {
+      if (!isBrowsingBenchmarks()) return;
+      var response = modeResponses.benchmarks;
+      if (response && response.path === buildPath()) {
+        renderModeResponse('benchmarks', response.data);
+        return;
+      }
       if (fields.usecase.value === 'voice') {
-        if (voiceBenchmarkRows) renderVoiceBenchmarks(voiceBenchmarkRows);
+        if (voiceBenchmarkRows) renderVoiceBenchmarks(voiceBenchmarkRows, voiceSourceStatus);
         return;
       }
       if (fields.usecase.value === 'speech-to-text') {
@@ -2132,60 +2705,262 @@ export const HOME_HTML = String.raw`<!doctype html>
         }
         return;
       }
+      if (fields.usecase.value === 'front-end-web-dev') return;
 
-      var currentModels = currentTextBenchmarkModels();
-      if (isBrowsingModels() && currentBrowseModels) {
-        renderFilteredModelBenchmarks(currentBrowseModels);
-        return;
-      }
-      if (!isBrowsingModels()) {
-        loadCurrentTextBenchmarks();
-        return;
-      }
-      if (currentModels) renderTextBenchmarks(currentModels);
+      loadCurrentTextBenchmarks();
     }
 
-    function renderFilteredModelBenchmarks(models) {
+    function renderFilteredModelBenchmarks(models, sourceStatus) {
       if (fields.usecase.value === 'voice') {
-        renderVoiceBenchmarks(models || []);
+        renderVoiceBenchmarks(models || [], sourceStatus && sourceStatus.voice);
         return;
       }
       if (fields.usecase.value === 'speech-to-text') {
         renderSpeechToTextBenchmarks(models || []);
         return;
       }
+      if (fields.usecase.value === 'front-end-web-dev') {
+        renderFrontendWebDevBenchmarks(models || []);
+        return;
+      }
 
-      renderTextBenchmarks(
-        mergeCustomerSupportBenchmarkRows(models || [], currentTextBenchmarkModels()),
-        true
-      );
+      renderTextBenchmarks(models || [], true);
       renderFaq(models || []);
     }
 
-    function mergeCustomerSupportBenchmarkRows(models, benchmarkModels) {
-      var merged = new Map();
-      (models || []).forEach(function (model) {
-        if (model && model.id) merged.set(model.id, model);
+    function recommendationFamilyKey(model) {
+      var canonicalIdentity = model.registryModelId || (!model.source ? model.id : '');
+      var identity = canonicalIdentity || model.name || model.id || model.family || '';
+      var normalized = String(identity)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      if (!canonicalIdentity) {
+        var previous;
+        do {
+          previous = normalized;
+          normalized = normalized
+            .replace(/-(?:minimal|low|medium|high|xhigh|max)-effort$/, '')
+            .replace(/-effort-(?:minimal|low|medium|high|xhigh|max)$/, '')
+            .replace(/-(?:adaptive-reasoning|non-reasoning|reasoning|thinking|adaptive|minimal|low|medium|high|xhigh|max)$/, '');
+        } while (normalized !== previous);
+      }
+      return String(model.provider || '') + ':' + normalized.replace(/[^a-z0-9]+/g, '');
+    }
+
+    function recommendationRowsFromResponse(data) {
+      var primary = data && data.recommendation;
+      if (!primary) return [];
+      var rows = [{ role: 'Primary', primary: true, model: primary }];
+      var seen = {};
+      seen[recommendationFamilyKey(primary)] = true;
+      var candidates = [];
+      if (primary.failover) candidates.push(primary.failover);
+      if (Array.isArray(data.failovers)) candidates = candidates.concat(data.failovers);
+      candidates.forEach(function (model) {
+        if (!model) return;
+        var key = recommendationFamilyKey(model);
+        if (!key || seen[key]) return;
+        seen[key] = true;
+        rows.push({ role: 'Failover ' + rows.length, primary: false, model: model });
       });
-      (benchmarkModels || []).forEach(function (model) {
-        if (!model || !model.id) return;
-        if (!merged.has(model.id)) {
-          merged.set(model.id, model);
-          return;
-        }
-        var existing = merged.get(model.id);
-        var existingAutoClose = existing && existing.benchmarks && existing.benchmarks.llm && existing.benchmarks.llm.autoClose;
-        var benchmarkAutoClose = model.benchmarks && model.benchmarks.llm && model.benchmarks.llm.autoClose;
-        if (!existingAutoClose && benchmarkAutoClose) merged.set(model.id, model);
+      return rows;
+    }
+
+    function recommendationColumns(useCase) {
+      var base = [
+        {
+          label: 'Role',
+          render: function (row) {
+            return '<span class="mode-role' + (row.primary ? ' primary' : '') + '">' + escapeHtml(row.role) + '</span>';
+          }
+        },
+        { label: 'Model', render: function (row) { return renderModelCell(row.model); } }
+      ];
+      if (useCase === 'voice') {
+        return base.concat([
+          { label: 'AA Index', render: function (row) { return benchmarkScore(voiceSignals(row.model).qualityIndex); } },
+          { label: 'τ-Voice', render: function (row) { return pct(voiceSignals(row.model).agenticPerformance); } },
+          { label: 'TTFA', render: function (row) { return seconds(voiceTtfa(row.model)); } },
+          { label: 'Input AUD/hr', render: function (row) { return money(voiceCost(row.model)); } },
+          { label: 'Output AUD/hr', render: function (row) { return money(voiceOutputCost(row.model)); } }
+        ]);
+      }
+      if (useCase === 'speech-to-text') {
+        return base.concat([
+          { label: 'AA-WER', render: function (row) { return wer(sttSignals(row.model).aaWer); } },
+          { label: 'Speed', render: function (row) { return speedFactor(sttSignals(row.model).speedFactor); } },
+          { label: 'AUD/1k min', render: function (row) { return money(sttCost(row.model)); } }
+        ]);
+      }
+      if (useCase === 'front-end-web-dev') {
+        return base.concat([
+          { label: 'Configuration', render: function (row) { return escapeHtml(frontendConfigurationLabel(row.model)); } },
+          { label: 'Registry model', render: function (row) { return '<code>' + escapeHtml(frontendRegistryModelLabel(row.model)) + '</code>'; } },
+          { label: 'Arena rank', render: function (row) { var rank = frontendWebDevSignals(row.model).rank; return typeof rank === 'number' ? '#' + rank : '-'; } },
+          { label: 'Arena score', render: function (row) { return frontendArenaScoreLabel(row.model); } },
+          { label: 'Votes', render: function (row) { var votes = frontendWebDevSignals(row.model).votes; return typeof votes === 'number' ? votes.toLocaleString() : '-'; } },
+          { label: 'Status', render: function (row) { return frontendWebDevSignals(row.model).preliminary ? 'preliminary' : 'established'; } },
+          { label: 'Input AUD/MTok', render: function (row) { return money((row.model.pricing || {}).inputPerMTok); } },
+          { label: 'Output AUD/MTok', render: function (row) { return money((row.model.pricing || {}).outputPerMTok); } }
+        ]);
+      }
+      if (useCase === 'document-processing') {
+        return base.concat([
+          { label: 'Visual', render: function (row) { return benchmarkScore(llmSignals(row).visualReasoning); } },
+          { label: 'IFBench', render: function (row) { return benchmarkScore(llmSignals(row).instructionFollowing); } },
+          { label: 'Image AUD/1k', render: function (row) { return money(imageInputCost(row)); } },
+          { label: 'Task AUD', render: function (row) { return money(runCost(row)); } },
+          { label: 'Latency', render: function (row) { return seconds(documentLatency(row)); } }
+        ]);
+      }
+      return base.concat([
+        { label: 'ITS FP', render: falsePositiveLabel },
+        { label: 'ITS Acc', render: accuracyLabel },
+        { label: 'IFBench', render: function (row) { return benchmarkScore(llmSignals(row).instructionFollowing); } },
+        { label: 'Task AUD', render: function (row) { return money(runCost(row)); } }
+      ]);
+    }
+
+    function renderRecommendationResponse(data) {
+      var rows = recommendationRowsFromResponse(data);
+      var columns = recommendationColumns(fields.usecase.value);
+      var head = document.getElementById('recommendationHead');
+      var body = document.getElementById('recommendationRows');
+      if (head) {
+        head.innerHTML = columns.map(function (column) { return '<th>' + escapeHtml(column.label) + '</th>'; }).join('');
+      }
+      if (body) {
+        body.innerHTML = rows.length
+          ? rows.map(function (row) {
+              return '<tr' + (row.primary ? ' class="selected"' : '') + '>' + columns.map(function (column) {
+                return '<td>' + column.render(row) + '</td>';
+              }).join('') + '</tr>';
+            }).join('')
+          : '<tr><td class="empty" colspan="' + columns.length + '">No recommendation matches the active filters.</td></tr>';
+      }
+      var meta = data && data.recommendationMeta;
+      if (meta && meta.selectionBasis === 'latest_release') {
+        setText(
+          'recommendationSource',
+          'Latest full-size release heuristic · benchmark evidence pending · capability-first, not value-optimised'
+        );
+      } else {
+        setText('recommendationSource', rows.length === 1
+          ? '1 primary; no distinct failover'
+          : rows.length + ' distinct model families');
+      }
+    }
+
+    function registryAvailability(model) {
+      if (model.availability && typeof model.availability === 'object') {
+        return model.availability.status || 'unknown';
+      }
+      if (typeof model.availability === 'string') return model.availability;
+      return model.deprecated ? 'deprecated' : 'active';
+    }
+
+    function registryDate(model) {
+      var released = model.releaseDate ? 'Released ' + String(model.releaseDate).slice(0, 10) : '';
+      var updated = model.updatedAt ? 'Updated ' + String(model.updatedAt).slice(0, 10) : '';
+      return [released, updated].filter(Boolean).join('<br>') || '-';
+    }
+
+    function registryCapabilities(model) {
+      var values = Object.keys(model.capabilities || {}).filter(function (key) {
+        return model.capabilities[key] === true;
+      }).map(function (key) {
+        return key.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
       });
-      return Array.from(merged.values());
+      return values.length ? values.join(', ') : '-';
+    }
+
+    function registryContext(value) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+      if (value >= 1000000) return (value / 1000000).toFixed(value % 1000000 ? 1 : 0) + 'M';
+      if (value >= 1000) return Math.round(value / 1000) + 'k';
+      return String(Math.round(value));
+    }
+
+    function renderRegistryModels(models, data) {
+      var columns = [
+        {
+          key: 'model', label: 'Model', value: function (model) { return model.name; }, render: function (model) {
+            return '<strong>' + escapeHtml(model.name) + '</strong><div class="provider">' + escapeHtml(model.id) + '</div>';
+          }
+        },
+        { key: 'provider', label: 'Provider', value: function (model) { return model.provider; }, render: function (model) { return escapeHtml(model.provider); } },
+        { key: 'date', label: 'Released / updated', value: function (model) { return model.releaseDate || model.updatedAt || ''; }, render: function (model) { return '<div class="registry-date">' + registryDate(model) + '</div>'; } },
+        { key: 'availability', label: 'Availability', value: registryAvailability, render: function (model) { return escapeHtml(registryAvailability(model)); } },
+        { key: 'context', label: 'Context', value: function (model) { return model.contextWindow; }, render: function (model) { return registryContext(model.contextWindow); } },
+        { key: 'input', label: 'Input AUD/MTok', value: function (model) { return (model.pricing || {}).inputPerMTok; }, render: function (model) { return money((model.pricing || {}).inputPerMTok); } },
+        { key: 'output', label: 'Output AUD/MTok', value: function (model) { return (model.pricing || {}).outputPerMTok; }, render: function (model) { return money((model.pricing || {}).outputPerMTok); } },
+        { key: 'capabilities', label: 'Capabilities', value: registryCapabilities, render: function (model) { return '<div class="registry-capabilities">' + escapeHtml(registryCapabilities(model)) + '</div>'; } }
+      ];
+      renderSortableTable('registryRows', models || [], columns, 'date', 'desc');
+      setText('registrySource', (models || []).length.toLocaleString() + ' registry models' + (data && data.generatedAt ? ' · refreshed ' + formatAge(data.generatedAt) : ''));
+    }
+
+    function renderModeResponse(mode, data) {
+      if (mode === 'recommend') {
+        renderRecommendationResponse(data || {});
+        return;
+      }
+      if (mode === 'benchmarks') {
+        renderFilteredModelBenchmarks(
+          (data && data.benchmarks) || [],
+          (data && data.sourceStatus) || null
+        );
+        highlightBenchmark('', '');
+        return;
+      }
+      renderRegistryModels((data && data.models) || [], data || {});
+      highlightBenchmark('', '');
+    }
+
+    function renderModeLoading(mode) {
+      if (mode === 'recommend') {
+        setText('recommendationSource', 'checking...');
+        var recommendationRows = document.getElementById('recommendationRows');
+        if (recommendationRows) recommendationRows.innerHTML = '<tr><td class="empty" colspan="8">checking...</td></tr>';
+        return;
+      }
+      if (mode === 'models') {
+        setText('registrySource', 'checking...');
+        var registryRows = document.getElementById('registryRows');
+        if (registryRows) registryRows.innerHTML = '<tr><td class="empty" colspan="8">checking...</td></tr>';
+        return;
+      }
+      var tableId = benchmarkTableForUseCase(fields.usecase.value);
+      var benchmarkRows = document.getElementById(tableId);
+      if (benchmarkRows) benchmarkRows.innerHTML = '<tr><td class="empty" colspan="10">checking...</td></tr>';
+    }
+
+    function renderModeUnavailable(mode) {
+      if (mode === 'recommend') {
+        setText('recommendationSource', 'unavailable');
+        var recommendationRows = document.getElementById('recommendationRows');
+        if (recommendationRows) recommendationRows.innerHTML = '<tr><td class="empty" colspan="8">Recommendation unavailable.</td></tr>';
+      } else if (mode === 'models') {
+        setText('registrySource', 'unavailable');
+        var registryRows = document.getElementById('registryRows');
+        if (registryRows) registryRows.innerHTML = '<tr><td class="empty" colspan="8">Registry unavailable.</td></tr>';
+      } else {
+        var tableId = benchmarkTableForUseCase(fields.usecase.value);
+        var benchmarkRows = document.getElementById(tableId);
+        if (benchmarkRows) benchmarkRows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
+      }
     }
 
     function textRows(models, useCase) {
       return models
         .filter(function (model) {
-          if (useCase === 'customer-support' && model.recommendable === false) return false;
+          if (!isBrowsingBenchmarks() && useCase === 'customer-support' && model.recommendable === false) return false;
           var signals = model.benchmarks && model.benchmarks.llm;
+          if (isBrowsingBenchmarks()) return Boolean(signals);
+          if (useCase === 'document-processing') {
+            return signals && typeof signals.visualReasoning === 'number';
+          }
           if (
             useCase === 'customer-support' &&
             (!signals ||
@@ -2199,7 +2974,8 @@ export const HOME_HTML = String.raw`<!doctype html>
             signals.terminalBench,
             signals.agentic,
             signals.tauTelecom,
-            signals.professional
+            signals.professional,
+            signals.visualReasoning
           ].some(function (value) { return typeof value === 'number'; });
           return hasQualitySignal;
         })
@@ -2209,6 +2985,22 @@ export const HOME_HTML = String.raw`<!doctype html>
     }
 
 	    function commonTextColumns(useCase, includeIts) {
+      if (useCase === 'document-processing') {
+        var documentColumns = [
+          { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
+          { key: 'score', label: 'Document Score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } },
+          { key: 'visual', label: 'Visual', value: function (row) { return normalizedBenchmarkScore(llmSignals(row).visualReasoning); }, render: function (row) { return benchmarkScore(llmSignals(row).visualReasoning); } },
+          { key: 'ifbench', label: 'IFBench', value: function (row) { return normalizedBenchmarkScore(llmSignals(row).instructionFollowing); }, render: function (row) { return benchmarkScore(llmSignals(row).instructionFollowing); } },
+          { key: 'intelligence', label: 'Intel', value: function (row) { return llmSignals(row).intelligence; }, render: function (row) { return score(llmSignals(row).intelligence); } },
+          { key: 'imageCost', label: 'Image AUD/1k', value: imageInputCost, render: function (row) { return money(imageInputCost(row)); } },
+          { key: 'runCost', label: 'Task AUD', value: function (row) { var cost = runCost(row); return typeof cost === 'number' ? cost : Infinity; }, render: function (row) { return money(runCost(row)); } },
+          { key: 'latency', label: 'Latency', value: function (row) { return documentLatency(row); }, render: function (row) { return seconds(documentLatency(row)); } }
+        ];
+        if (isBrowsingBenchmarks()) {
+          documentColumns.push({ key: 'eligibility', label: 'Eligibility', value: function (row) { return row.model.recommendable !== false ? 1 : 0; }, render: function (row) { return renderEligibility(row.model); } });
+        }
+        return documentColumns;
+      }
 	      var base = [
 	        { key: 'model', label: 'Model', value: function (row) { return row.model.name; }, render: function (row) { return renderModelCell(row.model); } },
 	        { key: 'score', label: includeIts ? 'Score' : 'AA Support Score', value: function (row) { return row.score; }, render: function (row) { return score(row.score); } }
@@ -2231,63 +3023,87 @@ export const HOME_HTML = String.raw`<!doctype html>
       if (includeIts) {
         base.push({ key: 'note', label: 'ITS Notes', value: autoCloseNote, render: function (row) { return '<div class="note-cell">' + escapeHtml(autoCloseNote(row)) + '</div>'; } });
       }
+      if (isBrowsingBenchmarks()) {
+        base.push({ key: 'eligibility', label: 'Eligibility', value: function (row) { return row.model.recommendable !== false ? 1 : 0; }, render: function (row) { return renderEligibility(row.model); } });
+      }
       return base;
     }
 
     function renderTextBenchmarks(models, useProvidedRows) {
+      var useCase = fields.usecase.value;
+      var tableId = benchmarkTableForUseCase(useCase);
+      var sourceId = useCase === 'document-processing' ? 'documentSource' : 'supportSource';
       var supportModels = useProvidedRows ? models : activeTextBenchmarkModels(models);
-      var support = textRows(supportModels, 'customer-support');
-      var includeIts = includeItsBenchmark();
-      var supportSort = customerSupportTableSort(includeIts);
+      var support = textRows(supportModels, useCase);
+      var includeIts = useCase === 'customer-support' && includeItsBenchmark();
+      var supportSort = useCase === 'document-processing'
+        ? documentProcessingTableSort()
+        : customerSupportTableSort(includeIts);
 
       renderSortableTable(
-        'supportRows',
+        tableId,
         support,
-        commonTextColumns('customer-support', includeIts),
+        commonTextColumns(useCase, includeIts),
         supportSort.key,
         supportSort.direction,
         supportSort.compare
       );
 
-      var label = support.length ? (includeIts ? 'AA + ITS auto-close' : 'AA LLM extract') : 'unavailable';
-      setText('supportSource', label);
+      var label = support.length
+        ? useCase === 'document-processing'
+          ? 'AA vision LLM extract'
+          : includeIts ? 'AA + ITS auto-close' : 'AA LLM extract'
+        : 'unavailable';
+      setText(sourceId, label);
     }
 
-    function customerSupportBenchmarkPath() {
+    function textBenchmarkPath() {
       var params = new URLSearchParams();
-      params.set('useCase', 'customer-support');
+      params.set('useCase', fields.usecase.value);
       if (fields.provider.value) params.set('provider', fields.provider.value);
-      if (fields.capability.value) params.set('capability', fields.capability.value);
-      if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
-      if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
-      if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
-      if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
-      if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
-      if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
-      if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
-      if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
-      if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
-      if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
+      if (fields.usecase.value === 'document-processing') {
+        if (fields.minvisualreasoning.value) params.set('minVisualReasoning', fields.minvisualreasoning.value);
+        if (fields.maximagecost.value) params.set('maxImageInputCostPer1kImagesAud', fields.maximagecost.value);
+        if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
+        if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
+        if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
+      } else {
+        if (fields.capability.value) params.set('capability', fields.capability.value);
+        if (!includeItsBenchmark()) params.set('includeItsEval', 'false');
+        if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
+        if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+        if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
+        if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+        if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
+        if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
+        if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
+        if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+        if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
+      }
       return '/v1/benchmarks?' + params.toString();
     }
 
     function loadCurrentTextBenchmarks() {
-      if (fields.usecase.value !== 'customer-support') return;
+      if (
+        fields.usecase.value !== 'customer-support' &&
+        fields.usecase.value !== 'document-processing'
+      ) return;
       var requestId = ++textBenchmarkRequest;
-      fetch(customerSupportBenchmarkPath(), { cache: 'no-store' })
+      fetch(textBenchmarkPath(), { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
         .then(function (data) {
           if (requestId !== textBenchmarkRequest) return;
-          if (fields.usecase.value !== 'customer-support' || isBrowsingModels()) return;
+          if (!isBrowsingBenchmarks()) return;
           var rows = data.benchmarks || [];
-          renderTextBenchmarks(rows);
+          renderTextBenchmarks(rows, fields.usecase.value === 'document-processing');
           renderFaq(rows);
         })
         .catch(function () {
           if (requestId !== textBenchmarkRequest) return;
-          var rows = document.getElementById('supportRows');
+          var tableId = benchmarkTableForUseCase(fields.usecase.value);
+          var rows = document.getElementById(tableId);
           if (rows) rows.innerHTML = '<tr><td class="empty" colspan="10">Benchmark data unavailable.</td></tr>';
-          setText('supportSource', 'unavailable');
+          setText(fields.usecase.value === 'document-processing' ? 'documentSource' : 'supportSource', 'unavailable');
         });
     }
 
@@ -2371,16 +3187,16 @@ export const HOME_HTML = String.raw`<!doctype html>
               : 'No customer support benchmark data is currently available.'
         },
         {
-          q: 'Which voice model is strongest overall?',
+          q: 'Which speech-to-speech (voice) model is strongest overall?',
           a: voice[0]
-            ? modelName(voice[0]) + ' currently ranks highest for voice in this registry based on τ-Voice, speech reasoning, telecom score, time to first audio, and AA benchmark input-audio cost.'
-            : 'No voice benchmark data is currently available.'
+            ? modelName(voice[0]) + ' currently ranks highest for speech-to-speech (voice) in this registry based first on the AA Speech-to-Speech Index, with τ-Voice, speech reasoning, telecom score, time to first audio, and input-audio price as supporting evidence.'
+            : 'No speech-to-speech (voice) benchmark data is currently available.'
         },
         {
-          q: 'Which voice model is cheapest on benchmark input audio?',
+          q: 'Which speech-to-speech (voice) model has the lowest AA input-audio price?',
           a: cheapestVoice[0]
-            ? modelName(cheapestVoice[0]) + ' is the cheapest voice candidate on AA benchmark input-audio cost at ' + money(voiceCost(cheapestVoice[0])) + ' AUD/hr.'
-            : 'No voice benchmark pricing is currently available.'
+            ? modelName(cheapestVoice[0]) + ' has the lowest AA input-audio price at ' + money(voiceCost(cheapestVoice[0])) + ' AUD/hr (benchmark cost when available, otherwise API list price).'
+            : 'No speech-to-speech (voice) input-audio pricing is currently available.'
         },
         {
           q: 'How do I choose the best speech to text model?',
@@ -2395,8 +3211,8 @@ export const HOME_HTML = String.raw`<!doctype html>
         {
           q: 'How are recommendations compared here?',
           a: includeIts
-            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
-            : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Voice uses AA speech-to-speech benchmark pricing and latency.'
+            ? 'Customer support uses IT Solver auto-close benchmark results first: false positives, accuracy, then Intelligence Index Task AUD. Artificial Analysis supplies broader model quality, pricing, and cost-efficiency signals. Speech-to-speech (voice) uses AA speech-to-speech quality, pricing, and latency.'
+            : 'Customer support uses Artificial Analysis model quality, pricing, and cost-efficiency signals. Speech-to-speech (voice) uses AA speech-to-speech quality, pricing, and latency.'
         }
       ];
 
@@ -2426,13 +3242,16 @@ export const HOME_HTML = String.raw`<!doctype html>
       .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
       .then(function (data) {
         voiceBenchmarkRows = data.benchmarks || [];
-        if (!isBrowsingModels() && fields.usecase.value === 'voice') {
-          renderVoiceBenchmarks(voiceBenchmarkRows);
+        voiceSourceStatus = data.sourceStatus && data.sourceStatus.voice
+          ? data.sourceStatus.voice
+          : null;
+        if (isBrowsingBenchmarks() && fields.usecase.value === 'voice') {
+          renderVoiceBenchmarks(voiceBenchmarkRows, voiceSourceStatus);
         }
       })
       .catch(function () {
         var rows = document.getElementById('voiceRows');
-        if (rows) rows.innerHTML = '<tr><td class="empty" colspan="7">Voice benchmarks unavailable.</td></tr>';
+        if (rows) rows.innerHTML = '<tr><td class="empty" colspan="8">Speech-to-speech (voice) benchmarks unavailable.</td></tr>';
         setText('voiceSource', 'unavailable');
       });
 
@@ -2445,7 +3264,7 @@ export const HOME_HTML = String.raw`<!doctype html>
         .then(function (data) {
           sttBenchmarkRows = data.benchmarks || [];
           sttBenchmarkLoading = false;
-          if (!isBrowsingModels() && fields.usecase.value === 'speech-to-text') {
+          if (isBrowsingBenchmarks() && fields.usecase.value === 'speech-to-text') {
             renderSpeechToTextBenchmarks(sttBenchmarkRows);
           }
         })
@@ -2466,13 +3285,15 @@ export const HOME_HTML = String.raw`<!doctype html>
     Promise.all([
       fetch('/v1/benchmarks?useCase=customer-support', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); }),
-      fetch('/v1/benchmarks?useCase=customer-support&includeItsBenchmark=false', { cache: 'no-store' })
+      fetch('/v1/benchmarks?useCase=customer-support&includeItsEval=false', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
     ])
       .then(function (responses) {
         textBenchmarkModels = responses[0].benchmarks || [];
         textBenchmarkModelsWithoutIts = responses[1].benchmarks || [];
-        if (fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();
+        var faqModels = currentTextBenchmarkModels();
+        if (faqModels) renderFaq(faqModels);
+        if (isBrowsingBenchmarks() && fields.usecase.value === 'customer-support') renderCurrentUseCaseBenchmarks();
       })
       .catch(function () {
         ['supportRows'].forEach(function (id) {
@@ -2535,15 +3356,29 @@ export const HOME_HTML = String.raw`<!doctype html>
     });
 
     function buildPath() {
-      var endpoint = fields.endpoint.value === 'models' ? '/v1/models' : '/v1/models/recommend';
+      var mode = fields.endpoint.value;
+      var endpoint = mode === 'models'
+        ? '/v1/models'
+        : mode === 'benchmarks'
+          ? '/v1/benchmarks'
+          : '/v1/models/recommend';
       var params = new URLSearchParams();
+      if (mode === 'models') {
+        if (fields.provider.value) params.set('provider', fields.provider.value);
+        var registryQuery = params.toString();
+        return endpoint + (registryQuery ? '?' + registryQuery : '');
+      }
       if (fields.tier.value) params.set('tier', fields.tier.value);
+      if (
+        mode === 'recommend' &&
+        fields.tier.value === 'best' &&
+        fields.allowlatest.checked
+      ) params.set('allowUnbenchmarkedLatest', 'true');
       if (fields.provider.value) params.set('provider', fields.provider.value);
       if (fields.usecase.value) params.set('useCase', fields.usecase.value);
       if (
         fields.capability.value &&
-        fields.usecase.value !== 'voice' &&
-        fields.usecase.value !== 'speech-to-text'
+        fields.usecase.value === 'customer-support'
       ) params.set('capability', fields.capability.value);
       if (fields.usecase.value === 'voice') {
         if (fields.maxaudioinputcost.value) params.set('maxAudioInputCostPerHour', fields.maxaudioinputcost.value);
@@ -2551,8 +3386,21 @@ export const HOME_HTML = String.raw`<!doctype html>
       } else if (fields.usecase.value === 'speech-to-text') {
         if (fields.maxtranscriptioncost.value) params.set('maxTranscriptionCostPer1kMinutes', fields.maxtranscriptioncost.value);
         if (fields.maxaawer.value) params.set('maxAaWer', fields.maxaawer.value);
+      } else if (fields.usecase.value === 'document-processing') {
+        if (fields.minvisualreasoning.value) params.set('minVisualReasoning', fields.minvisualreasoning.value);
+        if (fields.maximagecost.value) params.set('maxImageInputCostPer1kImagesAud', fields.maximagecost.value);
+        if (fields.minruncost.value) params.set('minIntelligenceCostPerTaskAud', fields.minruncost.value);
+        if (fields.maxruncost.value) params.set('maxIntelligenceCostPerTaskAud', fields.maxruncost.value);
+        if (fields.minintelligence.value) params.set('minIntelligence', fields.minintelligence.value);
+      } else if (fields.usecase.value === 'front-end-web-dev') {
+        if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
+        if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
+        if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
+        if (fields.maxoutputcost.value) params.set('maxOutputCostPerMTok', fields.maxoutputcost.value);
+        if (fields.minctx.value) params.set('minContextWindow', String(parseInt(fields.minctx.value, 10) * 1000));
+        if (fields.maxctx.value) params.set('maxContextWindow', String(parseInt(fields.maxctx.value, 10) * 1000));
       } else {
-        if (!includeItsBenchmark()) params.set('includeItsBenchmark', 'false');
+        if (fields.usecase.value === 'customer-support' && !includeItsBenchmark()) params.set('includeItsEval', 'false');
         if (fields.mincost.value) params.set('minInputCostPerMTok', fields.mincost.value);
         if (fields.maxcost.value) params.set('maxInputCostPerMTok', fields.maxcost.value);
         if (fields.minoutputcost.value) params.set('minOutputCostPerMTok', fields.minoutputcost.value);
@@ -2583,7 +3431,7 @@ export const HOME_HTML = String.raw`<!doctype html>
     function builderStateParams(path) {
       var apiUrl = new URL(path || buildPath(), origin);
       var params = new URLSearchParams(apiUrl.search);
-      params.set('endpoint', fields.endpoint.value === 'models' ? 'models' : 'recommend');
+      params.set('endpoint', fields.endpoint.value);
       return params;
     }
 
@@ -2605,7 +3453,17 @@ export const HOME_HTML = String.raw`<!doctype html>
       setSelectValue(fields.provider, params.get('provider'));
       setSelectValue(fields.capability, params.get('capability'));
       setSelectValue(fields.usecase, params.get('useCase'));
-      if (fields.includeits && params.get('includeItsBenchmark') === 'false') {
+      fields.allowlatest.checked =
+        params.get('allowUnbenchmarkedLatest') === 'true';
+      if (!params.get('tier')) {
+        fields.tier.value = defaultTierForUseCase(fields.usecase.value);
+      }
+      if (
+        fields.includeits &&
+        (params.get('includeItsEval') === 'false' ||
+          params.get('includeItsBenchmark') === 'false' ||
+          params.get('includeITSBenchmark') === 'false')
+      ) {
         fields.includeits.checked = false;
       }
       setInputValue(fields.inputminrange, params.get('minInputCostPerMTok') || params.get('minCostPerMTok'));
@@ -2619,6 +3477,11 @@ export const HOME_HTML = String.raw`<!doctype html>
       setInputValue(fields.maxaudiooutputcost, params.get('maxAudioOutputCostPerHour'));
       setInputValue(fields.transcriptionmaxrange, params.get('maxTranscriptionCostPer1kMinutes'));
       setInputValue(fields.aawermaxrange, params.get('maxAaWer'));
+      setInputValue(fields.visualreasoningminrange, params.get('minVisualReasoning'));
+      setInputValue(
+        fields.imagecostmaxrange,
+        params.get('maxImageInputCostPer1kImagesAud') || params.get('maxImageInputCostPer1kImages')
+      );
       if (params.get('minContextWindow')) {
         setInputValue(fields.contextminrange, Number(params.get('minContextWindow')) / 1000);
       }
@@ -2627,53 +3490,65 @@ export const HOME_HTML = String.raw`<!doctype html>
       }
     }
 
+    function isCurrentBuilderRequest(requestId, requestedMode, requestedPath) {
+      return requestId === builderRequestSequence &&
+        requestedMode === fields.endpoint.value &&
+        requestedPath === buildPath();
+    }
+
     var previewTimer = 0;
     function refreshBuilder() {
       syncRunCostRange();
       updateTierOptions(fields.usecase.value);
+      updateLatestOptionVisibility();
       var path = buildPath();
+      var mode = fields.endpoint.value;
       var full = origin + path;
       syncPageUrl(path);
       updateBenchmarkPanel(fields.usecase.value);
       updateFilterVisibility(fields.usecase.value);
-      if (!isBrowsingModels()) renderCurrentUseCaseBenchmarks();
-      redrawBenchmarkTables();
+      var cachedResponse = modeResponses[mode];
+      if (cachedResponse && cachedResponse.path === path) {
+        renderModeResponse(mode, cachedResponse.data);
+      } else {
+        renderModeLoading(mode);
+      }
       fields.url.textContent = full;
       fields.url.href = path;
       fields.open.href = path;
       fields.result.textContent = 'checking...';
       clearTimeout(previewTimer);
+      var requestId = ++builderRequestSequence;
       previewTimer = setTimeout(function () {
         var requestedPath = path;
-        var requestedUseCase = fields.usecase.value;
-        var requestedBrowse = isBrowsingModels();
-        if (!requestedBrowse) currentBrowseModels = null;
-        fetch(path)
+        var requestedMode = mode;
+        fetch(path, { cache: 'no-store' })
           .then(function (res) { return res.ok ? res.json() : Promise.reject(res); })
           .then(function (data) {
-            if (requestedPath !== buildPath()) return;
-            if (data.recommendation) {
-              fields.result.textContent = data.recommendation.id;
-              highlightBenchmark(data.recommendation.id, requestedUseCase);
+            if (!isCurrentBuilderRequest(requestId, requestedMode, requestedPath)) return;
+            modeResponses[requestedMode] = { path: requestedPath, data: data };
+            if (requestedMode === 'recommend' && data.recommendation) {
+              fields.result.textContent = data.recommendation.registryModelId || data.recommendation.id;
+            } else if (requestedMode === 'benchmarks') {
+              fields.result.textContent = (data.benchmarkCount || (data.benchmarks || []).length || 0).toLocaleString() + ' benchmarks';
             } else {
-              fields.result.textContent = (data.modelCount || 0).toLocaleString() + ' models';
-              if (requestedBrowse) {
-                currentBrowseModels = data.models || [];
-                renderFilteredModelBenchmarks(currentBrowseModels);
-              }
-              highlightBenchmark('', '');
+              fields.result.textContent = (data.modelCount || (data.models || []).length || 0).toLocaleString() + ' models';
             }
+            renderModeResponse(requestedMode, data);
           })
           .catch(function () {
-            if (requestedPath !== buildPath()) return;
+            if (!isCurrentBuilderRequest(requestId, requestedMode, requestedPath)) return;
             fields.result.textContent = 'unavailable';
-            highlightBenchmark('', '');
+            renderModeUnavailable(requestedMode);
           });
       }, 180);
     }
 
     ['change', 'input'].forEach(function (eventName) {
       document.querySelector('.builder').addEventListener(eventName, refreshBuilder);
+    });
+    fields.usecase.addEventListener('change', function () {
+      fields.tier.value = defaultTierForUseCase(fields.usecase.value);
     });
     inputCostRange = {
       min: 0,
@@ -2728,6 +3603,24 @@ export const HOME_HTML = String.raw`<!doctype html>
       anyLabel: 'Any input audio AUD/hr',
       format: formatAudioCostCap
     };
+    visualReasoningRange = {
+      min: 0,
+      max: 100,
+      minRange: fields.visualreasoningminrange,
+      hiddenMin: fields.minvisualreasoning,
+      label: fields.visualreasoninglabel,
+      anyLabel: 'Any visual reasoning',
+      format: formatVisualReasoningFloor
+    };
+    imageCostRange = {
+      min: 0,
+      max: 10,
+      maxRange: fields.imagecostmaxrange,
+      hiddenMax: fields.maximagecost,
+      label: fields.imagecostlabel,
+      anyLabel: 'Any image AUD/1k',
+      format: formatImageCostCap
+    };
     transcriptionCostRange = {
       min: 0,
       max: 20,
@@ -2751,10 +3644,14 @@ export const HOME_HTML = String.raw`<!doctype html>
     fields.contextany.addEventListener('click', function () { resetDualRange(contextRange); });
     fields.runcostany.addEventListener('click', function () { resetDualRange(runCostRange); });
     fields.audioinputcostany.addEventListener('click', function () { resetMaxRange(audioInputCostRange); });
+    fields.visualreasoningany.addEventListener('click', function () { resetMinRange(visualReasoningRange); });
+    fields.imagecostany.addEventListener('click', function () { resetMaxRange(imageCostRange); });
     fields.transcriptioncostany.addEventListener('click', function () { resetMaxRange(transcriptionCostRange); });
     fields.aawerany.addEventListener('click', function () { resetMaxRange(aaWerRange); });
     [inputCostRange, outputCostRange, contextRange, runCostRange].forEach(installDualRangePointer);
     installMaxRangePointer(audioInputCostRange);
+    installMinRangePointer(visualReasoningRange);
+    installMaxRangePointer(imageCostRange);
     installMaxRangePointer(transcriptionCostRange);
     installMaxRangePointer(aaWerRange);
     restoreBuilderStateFromUrl();

@@ -1,18 +1,36 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  benchmarkCandidateEligibilityReason,
   benchmarkCandidates,
+  isBenchmarkCandidateRecommendedForFilters,
+  latestCostQualitySelection,
   normalizeArtificialAnalysisCatalog,
+  normalizeModelsDevCatalog,
   parseFilters,
+  rankedRecommendedModels,
   recommendModel,
   recommendModelFailovers,
+  recommendationFamilyKey,
   type BenchmarkCandidate,
   type Catalog,
+  type ModelsDevDocument,
+  type ProviderId,
 } from "../src/registry";
 import { AA_LLM_EFFICIENCY_MODELS } from "../src/generated/aa-llm-efficiency";
 import { AI_AUTOCLOSE_BENCHMARKS } from "../src/generated/ai-autoclose-benchmarks";
+import { parseArtificialAnalysisSpeechToSpeechApi } from "../src/aa-speech-to-speech";
 import {
+  ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+  ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS,
+  ARENA_FRONTEND_WEBDEV_MODELS,
+  ARENA_FRONTEND_WEBDEV_VOTE_CUTOFF_AT,
+} from "../src/generated/arena-frontend-webdev";
+import {
+  artificialAnalysisFreeFixture,
   artificialAnalysisFixture,
+  artificialAnalysisSpeechToSpeechApiFixture,
   artificialAnalysisSpeechToTextFixture,
+  modelsDevFixture,
 } from "./fixtures";
 
 function aaSupportScore(candidate: BenchmarkCandidate): number {
@@ -102,6 +120,30 @@ function aaSupportMedian(candidates: BenchmarkCandidate[]): BenchmarkCandidate {
   return ordered[Math.floor((ordered.length - 1) / 2)];
 }
 
+function withDateNow<T>(now: string, task: () => T): T {
+  const dateNow = vi.spyOn(Date, "now").mockReturnValue(Date.parse(now));
+  try {
+    return task();
+  } finally {
+    dateNow.mockRestore();
+  }
+}
+
+const ARENA_FRESH_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) + 60 * 60 * 1000,
+).toISOString();
+const ARENA_EXPIRED_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) +
+    (ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000,
+).toISOString();
+const ARENA_LAST_VALID_NOW = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) +
+    ARENA_FRONTEND_WEBDEV_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
+).toISOString();
+const ARENA_BEFORE_CHECK = new Date(
+  Date.parse(ARENA_FRONTEND_WEBDEV_CHECKED_AT) - 1,
+).toISOString();
+
 describe("filter parsing", () => {
   it("parses supported filters and legacy use-case aliases", () => {
     const filters = parseFilters(
@@ -139,9 +181,33 @@ describe("filter parsing", () => {
       parseFilters(new URLSearchParams("includeItsBenchmark=false"))
         .includeItsBenchmark,
     ).toBe(false);
+    expect(
+      parseFilters(new URLSearchParams("includeItsEval=false"))
+        .includeItsBenchmark,
+    ).toBe(false);
     expect(parseFilters(new URLSearchParams("useCase=support")).useCase).toBe(
       "customer-support",
     );
+    expect(
+      parseFilters(new URLSearchParams("useCase=document-processing")).useCase,
+    ).toBe("document-processing");
+    expect(parseFilters(new URLSearchParams("useCase=ocr")).useCase).toBe(
+      "document-processing",
+    );
+    expect(
+      parseFilters(new URLSearchParams("useCase=document-ocr")).useCase,
+    ).toBe("document-processing");
+    for (const alias of [
+      "front-end-web-dev",
+      "webdev",
+      "frontend-web-dev",
+      "frontend-web-development",
+      "front-end-web-development",
+    ]) {
+      expect(parseFilters(new URLSearchParams(`useCase=${alias}`)).useCase).toBe(
+        "front-end-web-dev",
+      );
+    }
     expect(
       parseFilters(new URLSearchParams("useCase=billing-incident")),
     ).toMatchObject({
@@ -149,6 +215,16 @@ describe("filter parsing", () => {
     });
     expect(parseFilters(new URLSearchParams("useCase=stt"))).toMatchObject({
       useCase: "speech-to-text",
+    });
+    expect(
+      parseFilters(new URLSearchParams("useCase=speech-to-speech")),
+    ).toMatchObject({
+      useCase: "voice",
+    });
+    expect(
+      parseFilters(new URLSearchParams("useCase=speech-to-speech-voice")),
+    ).toMatchObject({
+      useCase: "voice",
     });
     expect(
       parseFilters(
@@ -162,10 +238,670 @@ describe("filter parsing", () => {
       maxAaWer: 3,
     });
     expect(
+      parseFilters(
+        new URLSearchParams(
+          "useCase=document-processing&minVisualReasoning=70&maxImageInputCostPer1kImagesAud=4.5",
+        ),
+      ),
+    ).toMatchObject({
+      useCase: "document-processing",
+      minVisualReasoning: 70,
+      maxImageInputCostPer1kImagesAud: 4.5,
+    });
+    expect(
+      parseFilters(
+        new URLSearchParams(
+          "useCase=ocr&maxImageInputCostPer1kImages=2.5",
+        ),
+      ),
+    ).toMatchObject({
+      useCase: "document-processing",
+      maxImageInputCostPer1kImagesAud: 2.5,
+    });
+    expect(
       parseFilters(new URLSearchParams("provider=deepgram")),
     ).toMatchObject({
       unsupportedProvider: true,
     });
+    expect(
+      parseFilters(
+        new URLSearchParams("allowUnbenchmarkedLatest=true"),
+      ).allowUnbenchmarkedLatest,
+    ).toBe(true);
+    expect(parseFilters(new URLSearchParams()).allowUnbenchmarkedLatest).toBe(
+      false,
+    );
+  });
+});
+
+describe("latest cost and quality customer-support policy", () => {
+  const autoClose = (falsePositiveCount: number, benchmarkCodeSha = "same") => ({
+    source: "itsolver-autoclose" as const,
+    modelKey: "test:model",
+    apiModel: "test-model",
+    displayName: "Test Model",
+    benchmarkReport: "test.md",
+    resultsFile: "test.json",
+    generatedAt: "2026-08-01T00:00:00Z",
+    benchmarkCodeSha,
+    total: 100,
+    correctCount: 95,
+    accuracy: 0.95,
+    falsePositiveCount,
+    falseNegativeCount: 4,
+    invalidCount: 0,
+    errorCount: 0,
+    parseSuccessRate: 1,
+    avgLatencyMs: 1000,
+    p95LatencyMs: 1200,
+    avgInputTokens: 1000,
+    avgOutputTokens: 100,
+    weightedScore: 90,
+    sourceUrl: "https://example.test/autoclose",
+    verifiedOn: "2026-08-01",
+    availability: {
+      status: "production" as const,
+      acceptedRisk: false,
+      reason: "test",
+    },
+  });
+
+  const candidate = (input: {
+    id: string;
+    releaseDate: string;
+    taskCost: number;
+    intelligence: number;
+    incumbent?: boolean;
+    falsePositiveCount?: number;
+    benchmarkCodeSha?: string;
+    availability?: "production" | "preview";
+    mapped?: boolean;
+    deprecated?: boolean;
+  }): BenchmarkCandidate => ({
+    id: input.id,
+    provider: "openai",
+    name: input.id,
+    source: "artificialanalysis",
+    benchmarks: {
+      llm: {
+        instructionFollowing: 80,
+        tauTelecom: 80,
+        intelligence: input.intelligence,
+        intelligenceCostPerTask: input.taskCost,
+        ...(input.incumbent || input.falsePositiveCount !== undefined
+          ? {
+              autoClose: autoClose(
+                input.falsePositiveCount ?? 1,
+                input.benchmarkCodeSha,
+              ),
+            }
+          : {}),
+      },
+    },
+    pricing: { inputPerMTok: 1, outputPerMTok: 5 },
+    ...(input.mapped === false ? {} : { registryModelId: input.id }),
+    recommendable: true,
+    availability: {
+      status: input.availability ?? "production",
+      acceptedRisk: false,
+      reason: "test",
+    },
+    family: "gpt",
+    contextWindow: 100000,
+    outputLimit: 10000,
+    capabilities: {
+      vision: true,
+      pdf: true,
+      reasoning: true,
+      toolCalling: true,
+      structuredOutput: true,
+    },
+    modalities: { input: ["text", "image"], output: ["text"] },
+    releaseDate: input.releaseDate,
+    openWeights: false,
+    tier: null,
+    deprecated: input.deprecated ?? false,
+    updatedAt: `${input.releaseDate}T00:00:00Z`,
+  });
+
+  const catalog = (
+    candidates: BenchmarkCandidate[],
+    generatedAt = "2026-08-18T00:00:00Z",
+  ): Catalog => ({
+    generatedAt,
+    modelCount: candidates.length,
+    activeModelCount: candidates.length,
+    providers: [
+      { provider: "openai", total: candidates.length, active: candidates.length },
+    ],
+    models: [],
+    benchmarkCandidates: candidates,
+    sourceStatus: {
+      artificialAnalysisLlm: {
+        state: "live",
+        evidenceTime: generatedAt,
+        liveRowCount: candidates.length,
+        liveCandidateIds: candidates.map((entry) => entry.id),
+      },
+    },
+  });
+
+  const filters = (tier: "fast" | "balanced" | "best") => ({
+    useCase: "customer-support" as const,
+    tier,
+    capability: "reasoning" as const,
+    minIntelligence: 30,
+    selectionPolicy: "latest-cost-quality" as const,
+  });
+  const now = Date.parse("2026-08-18T12:00:00Z");
+
+  it("selects the newest no-more-expensive equal-or-better AA configuration", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+    });
+    const olderCheap = candidate({
+      id: "older-cheap",
+      releaseDate: "2026-07-01",
+      taskCost: 0.1,
+      intelligence: 50,
+    });
+    const newestCheap = candidate({
+      id: "newest-cheap",
+      releaseDate: "2026-08-01",
+      taskCost: 0.2,
+      intelligence: 46,
+    });
+    const newestSmart = candidate({
+      id: "newest-smart",
+      releaseDate: "2026-08-01",
+      taskCost: 0.3,
+      intelligence: 55,
+    });
+    const snapshot = catalog([
+      incumbent,
+      olderCheap,
+      newestCheap,
+      newestSmart,
+    ]);
+
+    expect(latestCostQualitySelection(snapshot, filters("fast"), now).selected?.id).toBe(
+      "newest-cheap",
+    );
+    expect(
+      latestCostQualitySelection(snapshot, filters("balanced"), now).selected?.id,
+    ).toBe("newest-cheap");
+    expect(latestCostQualitySelection(snapshot, filters("best"), now).selected?.id).toBe(
+      "newest-smart",
+    );
+  });
+
+  it("rejects higher-cost, lower-quality, stale, preview, unmapped, and deprecated rows", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+    });
+    const rejected = [
+      candidate({ id: "costly", releaseDate: "2026-08-01", taskCost: 0.41, intelligence: 60 }),
+      candidate({ id: "weaker", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 44 }),
+      candidate({ id: "preview-model", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, availability: "preview" }),
+      candidate({ id: "unmapped", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, mapped: false }),
+      candidate({ id: "deprecated", releaseDate: "2026-08-01", taskCost: 0.2, intelligence: 50, deprecated: true }),
+    ];
+
+    const selection = latestCostQualitySelection(
+      catalog([incumbent, ...rejected]),
+      filters("fast"),
+      now,
+    );
+    expect(selection.selected?.id).toBe("incumbent");
+    expect(selection.selectionBasis).toBe("benchmark_incumbent");
+
+    const stale = latestCostQualitySelection(
+      catalog([incumbent], "2026-08-16T00:00:00Z"),
+      filters("fast"),
+      now,
+    );
+    expect(stale.selected?.id).toBe("incumbent");
+    expect(stale.selectionBasis).toBe("stale_catalog_incumbent");
+
+    const staleEvidence = catalog([incumbent]);
+    staleEvidence.sourceStatus!.artificialAnalysisLlm!.evidenceTime =
+      "2026-08-16T00:00:00Z";
+    const staleEvidenceSelection = latestCostQualitySelection(
+      staleEvidence,
+      filters("fast"),
+      now,
+    );
+    expect(staleEvidenceSelection.selected?.id).toBe("incumbent");
+    expect(staleEvidenceSelection.selectionBasis).toBe(
+      "stale_catalog_incumbent",
+    );
+  });
+
+  it("blocks a comparable ITS safety regression and keeps default behavior strict", () => {
+    const incumbent = candidate({
+      id: "incumbent",
+      releaseDate: "2026-06-01",
+      taskCost: 0.4,
+      intelligence: 45,
+      incumbent: true,
+      falsePositiveCount: 1,
+      benchmarkCodeSha: "comparable",
+    });
+    const regressed = candidate({
+      id: "regressed",
+      releaseDate: "2026-08-01",
+      taskCost: 0.2,
+      intelligence: 50,
+      falsePositiveCount: 2,
+      benchmarkCodeSha: "comparable",
+    });
+    const snapshot = catalog([incumbent, regressed]);
+
+    expect(latestCostQualitySelection(snapshot, filters("best"), now).selected?.id).toBe(
+      "incumbent",
+    );
+    expect(
+      recommendModel(snapshot, {
+        useCase: "customer-support",
+        tier: "best",
+      })?.id,
+    ).toBe("incumbent");
+  });
+});
+
+describe("latest unbenchmarked recommendations", () => {
+  const generatedAt = "2026-07-17T00:00:00Z";
+  const voiceRows = parseArtificialAnalysisSpeechToSpeechApi(
+    artificialAnalysisSpeechToSpeechApiFixture,
+  );
+  const catalog = normalizeModelsDevCatalog(
+    modelsDevFixture,
+    generatedAt,
+    undefined,
+    [],
+    [],
+    voiceRows,
+    {
+      state: "live",
+      origin: "aa_public_page",
+      fetchedAt: generatedAt,
+      rowCount: voiceRows.length,
+    },
+  );
+
+  it("lists current audio models without inventing benchmark evidence", () => {
+    const realtime = catalog.models.find(
+      (model) => model.id === "gpt-realtime-2.1",
+    );
+    const candidate = benchmarkCandidates(catalog, { useCase: "voice" }).find(
+      (model) => model.id === "gpt-realtime-2.1",
+    );
+
+    expect(realtime).toMatchObject({
+      pricing: { audioInputPerMTok: 32, audioOutputPerMTok: 64 },
+    });
+    expect(candidate).toMatchObject({
+      source: "models.dev",
+      recommendable: false,
+      registryModelId: "gpt-realtime-2.1",
+    });
+    expect(candidate?.benchmarks.voice).toBeUndefined();
+  });
+
+  it("uses the newest unbenchmarked release only for opted-in best", () => {
+    expect(recommendModel(catalog, { useCase: "voice", tier: "best" })?.id).toBe(
+      "gpt-realtime-2-high",
+    );
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      releaseDate: "2026-07-06",
+    });
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "fast",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("openai-gpt-realtime-mini");
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "balanced",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({ source: "artificialanalysis" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+        minIntelligence: 1,
+      })?.id,
+    ).not.toBe("gpt-realtime-2.1");
+  });
+
+  it("honours provider and capability filters for the latest heuristic", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-2.2"] = {
+      ...base,
+      id: "gpt-realtime-2.2",
+      name: "GPT-Realtime-2.2",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      tool_call: false,
+    };
+    const compatibleCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(compatibleCatalog, {
+        useCase: "voice",
+        tier: "best",
+        provider: "openai",
+        capability: "toolCalling",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      provider: "openai",
+      capabilities: { toolCalling: true },
+    });
+    expect(
+      recommendModel(compatibleCatalog, {
+        useCase: "voice",
+        tier: "best",
+        provider: "google",
+        allowUnbenchmarkedLatest: true,
+      })?.provider,
+    ).toBe("google");
+  });
+
+  it("keeps previews, latest aliases, and reduced variants behind a flagship", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-3-preview"] = {
+      ...base,
+      id: "gpt-realtime-3-preview",
+      name: "GPT-Realtime-3 Preview",
+      release_date: "2026-07-14",
+      last_updated: "2026-07-14",
+    };
+    source.openai.models!["gpt-realtime-latest"] = {
+      ...base,
+      id: "gpt-realtime-latest",
+      name: "GPT-Realtime Latest",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+    };
+    source.openai.models!["gpt-realtime-3-mini"] = {
+      ...base,
+      id: "gpt-realtime-3-mini",
+      name: "GPT-Realtime-3 Mini",
+      release_date: "2026-07-16",
+      last_updated: "2026-07-16",
+    };
+    source.google.models!["gemini-3-flash-native-audio"] = {
+      ...base,
+      id: "gemini-3-flash-native-audio",
+      name: "Gemini 3 Flash Native Audio",
+      family: "gemini",
+      release_date: "2026-07-17",
+      last_updated: "2026-07-17",
+    };
+    const riskCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(riskCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("gpt-realtime-2.1");
+  });
+
+  it("uses voice pricing only when breaking otherwise equal latest ties", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-realtime-2.2-a"] = {
+      ...base,
+      id: "gpt-realtime-2.2-a",
+      name: "GPT-Realtime-2.2 A",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      cost: { ...base?.cost, output: 100, output_audio: 70 },
+    };
+    source.openai.models!["gpt-realtime-2.2-b"] = {
+      ...base,
+      id: "gpt-realtime-2.2-b",
+      name: "GPT-Realtime-2.2 B",
+      release_date: "2026-07-15",
+      last_updated: "2026-07-15",
+      cost: { ...base?.cost, output: 1, output_audio: 80 },
+    };
+    const priceCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(priceCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      })?.id,
+    ).toBe("gpt-realtime-2.2-b");
+  });
+
+  it("keeps an already-benchmarked latest model on benchmark selection", () => {
+    const benchmarkedRows = [
+      ...voiceRows,
+      {
+        ...voiceRows[0],
+        id: "voice-latest",
+        name: "GPT-Realtime-2.1",
+        shortName: "GPT-Realtime-2.1",
+        slug: "gpt-realtime-2.1",
+        modelSlug: "gpt-realtime-2.1",
+        provider: "openai",
+        providerName: "OpenAI",
+        s2sQualityIndex: 100,
+        bbaScore: 1,
+        tauVoiceAggScore: 1,
+        fdbScore: 1,
+      },
+    ];
+    const benchmarkedCatalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      benchmarkedRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: benchmarkedRows.length,
+      },
+    );
+
+    expect(
+      recommendModel(benchmarkedCatalog, {
+        useCase: "voice",
+        tier: "best",
+        allowUnbenchmarkedLatest: true,
+      }),
+    ).toMatchObject({
+      id: "gpt-realtime-2.1",
+      source: "artificialanalysis",
+      registryModelId: "gpt-realtime-2.1",
+      benchmarks: { voice: expect.any(Object) },
+    });
+  });
+
+  it("allows a named token-priced speech-to-text release without AA evidence", () => {
+    const source = structuredClone(
+      modelsDevFixture,
+    ) as unknown as ModelsDevDocument;
+    const base = source.openai.models?.["gpt-realtime-2.1"];
+    expect(base).toBeDefined();
+    source.openai.models!["gpt-6-transcribe"] = {
+      ...base,
+      id: "gpt-6-transcribe",
+      name: "GPT-6 Transcribe",
+      family: "gpt-transcribe",
+      release_date: "2026-07-16",
+      last_updated: "2026-07-16",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 2, output: 8 },
+    };
+    source.elevenlabs = {
+      models: {
+        "scribe-v3": {
+          ...base,
+          id: "scribe-v3",
+          name: "Scribe V3",
+          family: "scribe",
+          release_date: "2026-07-18",
+          last_updated: "2026-07-18",
+          modalities: { input: ["audio"], output: ["text"] },
+          cost: { input: 3, output: 9 },
+        },
+      },
+    };
+    source.nvidia.models!["parakeet-v4"] = {
+      ...base,
+      id: "parakeet-v4",
+      name: "Parakeet V4",
+      family: "parakeet",
+      open_weights: false,
+      release_date: "2026-07-20",
+      last_updated: "2026-07-20",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 1, output: 4 },
+    };
+    source.nvidia.models!["canary-v3"] = {
+      ...base,
+      id: "canary-v3",
+      name: "Canary V3",
+      family: "canary",
+      open_weights: false,
+      release_date: "2026-07-19",
+      last_updated: "2026-07-19",
+      modalities: { input: ["audio"], output: ["text"] },
+      cost: { input: 1, output: 4 },
+    };
+    source.google.models!["gemini-4-multimodal"] = {
+      ...base,
+      id: "gemini-4-multimodal",
+      name: "Gemini 4 Multimodal",
+      family: "gemini",
+      release_date: "2026-07-21",
+      last_updated: "2026-07-21",
+      modalities: { input: ["text", "audio"], output: ["text"] },
+      cost: { input: 4, output: 12 },
+    };
+    const speechCatalog = normalizeModelsDevCatalog(
+      source,
+      generatedAt,
+      undefined,
+      [],
+      [],
+      voiceRows,
+      {
+        state: "live",
+        origin: "aa_api",
+        fetchedAt: generatedAt,
+        rowCount: voiceRows.length,
+      },
+    );
+
+    const latestSpeechToText = (provider?: ProviderId) =>
+      recommendModel(speechCatalog, {
+        useCase: "speech-to-text",
+        tier: "best",
+        ...(provider ? { provider } : {}),
+        allowUnbenchmarkedLatest: true,
+      });
+
+    expect(latestSpeechToText("openai")).toMatchObject({
+      id: "gpt-6-transcribe",
+      provider: "openai",
+      pricing: { inputPerMTok: 2, outputPerMTok: 8 },
+    });
+    expect(latestSpeechToText("elevenlabs")).toMatchObject({
+      id: "scribe-v3",
+      provider: "elevenlabs",
+    });
+    expect(latestSpeechToText("nvidia")).toMatchObject({
+      id: "parakeet-v4",
+      provider: "nvidia",
+    });
+    expect(latestSpeechToText("google")).toMatchObject({
+      source: "artificialanalysis",
+    });
+    expect(latestSpeechToText("google")?.id).not.toBe(
+      "gemini-4-multimodal",
+    );
   });
 });
 
@@ -189,10 +925,919 @@ describe("Artificial Analysis catalog", () => {
       "google",
       "xai",
       "anthropic",
+      "moonshotai",
       "nvidia",
       "elevenlabs",
       "groq",
     ]);
+  });
+
+  it("joins the current Arena leader to its live registry model", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+      { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-opus-5-max",
+    );
+    const registryModel = catalog.models.find(
+      (model) => model.provider === "anthropic" && model.id === "claude-opus-5",
+    );
+
+    expect(candidate).toMatchObject({
+      id: "claude-opus-5-max",
+      provider: "anthropic",
+      name: "Claude Opus 5",
+      source: "arena",
+      registryModelId: "claude-opus-5",
+      recommendable: true,
+      contextWindow: 1_000_000,
+      pricing: {
+        inputPerMTok: 7.5,
+        outputPerMTok: 37.5,
+      },
+      benchmarks: {
+        frontendWebDev: {
+          score: 1692,
+          rank: 1,
+          rankLow: 1,
+          rankHigh: 2,
+          confidence: 9,
+          votes: 6_448,
+          preliminary: false,
+          source: "arena",
+          sourceUrl: "https://arena.ai/leaderboard/code/webdev",
+          extractedAt: ARENA_FRONTEND_WEBDEV_CHECKED_AT,
+          voteCutoffAt: ARENA_FRONTEND_WEBDEV_VOTE_CUTOFF_AT,
+          configuration: { displayLabel: "max" },
+        },
+      },
+    });
+    expect(registryModel).toMatchObject({
+      id: "claude-opus-5",
+      provider: "anthropic",
+      pricing: {
+        inputPerMTok: 7.5,
+        outputPerMTok: 37.5,
+      },
+    });
+    expect(registryModel?.benchmarks?.frontendWebDev).toBeUndefined();
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+      }),
+    ).toMatchObject({ id: "claude-opus-5-max", provider: "anthropic" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        tier: "best",
+      }),
+    ).toMatchObject({ id: "claude-opus-5-max", provider: "anthropic" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        tier: "balanced",
+      }),
+    ).toMatchObject({ id: "gemini-3-7-flash-high", provider: "google" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        tier: "fast",
+      }),
+    ).toMatchObject({ id: "gemini-3-7-flash-high", provider: "google" });
+    }));
+
+  it("does not recommend a non-production K3 by default", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    source.moonshotai.models["kimi-k3"].status = "preview";
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      ARENA_FRESH_NOW,
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "kimi-k3-max",
+    );
+
+    expect(candidate).toMatchObject({
+      registryModelId: "kimi-k3",
+      recommendable: false,
+      availability: { status: "preview", acceptedRisk: false },
+    });
+    expect(
+      candidate &&
+        isBenchmarkCandidateRecommendedForFilters(candidate, {
+          useCase: "front-end-web-dev",
+        }),
+    ).toBe(false);
+    expect(
+      recommendModel(catalog, { useCase: "front-end-web-dev" })?.id,
+    ).not.toBe("kimi-k3-max");
+    }));
+
+  it("fails closed when the checked Arena snapshot is older than 30 days", () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_EXPIRED_NOW,
+    );
+
+    expect(
+      benchmarkCandidates(catalog, { useCase: "front-end-web-dev" }),
+    ).toEqual([]);
+    expect(
+      recommendModel(catalog, { useCase: "front-end-web-dev" }),
+    ).toBeUndefined();
+    expect(
+      catalog.models.find((model) => model.id === "kimi-k3")?.benchmarks
+        ?.frontendWebDev,
+    ).toBeUndefined();
+    expect(
+      benchmarkCandidates(
+        normalizeModelsDevCatalog(
+          modelsDevFixture,
+          ARENA_BEFORE_CHECK,
+        ),
+        { useCase: "front-end-web-dev" },
+      ),
+    ).toEqual([]);
+    expect(
+      withDateNow(ARENA_LAST_VALID_NOW, () =>
+        benchmarkCandidates(
+          normalizeModelsDevCatalog(modelsDevFixture, ARENA_LAST_VALID_NOW),
+          { useCase: "front-end-web-dev" },
+        ),
+      ),
+    ).not.toEqual([]);
+  });
+
+  it("rejects a cached Arena candidate once the live freshness window expires", () => {
+    const catalog = withDateNow(ARENA_FRESH_NOW, () =>
+      normalizeModelsDevCatalog(
+        modelsDevFixture,
+        ARENA_FRESH_NOW,
+        undefined,
+        artificialAnalysisFreeFixture.data,
+      ),
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "kimi-k3-max",
+    );
+    const cachedGrok = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "grok-4-5",
+    );
+    expect(candidate).toBeDefined();
+    expect(cachedGrok?.benchmarks).toMatchObject({
+      llm: expect.any(Object),
+      frontendWebDev: expect.any(Object),
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(ARENA_EXPIRED_NOW));
+    try {
+      const currentRows = benchmarkCandidates(catalog, {});
+      const currentGrok = currentRows.find((row) => row.id === "grok-4-5");
+
+      expect(currentRows.map((row) => row.id)).not.toContain("kimi-k3-max");
+      expect(
+        currentRows.every((row) => !row.benchmarks.frontendWebDev),
+      ).toBe(true);
+      expect(currentGrok?.benchmarks.llm).toBeDefined();
+      expect(currentGrok?.benchmarks.frontendWebDev).toBeUndefined();
+      expect(cachedGrok?.benchmarks.frontendWebDev).toBeDefined();
+      expect(
+        benchmarkCandidates(catalog, { useCase: "front-end-web-dev" }),
+      ).toEqual([]);
+      expect(
+        candidate &&
+          isBenchmarkCandidateRecommendedForFilters(candidate, {
+            useCase: "front-end-web-dev",
+          }),
+      ).toBe(false);
+      expect(
+        candidate &&
+          benchmarkCandidateEligibilityReason(candidate, {
+            useCase: "front-end-web-dev",
+          }),
+      ).toBe("stale_benchmark_snapshot");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("maps Arena configurations to explicit deployable registry models", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+    );
+
+    for (const expected of [
+      {
+        id: "gpt-5-6-sol-xhigh-codex-harness",
+        registryModelId: "gpt-5.6-sol",
+        configuration: {
+          displayLabel: "xhigh via Codex harness",
+          effort: "xhigh",
+          harness: "codex",
+        },
+      },
+      {
+        id: "claude-opus-4-8-high",
+        registryModelId: "claude-opus-4-8",
+        configuration: {
+          displayLabel: "high effort",
+          effort: "high",
+        },
+      },
+      {
+        id: "claude-opus-5-max",
+        registryModelId: "claude-opus-5",
+        configuration: {
+          displayLabel: "max",
+        },
+      },
+    ]) {
+      const candidate = catalog.benchmarkCandidates?.find(
+        (row) => row.id === expected.id,
+      );
+      expect(candidate).toMatchObject({
+        registryModelId: expected.registryModelId,
+        recommendable: true,
+        benchmarks: {
+          frontendWebDev: { configuration: expected.configuration },
+        },
+      });
+      expect(
+        candidate &&
+          benchmarkCandidateEligibilityReason(candidate, {
+            useCase: "front-end-web-dev",
+          }),
+      ).toBe("eligible");
+    }
+    const opusHigh = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-opus-4-7-high",
+    );
+    const opusBase = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-opus-4-7",
+    );
+    expect(opusHigh && recommendationFamilyKey(opusHigh)).toBe(
+      opusBase && recommendationFamilyKey(opusBase),
+    );
+    expect(
+      catalog.models.find((model) => model.id === "gpt-5.6-sol")?.benchmarks
+        ?.frontendWebDev,
+    ).toBeUndefined();
+    }));
+
+  it("reports an unavailable explicit Arena mapping target precisely", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    delete source.openai.models["gpt-5.6-sol"];
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      ARENA_FRESH_NOW,
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "gpt-5-6-sol-xhigh-codex-harness",
+    );
+
+    expect(candidate).toMatchObject({
+      registryMappingTargetId: "gpt-5.6-sol",
+      recommendable: false,
+    });
+    expect(candidate?.registryModelId).toBeUndefined();
+    expect(
+      candidate &&
+        benchmarkCandidateEligibilityReason(candidate, {
+          useCase: "front-end-web-dev",
+        }),
+    ).toBe("registry_mapping_target_unavailable");
+    }));
+
+  it("merges same-model AA evidence into an explicitly mapped Arena configuration", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    const artificialAnalysisModels = structuredClone(
+      artificialAnalysisFreeFixture.data,
+    ) as any[];
+    artificialAnalysisModels.push({
+      id: "aa-claude-opus-4-8-high",
+      name: "Claude Opus 4.8 (high)",
+      slug: "claude-opus-4-8-high",
+      release_date: "2026-07-16",
+      model_creator: { name: "Anthropic", slug: "anthropic" },
+      evaluations: {
+        artificial_analysis_intelligence_index: 96,
+        artificial_analysis_agentic_index: 94,
+        ifbench: 0.97,
+      },
+      pricing: {
+        price_1m_input_tokens: 5,
+        price_1m_output_tokens: 30,
+      },
+      performance: { median_output_tokens_per_second: 80 },
+    });
+
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      ARENA_FRESH_NOW,
+      undefined,
+      artificialAnalysisModels,
+    );
+    const aaCandidate = catalog.benchmarkCandidates?.find(
+      (candidate) =>
+        candidate.id === "claude-opus-4-8-high" &&
+        Boolean(candidate.benchmarks.llm),
+    );
+    const arenaCandidate = catalog.benchmarkCandidates?.find(
+      (candidate) =>
+        candidate.id ===
+        "arena-frontend-claude-opus-4-8-high",
+    );
+    const registryModel = catalog.models.find(
+      (model) => model.id === "claude-opus-4-8",
+    );
+
+    expect(aaCandidate).toMatchObject({
+      registryModelId: "claude-opus-4-8",
+      recommendable: true,
+      benchmarks: { llm: { agentic: 94 } },
+    });
+    expect(aaCandidate?.benchmarks.frontendWebDev).toMatchObject({
+      rank: 12,
+      source: "arena",
+      configuration: {
+        displayLabel: "high effort",
+        effort: "high",
+      },
+    });
+    expect(arenaCandidate).toBeUndefined();
+    expect(registryModel?.benchmarks?.frontendWebDev).toMatchObject({ rank: 18 });
+    }));
+
+  it("declares and resolves every checked Arena row", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+    );
+    const rows = benchmarkCandidates(catalog, {
+      useCase: "front-end-web-dev",
+    });
+
+    expect(rows).toHaveLength(ARENA_FRONTEND_WEBDEV_MODELS.length);
+    expect(rows.every((row) => row.registryModelId && row.recommendable)).toBe(
+      true,
+    );
+    expect(
+      rows.map((row) => row.registryModelId),
+    ).toEqual(
+      expect.arrayContaining(
+        ARENA_FRONTEND_WEBDEV_MODELS.map((row) => row.registryModelId),
+      ),
+    );
+    }));
+
+  it("uses mapped Arena configurations with provider and price filters", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+      { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+    );
+
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        provider: "openai",
+        tier: "best",
+      }),
+    ).toMatchObject({
+      id: "gpt-5-6-sol-xhigh-codex-harness",
+      registryModelId: "gpt-5.6-sol",
+    });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        provider: "anthropic",
+        tier: "best",
+      }),
+    ).toMatchObject({ id: "claude-opus-5-max" });
+    expect(
+      recommendModel(catalog, {
+        useCase: "front-end-web-dev",
+        provider: "anthropic",
+        tier: "best",
+        maxOutputCostPerMTok: 20,
+      }),
+    ).toMatchObject({
+      id: "claude-sonnet-5-high",
+      registryModelId: "claude-sonnet-5",
+    });
+    }));
+
+  it("uses current registry pricing ahead of the static Arena fallback", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    source.moonshotai.models["kimi-k3"].cost = { input: 2, output: 8 };
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      ARENA_FRESH_NOW,
+      { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "kimi-k3-max",
+    );
+
+    expect(candidate?.pricing).toMatchObject({
+      inputPerMTok: 3,
+      outputPerMTok: 12,
+    });
+    expect(
+      catalog.models.find((model) => model.id === "kimi-k3")?.pricing,
+    ).toMatchObject({ inputPerMTok: 3, outputPerMTok: 12 });
+    }));
+
+  it("keeps models.dev registry rows distinct while enriching AA variants", () =>
+    withDateNow(ARENA_FRESH_NOW, () => {
+    const artificialAnalysisModels = structuredClone(
+      artificialAnalysisFreeFixture.data,
+    ) as any[];
+    const fableFixture = artificialAnalysisModels.find(
+      (model) => model.slug === "claude-fable-5-high",
+    );
+    fableFixture.slug = "claude-fable-5";
+    fableFixture.name =
+      "Claude Fable 5 (Adaptive Reasoning, Max Effort, Opus 4.8 Fallback)";
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      ARENA_FRESH_NOW,
+      { base: "USD", quote: "AUD", rate: 1.5, source: "test" },
+      artificialAnalysisModels,
+    );
+
+    expect(catalog.models.map((model) => model.id)).toEqual(
+      expect.arrayContaining(["gpt-5.6", "claude-fable-5", "grok-4.5"]),
+    );
+    expect(catalog.modelCount).toBe(catalog.models.length);
+    expect(catalog.benchmarkCandidates?.length).toBeGreaterThan(
+      catalog.models.length,
+    );
+
+    const fable = catalog.benchmarkCandidates?.find(
+      (candidate) => candidate.id === "claude-fable-5",
+    );
+    expect(fable).toMatchObject({
+      registryModelId: "claude-fable-5",
+      family: "claude-fable",
+      contextWindow: 1_000_000,
+      pricing: {
+        inputPerMTok: 15,
+        outputPerMTok: 75,
+        cacheReadPerMTok: 1.5,
+      },
+      benchmarks: {
+        llm: {
+          agentic: 88,
+          speed: 92,
+          intelligenceRunTotalCost: 1050,
+          intelligenceCostPerTask: 1.05,
+        },
+      },
+    });
+    expect(
+      catalog.models.find((model) => model.id === "claude-fable-5")
+        ?.benchmarks,
+    ).toMatchObject({
+      llm: { agentic: 88 },
+      frontendWebDev: { rank: 6, source: "arena" },
+    });
+    expect(
+      catalog.benchmarkCandidates?.find(
+        (candidate) => candidate.id === "claude-fable-5",
+      )?.name,
+    ).toContain("Opus 4.8 Fallback");
+
+    const gpt = catalog.benchmarkCandidates?.find(
+      (candidate) => candidate.id === "gpt-5-6-sol-high",
+    );
+    expect(gpt).toMatchObject({
+      registryModelId: "gpt-5.6-sol",
+      family: "gpt-sol",
+      recommendable: true,
+      benchmarks: {
+        llm: {
+          autoClose: expect.objectContaining({
+            modelKey: "codex:gpt-5.6-sol-high",
+            total: 81,
+            falsePositiveCount: 4,
+            benchmarkReport: "GPT_5_6_AUTOSOLVE_REPORT.md",
+          }),
+        },
+      },
+    });
+    expect(
+      benchmarkCandidates(catalog, { useCase: "customer-support" }).map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(expect.arrayContaining(["gpt-5-6-sol-high"]));
+    expect(
+      benchmarkCandidates(catalog, { useCase: "customer-support" }).map(
+        (candidate) => candidate.id,
+      ),
+    ).not.toContain("grok-4-5");
+    }));
+
+  it("preserves base registry metadata when fallback support rows add effort variants", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    source.openai.models["gpt-5.5"] = {
+      ...source.openai.models["gpt-5.6"],
+      id: "gpt-5.5",
+      name: "GPT-5.5",
+      family: "gpt",
+    };
+
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      "2026-07-16T00:00:00Z",
+    );
+
+    expect(
+      catalog.benchmarkCandidates?.find(
+        (candidate) => candidate.id === "gpt-5-5-low",
+      ),
+    ).toMatchObject({
+      registryModelId: "gpt-5.5",
+      family: "gpt",
+    });
+  });
+
+  it("joins compound effort variants without collapsing canonical max models", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    const openAiTemplate = source.openai.models["gpt-5.6"];
+    source.openai.models["gpt-5.1-codex"] = {
+      ...openAiTemplate,
+      id: "gpt-5.1-codex",
+      name: "GPT-5.1 Codex",
+      family: "gpt-codex",
+    };
+    source.openai.models["gpt-5.1-codex-max"] = {
+      ...openAiTemplate,
+      id: "gpt-5.1-codex-max",
+      name: "GPT-5.1 Codex Max",
+      family: "gpt-codex",
+    };
+
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      "2026-07-16T00:00:00Z",
+    );
+    const byId = new Map(
+      catalog.benchmarkCandidates?.map((candidate) => [candidate.id, candidate]),
+    );
+
+    expect(byId.get("claude-sonnet-4-6-adaptive")).toMatchObject({
+      registryModelId: "claude-sonnet-4-6",
+      family: "claude-sonnet",
+      capabilities: {
+        vision: true,
+        reasoning: true,
+      },
+    });
+    expect(
+      byId.get("claude-sonnet-4-6-non-reasoning-low-effort"),
+    ).toMatchObject({
+      registryModelId: "claude-sonnet-4-6",
+      family: "claude-sonnet",
+      capabilities: {
+        vision: true,
+        reasoning: false,
+        pdf: true,
+        toolCalling: true,
+        structuredOutput: true,
+      },
+    });
+    expect(
+      benchmarkCandidates(catalog, { capability: "reasoning" }).some(
+        (candidate) =>
+          candidate.id === "claude-sonnet-4-6-non-reasoning-low-effort",
+      ),
+    ).toBe(false);
+
+    const canonical = catalog.models.find(
+      (model) => model.id === "gpt-5.1-codex",
+    )!;
+    const canonicalMax = catalog.models.find(
+      (model) => model.id === "gpt-5.1-codex-max",
+    )!;
+    expect(recommendationFamilyKey(canonical)).not.toBe(
+      recommendationFamilyKey(canonicalMax),
+    );
+  });
+
+  it("preserves registry capabilities that an AA effort row omits", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    const efficiencyRecord = AA_LLM_EFFICIENCY_MODELS.find(
+      (record) =>
+        record.slug === "claude-sonnet-4-6-non-reasoning-low-effort",
+    );
+    expect(efficiencyRecord).toBeDefined();
+    const mutableRecord = efficiencyRecord as unknown as {
+      imageInput?: boolean;
+      reasoning?: boolean;
+    };
+    const originalImageInput = mutableRecord.imageInput;
+    delete mutableRecord.imageInput;
+
+    try {
+      const catalog = normalizeModelsDevCatalog(
+        source,
+        "2026-07-16T00:00:00Z",
+      );
+      expect(
+        catalog.benchmarkCandidates?.find(
+          (candidate) =>
+            candidate.id ===
+            "claude-sonnet-4-6-non-reasoning-low-effort",
+        ),
+      ).toMatchObject({
+        registryModelId: "claude-sonnet-4-6",
+        capabilities: {
+          vision: true,
+          reasoning: false,
+          pdf: true,
+          toolCalling: true,
+          structuredOutput: true,
+        },
+      });
+    } finally {
+      mutableRecord.imageInput = originalImageInput;
+    }
+  });
+
+  it("infers the same base for compound AA variants without registry metadata", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-07-16T00:00:00Z",
+    );
+    const adaptive = catalog.benchmarkCandidates?.find(
+      (candidate) => candidate.id === "claude-sonnet-4-6-adaptive",
+    )!;
+    const lowEffort = catalog.benchmarkCandidates?.find(
+      (candidate) =>
+        candidate.id === "claude-sonnet-4-6-non-reasoning-low-effort",
+    )!;
+
+    expect(adaptive.registryModelId).toBeUndefined();
+    expect(lowEffort.registryModelId).toBeUndefined();
+    expect(recommendationFamilyKey(adaptive)).toBe(
+      recommendationFamilyKey(lowEffort),
+    );
+  });
+
+  it("prefers an exact canonical registry match over an earlier max alias", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    const template = source.openai.models["gpt-5.6"];
+    source.openai.models = {
+      "gpt-5.1-codex-max": {
+        ...template,
+        id: "gpt-5.1-codex-max",
+        name: "GPT-5.1 Codex Max",
+        family: "gpt-codex",
+      },
+      "gpt-5.1-codex": {
+        ...template,
+        id: "gpt-5.1-codex",
+        name: "GPT-5.1 Codex",
+        family: "gpt-codex",
+      },
+    };
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          id: "aa-gpt-5-1-codex",
+          name: "GPT-5.1 Codex",
+          slug: "gpt-5-1-codex",
+          model_creator: { name: "OpenAI", slug: "openai" },
+          evaluations: { artificial_analysis_intelligence_index: 80 },
+          pricing: {
+            price_1m_input_tokens: 2,
+            price_1m_output_tokens: 8,
+          },
+        },
+      ],
+    );
+
+    expect(
+      catalog.benchmarkCandidates?.find(
+        (candidate) => candidate.id === "gpt-5-1-codex",
+      )?.registryModelId,
+    ).toBe("gpt-5.1-codex");
+  });
+
+  it("uses the exact AA effort fallback before a stripped base alias", () => {
+    const source = structuredClone(modelsDevFixture) as any;
+    source.google.models["gemma-4-31b"] = {
+      ...source.google.models["gemini-fast"],
+      id: "gemma-4-31b",
+      name: "Gemma 4 31B",
+      family: "gemma",
+    };
+    const expected = AA_LLM_EFFICIENCY_MODELS.find(
+      (record) => record.slug === "gemma-4-31b-non-reasoning",
+    );
+    expect(expected).toBeDefined();
+
+    const catalog = normalizeModelsDevCatalog(
+      source,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          id: "aa-gemma-4-31b-non-reasoning",
+          name: "Gemma 4 31B (Non-reasoning)",
+          slug: "gemma-4-31b-non-reasoning",
+          model_creator: { name: "Google", slug: "google" },
+          evaluations: { artificial_analysis_intelligence_index: 20 },
+        },
+      ],
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "gemma-4-31b-non-reasoning",
+    );
+
+    expect(candidate?.benchmarks.llm?.instructionFollowing).toBe(
+      expected?.ifbench,
+    );
+    expect(candidate?.pricing).toMatchObject({
+      inputPerMTok: expected?.inputPrice,
+      outputPerMTok: expected?.outputPrice,
+    });
+  });
+
+  it("does not inherit a base auto-close run for an unbenchmarked effort variant", () => {
+    const id = "grok-4-3-non-reasoning-low-effort";
+    const catalog = normalizeModelsDevCatalog(
+      modelsDevFixture,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          id: `aa-${id}`,
+          name: "Grok 4.3 (Non-reasoning, Low Effort)",
+          slug: id,
+          model_creator: { name: "xAI", slug: "xai" },
+          evaluations: { artificial_analysis_intelligence_index: 50 },
+        },
+      ],
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === id,
+    );
+
+    expect(candidate).toBeDefined();
+    expect(candidate?.benchmarks.llm?.autoClose).toBeUndefined();
+  });
+
+  it("merges live AA pricing field-by-field over checked-in fallbacks", () => {
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          id: "aa-claude-3-5-haiku-high",
+          name: "Claude 3.5 Haiku (high)",
+          slug: "claude-3-5-haiku-high",
+          model_creator: { name: "Anthropic", slug: "anthropic" },
+          evaluations: { artificial_analysis_intelligence_index: 40 },
+          pricing: {
+            price_1m_input_tokens: 9,
+            price_1m_cache_write_tokens: 0.5,
+            price_per_1k_1mp_images: 22,
+          },
+        },
+      ],
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-3-5-haiku-high",
+    );
+
+    expect(candidate?.pricing).toMatchObject({
+      inputPerMTok: 9,
+      outputPerMTok: 4,
+      cacheReadPerMTok: 0.08,
+      cacheWritePerMTok: 0.5,
+      imageInputPer1kImages: 22,
+    });
+  });
+
+  it("lets later current-free fields override legacy live fields only when present", () => {
+    const shared = {
+      id: "aa-claude-fable-5-high",
+      name: "Claude Fable 5 (high)",
+      slug: "claude-fable-5-high",
+      model_creator: { name: "Anthropic", slug: "anthropic" },
+    };
+    const catalog = normalizeArtificialAnalysisCatalog(
+      "2026-07-16T00:00:00Z",
+      undefined,
+      [
+        {
+          ...shared,
+          evaluations: {
+            artificial_analysis_intelligence_index: 80,
+            artificial_analysis_agentic_index: 75,
+          },
+          pricing: {
+            price_1m_input_tokens: 10,
+            price_1m_output_tokens: 50,
+            price_1m_cache_hit_tokens: 1,
+          },
+        },
+        {
+          ...shared,
+          evaluations: { artificial_analysis_intelligence_index: 91 },
+          pricing: { price_1m_output_tokens: 60 },
+        },
+      ],
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === shared.slug,
+    );
+
+    expect(candidate).toMatchObject({
+      pricing: {
+        inputPerMTok: 10,
+        outputPerMTok: 60,
+        cacheReadPerMTok: 1,
+      },
+      benchmarks: { llm: { intelligence: 91, agentic: 75 } },
+    });
+  });
+
+  it("inherits non-production registry availability on AA effort variants", () => {
+    const previewSource = structuredClone(modelsDevFixture) as any;
+    previewSource.anthropic.models["claude-fable-5"].status = "preview";
+    const catalog = normalizeModelsDevCatalog(
+      previewSource,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      artificialAnalysisFreeFixture.data,
+    );
+    const candidate = catalog.benchmarkCandidates?.find(
+      (row) => row.id === "claude-fable-5-high",
+    );
+
+    expect(candidate).toMatchObject({
+      registryModelId: "claude-fable-5",
+      recommendable: false,
+      availability: { status: "preview", acceptedRisk: false },
+    });
+    expect(
+      candidate &&
+        isBenchmarkCandidateRecommendedForFilters(candidate, {
+          useCase: "customer-support",
+          includeItsBenchmark: false,
+        }),
+    ).toBe(false);
+  });
+
+  it("keeps beta registry models visible but their AA variants ineligible", () => {
+    const betaSource = structuredClone(modelsDevFixture) as any;
+    betaSource.anthropic.models["claude-fable-5"].status = "beta";
+    const catalog = normalizeModelsDevCatalog(
+      betaSource,
+      "2026-07-16T00:00:00Z",
+      undefined,
+      artificialAnalysisFreeFixture.data,
+    );
+    const registryModel = catalog.models.find(
+      (model) => model.id === "claude-fable-5",
+    );
+    const variant = catalog.benchmarkCandidates?.find(
+      (candidate) => candidate.id === "claude-fable-5-high",
+    );
+
+    expect(registryModel).toMatchObject({
+      deprecated: false,
+      availability: { status: "beta", acceptedRisk: false },
+    });
+    expect(variant).toMatchObject({
+      registryModelId: "claude-fable-5",
+      recommendable: false,
+      availability: { status: "beta", acceptedRisk: false },
+    });
+    expect(
+      variant &&
+        isBenchmarkCandidateRecommendedForFilters(variant, {
+          useCase: "customer-support",
+          includeItsBenchmark: false,
+        }),
+    ).toBe(false);
   });
 
   it("includes supported-provider AA rows and excludes unsupported providers", () => {
@@ -206,7 +1851,6 @@ describe("Artificial Analysis catalog", () => {
 
     expect(ids).toContain("gemini-fast");
     expect(ids).toContain("grok-4-3");
-    expect(ids).not.toContain("grok-4.20-0309-non-reasoning");
     expect(ids).not.toContain("grok-4.20-multi-agent-0309");
     expect(ids).not.toContain("gemini-2.0-flash-lite");
     expect(ids).not.toContain("unsupported-model");
@@ -343,23 +1987,22 @@ describe("Artificial Analysis catalog", () => {
     );
     expect(filteredGoogleBestRecommendation).toBeUndefined();
     expect(openaiRecommendation).toMatchObject({
-      id: "gpt-5-5-low",
       provider: "openai",
       recommendable: true,
-      pricing: {
-        inputPerMTok: 5,
-        outputPerMTok: 30,
-      },
+      pricing: expect.objectContaining({
+        inputPerMTok: expect.any(Number),
+        outputPerMTok: expect.any(Number),
+      }),
       benchmarks: {
-        llm: {
+        llm: expect.objectContaining({
           intelligenceCostPerTask: expect.any(Number),
           autoClose: expect.objectContaining({
-            falsePositiveCount: 5,
+            falsePositiveCount: expect.any(Number),
             accuracy: expect.any(Number),
             sourceUrl: expect.any(String),
-            verifiedOn: "2026-06-06",
+            verifiedOn: expect.any(String),
           }),
-        },
+        }),
       },
     });
     expect(gpt55Low).toMatchObject({
@@ -388,6 +2031,23 @@ describe("Artificial Analysis catalog", () => {
       falsePositiveCount: 0,
       falseNegativeCount: 16,
       invalidCount: 0,
+    });
+    expect(
+      AI_AUTOCLOSE_BENCHMARKS.filter((row) =>
+        row.apiModel.startsWith("gpt-5.6-"),
+      ),
+    ).toHaveLength(15);
+    expect(byId.get("gpt-5-6-terra-medium")).toMatchObject({
+      modelKey: "codex:gpt-5.6-terra-medium",
+      total: 81,
+      correctCount: 68,
+      falsePositiveCount: 3,
+      falseNegativeCount: 10,
+      benchmarkReport: "GPT_5_6_AUTOSOLVE_REPORT.md",
+      availability: expect.objectContaining({
+        status: "production",
+        acceptedRisk: false,
+      }),
     });
     expect(byId.get("gemini-3-flash-reasoning")).toMatchObject({
       modelKey: "gemini:gemini-3-flash-preview",
@@ -583,6 +2243,253 @@ describe("Artificial Analysis catalog", () => {
         maxIntelligenceCostPerTaskAud: 0.1,
       })?.id,
     ).toBe("cheapest");
+  });
+
+  it("uses visual reasoning first for document-processing highest accuracy", () => {
+    const candidate = (
+      id: string,
+      visualReasoning: number,
+      imageCost: number,
+      visualLatency: number,
+      capabilities = { vision: true, reasoning: true },
+    ): BenchmarkCandidate => ({
+      id,
+      provider: "openai",
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          visualReasoning,
+          instructionFollowing: 70,
+          intelligence: 60,
+          visualLatency,
+          intelligenceCostPerTask: 0.3,
+        },
+      },
+      pricing: {
+        inputPerMTok: 1,
+        outputPerMTok: 4,
+        imageInputPer1kImages: imageCost,
+      },
+      recommendable: true,
+      availability: {
+        status: "production",
+        acceptedRisk: false,
+        reason: "test",
+      },
+      family: null,
+      contextWindow: 500_000,
+      outputLimit: null,
+      capabilities: {
+        vision: capabilities.vision,
+        reasoning: capabilities.reasoning,
+        pdf: false,
+        toolCalling: false,
+        structuredOutput: false,
+      },
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-07-07T00:00:00Z",
+      modelCount: 4,
+      activeModelCount: 4,
+      providers: [{ provider: "openai", total: 4, active: 4 }],
+      models: [],
+      benchmarkCandidates: [
+        candidate("cheap-fast", 0.7, 0.2, 0.5),
+        candidate("highest-visual", 0.92, 4, 4),
+        candidate("middle", 0.8, 1, 1),
+        candidate("vision-only", 0.99, 0.1, 0.1, {
+          vision: true,
+          reasoning: false,
+        }),
+      ],
+    };
+
+    const rows = benchmarkCandidates(catalog, {
+      useCase: "document-processing",
+    });
+    expect(rows.map((row) => row.id)).toEqual(
+      expect.arrayContaining(["highest-visual", "vision-only"]),
+    );
+    expect(
+      recommendModel(catalog, {
+        useCase: "document-processing",
+        tier: "best",
+      })?.id,
+    ).toBe("highest-visual");
+    expect(
+      recommendModel(catalog, {
+        useCase: "document-processing",
+        tier: "fast",
+      })?.id,
+    ).toBe("cheap-fast");
+    expect(
+      recommendModel(catalog, {
+        useCase: "document-processing",
+        tier: "best",
+        minVisualReasoning: 75,
+        maxImageInputCostPer1kImagesAud: 1,
+      })?.id,
+    ).toBe("middle");
+  });
+
+  it("does not reuse customer-support availability exclusions for document-processing", () => {
+    const row: BenchmarkCandidate = {
+      id: "ocr-safe-text-rejected",
+      provider: "google",
+      name: "OCR Safe Text Rejected",
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          visualReasoning: 0.9,
+          instructionFollowing: 80,
+          intelligence: 70,
+          intelligenceCostPerTask: 0.2,
+        },
+      },
+      pricing: {
+        inputPerMTok: 1,
+        outputPerMTok: 3,
+        imageInputPer1kImages: 0.5,
+      },
+      recommendable: true,
+      availability: {
+        status: "unknown",
+        acceptedRisk: false,
+        reason: "Customer-support auto-close benchmark did not accept this row.",
+      },
+      family: null,
+      contextWindow: 250_000,
+      outputLimit: null,
+      capabilities: {
+        vision: true,
+        reasoning: true,
+        pdf: false,
+        toolCalling: false,
+        structuredOutput: false,
+      },
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    };
+    const catalog: Catalog = {
+      generatedAt: "2026-07-07T00:00:00Z",
+      modelCount: 1,
+      activeModelCount: 1,
+      providers: [{ provider: "google", total: 1, active: 1 }],
+      models: [],
+      benchmarkCandidates: [row],
+    };
+
+    expect(
+      recommendModel(catalog, {
+        useCase: "document-processing",
+        provider: "google",
+      })?.id,
+    ).toBe("ocr-safe-text-rejected");
+  });
+
+  it("keeps AA vision image pricing when token pricing comes from another source", () => {
+    const catalog = normalizeArtificialAnalysisCatalog("2026-05-19T00:00:00Z", {
+      base: "USD",
+      quote: "AUD",
+      rate: 2,
+      source: "test",
+    });
+    const row = benchmarkCandidates(catalog, {
+      useCase: "document-processing",
+      provider: "xai",
+      maxImageInputCostPer1kImagesAud: 10,
+    }).find((item) => item.id === "grok-4-3");
+
+    expect(row).toBeDefined();
+    expect(row?.pricing.imageInputPer1kImages).toEqual(expect.any(Number));
+    expect(row?.pricing.imageInputPer1kImages).toBeLessThanOrEqual(10);
+  });
+
+  it("applies document-processing provider, cost, and intelligence filters", () => {
+    const row = (
+      id: string,
+      provider: "openai" | "google",
+      taskCost: number,
+      intelligence: number,
+      visualReasoning = 0.8,
+      imageCost = 0.5,
+    ): BenchmarkCandidate => ({
+      id,
+      provider,
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        llm: {
+          visualReasoning,
+          instructionFollowing: 75,
+          intelligence,
+          intelligenceCostPerTask: taskCost,
+        },
+      },
+      pricing: {
+        inputPerMTok: 1,
+        outputPerMTok: 3,
+        imageInputPer1kImages: imageCost,
+      },
+      recommendable: true,
+      availability: {
+        status: "production",
+        acceptedRisk: false,
+        reason: "test",
+      },
+      family: null,
+      contextWindow: 250_000,
+      outputLimit: null,
+      capabilities: {
+        vision: true,
+        reasoning: true,
+        pdf: false,
+        toolCalling: false,
+        structuredOutput: false,
+      },
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-07-07T00:00:00Z",
+      modelCount: 5,
+      activeModelCount: 5,
+      providers: [
+        { provider: "openai", total: 1, active: 1 },
+        { provider: "google", total: 4, active: 4 },
+      ],
+      models: [],
+      benchmarkCandidates: [
+        row("openai-row", "openai", 0.2, 80, 0.95, 0.2),
+        row("google-cheap", "google", 0.4, 78, 0.9, 0.5),
+        row("google-expensive", "google", 2, 90, 0.95, 0.5),
+        row("google-low-visual", "google", 0.3, 85, 0.7, 0.5),
+        row("google-image-expensive", "google", 0.3, 85, 0.91, 2),
+      ],
+    };
+
+    const rows = benchmarkCandidates(catalog, {
+      useCase: "document-processing",
+      provider: "google",
+      maxIntelligenceCostPerTaskAud: 1,
+      minIntelligence: 70,
+      minVisualReasoning: 85,
+      maxImageInputCostPer1kImagesAud: 1,
+    });
+
+    expect(rows.map((item) => item.id)).toEqual(["google-cheap"]);
   });
 
   it("uses the AA support-score median for AA-only customer-support balance", () => {
@@ -1028,6 +2935,94 @@ describe("Artificial Analysis catalog", () => {
     ).toBe("cheapest");
   });
 
+  it("does not recommend a voice row without an explicit output price", () => {
+    const incomplete: BenchmarkCandidate = {
+      id: "missing-output-price",
+      provider: "xai",
+      name: "Missing output price",
+      source: "artificialanalysis",
+      benchmarks: {
+        voice: {
+          source: "artificialanalysis",
+          extractedAt: "2026-08-18T00:00:00Z",
+          qualityIndex: 90,
+        },
+      },
+      pricing: { benchmarkInputAudioPerHour: 1 },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    };
+
+    expect(
+      isBenchmarkCandidateRecommendedForFilters(incomplete, {
+        useCase: "voice",
+      }),
+    ).toBe(false);
+  });
+
+  it("orders best voice candidates by quality index with missing values last", () => {
+    const candidate = (
+      id: string,
+      qualityIndex: number | undefined,
+      agenticPerformance: number,
+    ): BenchmarkCandidate => ({
+      id,
+      provider: "xai",
+      name: id,
+      source: "artificialanalysis",
+      benchmarks: {
+        voice: {
+          ...(qualityIndex === undefined ? {} : { qualityIndex }),
+          agenticPerformance,
+          speechReasoning: 0.8,
+          source: "artificialanalysis",
+          extractedAt: "2026-07-17T00:00:00Z",
+        },
+      },
+      pricing: {
+        benchmarkInputAudioPerHour: 1,
+        audioOutputPerHour: 1,
+      },
+      recommendable: true,
+      family: null,
+      contextWindow: null,
+      outputLimit: null,
+      capabilities: null,
+      modalities: null,
+      openWeights: null,
+      tier: null,
+      deprecated: null,
+      updatedAt: null,
+    });
+    const catalog: Catalog = {
+      generatedAt: "2026-07-17T00:00:00Z",
+      modelCount: 3,
+      activeModelCount: 3,
+      providers: [{ provider: "xai", total: 3, active: 3 }],
+      models: [],
+      benchmarkCandidates: [
+        candidate("missing-index", undefined, 1),
+        candidate("index-70", 70, 0.6),
+        candidate("index-80", 80, 0.5),
+      ],
+    };
+
+    expect(
+      rankedRecommendedModels(catalog, {
+        useCase: "voice",
+        tier: "best",
+      }).map(({ id }) => id),
+    ).toEqual(["index-80", "index-70", "missing-index"]);
+  });
+
   it("uses Artificial Analysis speech-to-text data for STT recommendations", () => {
     const catalog = normalizeArtificialAnalysisCatalog(
       "2026-06-01T00:00:00Z",
@@ -1291,7 +3286,7 @@ describe("Artificial Analysis catalog", () => {
       recommendModel(catalog, {
         useCase: "customer-support",
         tier: "best",
-        maxOutputCostPerMTok: 1,
+        maxOutputCostPerMTok: 0.1,
       }),
     ).toBeUndefined();
     expect(

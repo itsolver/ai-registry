@@ -3,22 +3,28 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "refresh:catalog:kv": "tsx scripts/refresh-catalog-from-kv.ts",
     "refresh:aa-customer-support": "node scripts/extract-aa-customer-support-recommendations.mjs",
     "refresh:aa-llm-efficiency": "node scripts/extract-aa-llm-efficiency.mjs",
     "refresh:aa-llm-pricing": "node scripts/extract-aa-llm-pricing.mjs",
     "refresh:aa-stt": "node scripts/extract-aa-speech-to-text.mjs",
     "refresh:aa-voice": "node scripts/extract-aa-speech-to-speech.mjs",
+    "refresh:arena-webdev": "node scripts/extract-arena-frontend-webdev.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260518.0",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.3",
     "vitest": "^4.0.14",
-    "wrangler": "^4.50.0"
+    "wrangler": "^4.103.0"
   }
 }

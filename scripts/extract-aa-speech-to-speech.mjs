@@ -38,11 +38,16 @@ console.log(`Wrote ${records.length} speech-to-speech records to ${OUT_PATH}`);
 
 function extractRecords(html) {
   const decoded = html.replaceAll('\\"', '"');
-  const objectPattern = /\{"id":"[\s\S]*?"defaultSelected":(?:true|false)\}/g;
   const bySlug = new Map();
+  let cursor = 0;
 
-  for (const match of decoded.matchAll(objectPattern)) {
-    const record = parseRecord(match[0]);
+  while (cursor < decoded.length) {
+    const start = decoded.indexOf('{"id":"', cursor);
+    if (start < 0) break;
+    const raw = balancedJsonObject(decoded, start);
+    cursor = start + Math.max(raw?.length || 1, 1);
+    if (!raw) continue;
+    const record = parseRecord(raw);
     if (!record) continue;
 
     const existing = bySlug.get(record.slug);
@@ -52,6 +57,27 @@ function extractRecords(html) {
   }
 
   return [...bySlug.values()];
+}
+
+function balancedJsonObject(value, start) {
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') quoted = false;
+      continue;
+    }
+    if (character === '"') quoted = true;
+    else if (character === "{") depth += 1;
+    else if (character === "}" && --depth === 0) {
+      return value.slice(start, index + 1);
+    }
+  }
+  return undefined;
 }
 
 function parseRecord(raw) {
@@ -74,6 +100,7 @@ function parseRecord(raw) {
     provider,
     providerName: stringOrUndefined(value.host?.name) || provider,
     modelSlug: stringOrUndefined(value.model?.slug) || slug,
+    s2sQualityIndex: numberOrUndefined(value.s2sQualityIndex),
     bbaScore: numberOrUndefined(value.bbaScore),
     tauVoiceAggScore: numberOrUndefined(value.tauVoiceAggScore),
     tauVoiceTelecomScore: numberOrUndefined(value.tauVoiceScoresByCategory?.telecom?.avg_reward),

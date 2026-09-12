@@ -1,4 +1,4 @@
-export const AI_AUTOCLOSE_BENCHMARKS_EXTRACTED_AT = "2026-06-07T15:46:56.835389+00:00";
+export const AI_AUTOCLOSE_BENCHMARKS_EXTRACTED_AT = "2026-08-18T00:00:00+10:00";
 
 export const AI_AUTOCLOSE_PRICE_METADATA = {
   sourceUrl:
@@ -17,7 +17,97 @@ export const AI_AUTOCLOSE_PRICE_METADATA = {
   },
 } as const;
 
+const GPT_5_6_AUTOCLOSE_MODELS = {
+  "gpt-5.6-luna": "GPT-5.6 Luna",
+  "gpt-5.6-terra": "GPT-5.6 Terra",
+  "gpt-5.6-sol": "GPT-5.6 Sol",
+} as const;
+
+type Gpt56AutoCloseModel = keyof typeof GPT_5_6_AUTOCLOSE_MODELS;
+type Gpt56AutoCloseEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+function gpt56AutoCloseBenchmark(
+  model: Gpt56AutoCloseModel,
+  effort: Gpt56AutoCloseEffort,
+  correctCount: number,
+  falsePositiveCount: number,
+  falseNegativeCount: number,
+  invalidCount: number,
+  errorCount: number,
+  avgLatencyMs: number,
+  p95LatencyMs: number,
+  inputTokens: number,
+  outputTokens: number,
+  totalCostUsd: number,
+) {
+  const total = 81;
+  const accuracy = correctCount / total;
+  const modelSlug = model.replaceAll(".", "-");
+  const effortSuffix = effort === "max" ? "" : `-${effort}`;
+  const officialSourceUrl = `https://developers.openai.com/api/docs/models/${model}`;
+
+  return {
+    id: `${modelSlug}${effortSuffix}`,
+    provider: "openai" as const,
+    modelKey: `codex:${model}-${effort}`,
+    apiModel: model,
+    displayName: `${GPT_5_6_AUTOCLOSE_MODELS[model]} (${effort})`,
+    benchmarkReport: "GPT_5_6_AUTOSOLVE_REPORT.md",
+    resultsFile: "GPT_5_6_AUTOSOLVE_RESULTS.json",
+    generatedAt: "2026-08-11T19:59:28.953827+10:00",
+    benchmarkCodeSha: "4bf30745",
+    total,
+    correctCount,
+    accuracy,
+    falsePositiveCount,
+    falseNegativeCount,
+    invalidCount,
+    errorCount,
+    parseSuccessRate: (total - invalidCount) / total,
+    avgLatencyMs,
+    p95LatencyMs,
+    avgInputTokens: inputTokens / total,
+    avgOutputTokens: outputTokens / total,
+    avgCostUsd: totalCostUsd / total,
+    costPer1000Usd: (totalCostUsd / total) * 1000,
+    weightedScore:
+      100 * accuracy -
+      35 * falsePositiveCount -
+      5 * falseNegativeCount -
+      10 * invalidCount,
+    sourceUrl: officialSourceUrl,
+    verifiedOn: "2026-08-11",
+    officialSourceUrl,
+    officialVerifiedOn: "2026-08-11",
+    availability: {
+      status: "production" as const,
+      acceptedRisk: false,
+      reason:
+        "Codex subscription learning benchmark on 81 human-reviewed cases. No effort passed the zero-false-positive final auto-solve gate; publish as comparative evidence only.",
+    },
+  };
+}
+
+const GPT_5_6_AUTOCLOSE_BENCHMARKS = [
+  gpt56AutoCloseBenchmark("gpt-5.6-luna", "low", 63, 10, 7, 1, 1, 8015.931958024672, 12468.617999999879, 1094077, 8485, 0.2209334),
+  gpt56AutoCloseBenchmark("gpt-5.6-luna", "medium", 66, 6, 9, 0, 0, 8243.077507407399, 12636.726199999885, 1105188, 11400, 0.223428),
+  gpt56AutoCloseBenchmark("gpt-5.6-luna", "high", 65, 6, 10, 0, 0, 9324.632000000023, 15042.447900000298, 1105139, 19316, 0.2409814),
+  gpt56AutoCloseBenchmark("gpt-5.6-luna", "xhigh", 66, 4, 10, 1, 1, 9464.869204938228, 14506.874800000105, 1093892, 23126, 0.2368528),
+  gpt56AutoCloseBenchmark("gpt-5.6-luna", "max", 69, 4, 8, 0, 0, 10982.002016049391, 16816.912699999648, 1105541, 33077, 0.2543494),
+  gpt56AutoCloseBenchmark("gpt-5.6-terra", "low", 68, 4, 9, 0, 0, 8042.91026296296, 12648.03040000004, 1230849, 5961, 1.1135052),
+  gpt56AutoCloseBenchmark("gpt-5.6-terra", "medium", 68, 3, 10, 0, 0, 7295.056153086392, 10368.70880000015, 1231573, 5701, 1.1298044),
+  gpt56AutoCloseBenchmark("gpt-5.6-terra", "high", 68, 4, 9, 0, 0, 7577.959412345683, 12875.731100000052, 1231467, 6430, 1.1742828),
+  gpt56AutoCloseBenchmark("gpt-5.6-terra", "xhigh", 68, 4, 9, 0, 0, 8279.121411111102, 12089.703700000427, 1231857, 10351, 1.1682012),
+  gpt56AutoCloseBenchmark("gpt-5.6-terra", "max", 67, 4, 10, 0, 0, 9875.36572469135, 17403.753099999903, 1231936, 18162, 1.2906608),
+  gpt56AutoCloseBenchmark("gpt-5.6-sol", "low", 69, 5, 7, 0, 0, 8329.359349382714, 12396.801200000027, 1231407, 6186, 4.455639),
+  gpt56AutoCloseBenchmark("gpt-5.6-sol", "medium", 68, 4, 9, 0, 0, 9198.02513950617, 13074.411699999928, 1232933, 7551, 4.908571),
+  gpt56AutoCloseBenchmark("gpt-5.6-sol", "high", 69, 4, 8, 0, 0, 8898.796830864203, 13886.489600000004, 1231417, 7762, 4.772537),
+  gpt56AutoCloseBenchmark("gpt-5.6-sol", "xhigh", 70, 4, 7, 0, 0, 9284.99867037037, 14904.7443999998, 1231960, 8851, 4.762994),
+  gpt56AutoCloseBenchmark("gpt-5.6-sol", "max", 67, 5, 9, 0, 0, 9130.165854320989, 14829.918399999997, 1231329, 10724, 5.040669),
+] as const;
+
 export const AI_AUTOCLOSE_BENCHMARKS = [
+  ...GPT_5_6_AUTOCLOSE_BENCHMARKS,
   {
     id: "gemini-2-5-flash-lite",
     provider: "google",
